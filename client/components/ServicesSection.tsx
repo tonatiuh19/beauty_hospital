@@ -1,8 +1,9 @@
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Service, ServiceCategory } from "@shared/database";
-import { GetServicesResponse } from "@shared/api";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { fetchServices } from "@/store/slices/servicesSlice";
 
 // Category display names and icons
 const categoryInfo: Record<
@@ -26,31 +27,17 @@ const categoryInfo: Record<
 };
 
 export function ServicesSection() {
-  const [services, setServices] = useState<Service[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const dispatch = useAppDispatch();
+  const { services, loading, error } = useAppSelector(
+    (state) => state.services,
+  );
 
   useEffect(() => {
-    const fetchServices = async () => {
-      try {
-        const response = await fetch("/api/services");
-        const data: GetServicesResponse = await response.json();
-
-        if (data.success && data.data) {
-          setServices(data.data);
-        } else {
-          setError("Failed to load services");
-        }
-      } catch (err) {
-        setError("Failed to load services");
-        console.error("Error fetching services:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchServices();
-  }, []);
+    // Only fetch if we don't have services already
+    if (services.length === 0 && !loading) {
+      dispatch(fetchServices());
+    }
+  }, [dispatch, services.length, loading]);
 
   // Group services by category
   const groupedServices = services.reduce(

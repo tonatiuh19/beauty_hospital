@@ -1,8 +1,37 @@
 import { motion } from "framer-motion";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Heart } from "lucide-react";
 
 export function Footer() {
   const currentYear = new Date().getFullYear();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Function to handle navigation to sections
+  const handleSectionClick = (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    hash: string,
+  ) => {
+    e.preventDefault();
+
+    // If we're not on the home page, navigate to home first
+    if (location.pathname !== "/") {
+      navigate("/");
+      // Wait for navigation to complete, then scroll to section
+      setTimeout(() => {
+        const element = document.querySelector(hash);
+        if (element) {
+          element.scrollIntoView({ behavior: "smooth" });
+        }
+      }, 100);
+    } else {
+      // If we're already on home page, just scroll
+      const element = document.querySelector(hash);
+      if (element) {
+        element.scrollIntoView({ behavior: "smooth" });
+      }
+    }
+  };
 
   return (
     <footer className="bg-gradient-to-b from-gray-50 to-gray-100 border-t border-gray-200">
@@ -19,10 +48,13 @@ export function Footer() {
               <div className="w-8 h-8 bg-gradient-to-r from-primary to-secondary rounded-lg flex items-center justify-center">
                 <span className="text-white font-bold">✨</span>
               </div>
-              <span className="text-xl font-bold text-foreground">Hospital de Depilación</span>
+              <span className="text-xl font-bold text-foreground">
+                Hospital de Depilación
+              </span>
             </div>
             <p className="text-gray-600 text-sm leading-relaxed">
-              Tratamientos de depilación y bienestar premium para personas modernas.
+              Tratamientos de depilación y bienestar premium para personas
+              modernas.
             </p>
           </motion.div>
 
@@ -38,7 +70,8 @@ export function Footer() {
               <li>
                 <a
                   href="#features"
-                  className="text-gray-600 hover:text-primary transition-colors text-sm"
+                  onClick={(e) => handleSectionClick(e, "#features")}
+                  className="text-gray-600 hover:text-primary transition-colors text-sm cursor-pointer"
                 >
                   Características
                 </a>
@@ -46,7 +79,8 @@ export function Footer() {
               <li>
                 <a
                   href="#services"
-                  className="text-gray-600 hover:text-primary transition-colors text-sm"
+                  onClick={(e) => handleSectionClick(e, "#services")}
+                  className="text-gray-600 hover:text-primary transition-colors text-sm cursor-pointer"
                 >
                   Servicios
                 </a>
@@ -54,7 +88,8 @@ export function Footer() {
               <li>
                 <a
                   href="#testimonials"
-                  className="text-gray-600 hover:text-primary transition-colors text-sm"
+                  onClick={(e) => handleSectionClick(e, "#testimonials")}
+                  className="text-gray-600 hover:text-primary transition-colors text-sm cursor-pointer"
                 >
                   Testimonios
                 </a>
@@ -62,7 +97,8 @@ export function Footer() {
               <li>
                 <a
                   href="#contact"
-                  className="text-gray-600 hover:text-primary transition-colors text-sm"
+                  onClick={(e) => handleSectionClick(e, "#contact")}
+                  className="text-gray-600 hover:text-primary transition-colors text-sm cursor-pointer"
                 >
                   Contacto
                 </a>

@@ -1,8 +1,12 @@
 import { motion } from "framer-motion";
 import { ArrowRight, Sparkles } from "lucide-react";
+import type { Variants } from "framer-motion";
+import { useLocation, useNavigate } from "react-router-dom";
 
 export function HeroSection() {
-  const containerVariants = {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const containerVariants: Variants = {
     hidden: { opacity: 0 },
     visible: {
       opacity: 1,
@@ -13,12 +17,11 @@ export function HeroSection() {
     },
   };
 
-  const itemVariants = {
+  const itemVariants: Variants = {
     hidden: { opacity: 0, y: 20 },
     visible: {
       opacity: 1,
       y: 0,
-      transition: { duration: 0.8, ease: "easeOut" },
     },
   };
 
@@ -62,7 +65,9 @@ export function HeroSection() {
             variants={itemVariants}
             className="text-xl md:text-2xl text-gray-600 mb-8 max-w-3xl mx-auto leading-relaxed"
           >
-            Descubre nuestros tratamientos de depilación premium y servicios de bienestar diseñados para realzar tu belleza natural y aumentar tu confianza.
+            Descubre nuestros tratamientos de depilación premium y servicios de
+            bienestar diseñados para realzar tu belleza natural y aumentar tu
+            confianza.
           </motion.p>
 
           {/* CTA Buttons */}
@@ -70,14 +75,33 @@ export function HeroSection() {
             variants={itemVariants}
             className="flex flex-col sm:flex-row gap-4 justify-center items-center"
           >
-            <button className="px-8 py-4 bg-gradient-to-r from-primary to-secondary text-white rounded-xl font-semibold hover:shadow-lg hover:shadow-primary/50 transition-all hover:scale-105 flex items-center gap-2 group">
+            <button
+              className="px-8 py-4 bg-gradient-to-r from-primary to-secondary text-white rounded-xl font-semibold hover:shadow-lg hover:shadow-primary/50 transition-all hover:scale-105 flex items-center gap-2 group"
+              onClick={() => {
+                navigate("/appointment");
+              }}
+            >
               Reservar Tratamiento
               <ArrowRight
                 size={20}
                 className="group-hover:translate-x-1 transition-transform"
               />
             </button>
-            <button className="px-8 py-4 border-2 border-primary text-primary rounded-xl font-semibold hover:bg-primary hover:text-white transition-all hover:scale-105">
+            <button
+              className="px-8 py-4 border-2 border-primary text-primary rounded-xl font-semibold hover:bg-primary hover:text-white transition-all hover:scale-105"
+              onClick={() => {
+                if (location.pathname !== "/") {
+                  navigate("/");
+                  setTimeout(() => {
+                    const el = document.querySelector("#services");
+                    if (el) el.scrollIntoView({ behavior: "smooth" });
+                  }, 100);
+                } else {
+                  const el = document.querySelector("#services");
+                  if (el) el.scrollIntoView({ behavior: "smooth" });
+                }
+              }}
+            >
               Ver Servicios
             </button>
           </motion.div>
@@ -94,7 +118,9 @@ export function HeroSection() {
             <div className="hidden sm:block h-12 w-px bg-gradient-to-b from-transparent via-gray-300 to-transparent" />
             <div>
               <div className="text-3xl font-bold text-secondary">15+</div>
-              <p className="text-gray-600 text-sm">Especialistas Certificados</p>
+              <p className="text-gray-600 text-sm">
+                Especialistas Certificados
+              </p>
             </div>
             <div className="hidden sm:block h-12 w-px bg-gradient-to-b from-transparent via-gray-300 to-transparent" />
             <div>

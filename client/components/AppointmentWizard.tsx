@@ -7,8 +7,22 @@ import {
   CheckCircle,
   AlertCircle,
 } from "lucide-react";
-import { Service, ServiceCategory } from "@shared/database";
-import { GetServicesResponse } from "@shared/api";
+import { ServiceCategory } from "@shared/database";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import {
+  fetchServices,
+  selectService as selectServiceAction,
+} from "@/store/slices/servicesSlice";
+import {
+  setService,
+  toggleArea,
+  setDate,
+  setTime,
+  setPersonalInfo,
+  nextStep,
+  previousStep,
+  resetAppointment,
+} from "@/store/slices/appointmentSlice";
 
 // Category display icons
 const categoryIcons: Record<ServiceCategory, string> = {
@@ -40,7 +54,7 @@ const BLOCKED_DATES = new Set([
 ]);
 
 interface WizardData {
-  service: number | null; // Changed from string to number to match service ID
+  service: number | null;
   selectedAreas: string[];
   date: string;
   time: string;
@@ -50,76 +64,80 @@ interface WizardData {
   notes: string;
 }
 
+interface ValidationErrors {
+  service?: string;
+  selectedAreas?: string;
+  date?: string;
+  time?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+}
+
 export function AppointmentWizard() {
-  const [step, setStep] = useState(1);
-  const [services, setServices] = useState<Service[]>([]);
-  const [loadingServices, setLoadingServices] = useState(true);
-  const [data, setData] = useState<WizardData>({
-    service: null,
-    selectedAreas: [],
-    date: "",
-    time: "",
-    name: "",
-    email: "",
-    phone: "",
-    notes: "",
-  });
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  // Redux state and dispatch
+  const dispatch = useAppDispatch();
+  const {
+    services,
+    loading: loadingServices,
+    error: servicesError,
+  } = useAppSelector((state) => state.services);
+  const appointment = useAppSelector((state) => state.appointment);
+  const step = appointment.currentStep;
+
+  // Local state for validation errors
+  const [errors, setErrors] = useState<ValidationErrors>({});
 
   // Fetch services on component mount
   useEffect(() => {
-    const fetchServices = async () => {
-      try {
-        const response = await fetch("/api/services");
-        const result: GetServicesResponse = await response.json();
-        if (result.success && result.data) {
-          setServices(result.data);
-        }
-      } catch (error) {
-        console.error("Error fetching services:", error);
-      } finally {
-        setLoadingServices(false);
-      }
-    };
-
-    fetchServices();
-  }, []);
+    dispatch(fetchServices());
+  }, [dispatch]);
 
   const handleServiceSelect = (serviceId: number) => {
-    setData({ ...data, service: serviceId });
-    setErrors({ ...errors, service: "" });
+    dispatch(selectServiceAction(serviceId));
+    dispatch(setService(serviceId));
+    setErrors({ ...errors, service: undefined });
   };
 
   const handleAreaToggle = (areaId: string) => {
-    const newAreas = data.selectedAreas.includes(areaId)
-      ? data.selectedAreas.filter((a) => a !== areaId)
-      : [...data.selectedAreas, areaId];
-    setData({ ...data, selectedAreas: newAreas });
-    setErrors({ ...errors, selectedAreas: "" });
+    dispatch(toggleArea(areaId));
+    setErrors({ ...errors, selectedAreas: undefined });
   };
 
   const handleInputChange = (field: keyof WizardData, value: string) => {
-    setData({ ...data, [field]: value });
-    setErrors({ ...errors, [field]: "" });
+    if (field === "date") {
+      dispatch(setDate(value));
+    } else if (field === "time") {
+      dispatch(setTime(value));
+    } else if (
+      field === "name" ||
+      field === "email" ||
+      field === "phone" ||
+      field === "notes"
+    ) {
+      dispatch(setPersonalInfo({ [field]: value }));
+    }
+    setErrors({ ...errors, [field]: undefined });
   };
 
   const validateStep = (stepNum: number): boolean => {
-    const newErrors: Record<string, string> = {};
+    const newErrors: ValidationErrors = {};
 
     if (stepNum === 1) {
-      if (!data.service) newErrors.service = "Selecciona un servicio";
-      if (data.selectedAreas.length === 0)
+      if (!appointment.service) newErrors.service = "Selecciona un servicio";
+      if (appointment.selectedAreas.length === 0)
         newErrors.selectedAreas = "Selecciona al menos un área";
     } else if (stepNum === 2) {
-      if (!data.date) newErrors.date = "Selecciona una fecha";
-      if (!data.time) newErrors.time = "Selecciona una hora";
+      if (!appointment.date) newErrors.date = "Selecciona una fecha";
+      if (!appointment.time) newErrors.time = "Selecciona una hora";
     } else if (stepNum === 3) {
-      if (!data.name.trim()) newErrors.name = "El nombre es requerido";
-      if (!data.email.trim()) newErrors.email = "El email es requerido";
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email))
+      if (!appointment.name.trim()) newErrors.name = "El nombre es requerido";
+      if (!appointment.email.trim()) newErrors.email = "El email es requerido";
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(appointment.email))
         newErrors.email = "Email inválido";
-      if (!data.phone.trim()) newErrors.phone = "El teléfono es requerido";
-      if (!/^[0-9+\-\s()]{10,}$/.test(data.phone))
+      if (!appointment.phone.trim())
+        newErrors.phone = "El teléfono es requerido";
+      if (!/^[0-9+\-\s()]{10,}$/.test(appointment.phone))
         newErrors.phone = "Teléfono inválido";
     }
 
@@ -129,19 +147,21 @@ export function AppointmentWizard() {
 
   const handleNext = () => {
     if (validateStep(step)) {
-      setStep(step + 1);
+      dispatch(nextStep());
     }
   };
 
   const handlePrev = () => {
-    setStep(step - 1);
+    dispatch(previousStep());
   };
 
   const handleSubmit = () => {
     if (validateStep(step)) {
-      console.log("Appointment data:", data);
+      console.log("Appointment data:", appointment);
       // Here you would send the data to your backend
-      alert(`¡Cita reservada! Te contactaremos en ${data.phone}`);
+      alert(`¡Cita reservada! Te contactaremos en ${appointment.phone}`);
+      // Reset form after submission
+      dispatch(resetAppointment());
     }
   };
 
@@ -409,7 +429,7 @@ export function AppointmentWizard() {
                           whileHover={{ scale: 1.03 }}
                           whileTap={{ scale: 0.97 }}
                           className={`group relative p-5 text-left rounded-2xl border-2 backdrop-blur-sm transition-all overflow-hidden ${
-                            data.service === service.id
+                            appointment.service === service.id
                               ? "border-primary bg-primary/10 shadow-lg shadow-primary/30"
                               : "border-white/40 hover:border-primary/50 bg-white/40 hover:bg-white/60"
                           }`}
@@ -439,7 +459,7 @@ export function AppointmentWizard() {
                               </p>
                               <motion.div
                                 animate={
-                                  data.service === service.id
+                                  appointment.service === service.id
                                     ? {
                                         scale: [1, 1.2, 1],
                                       }
@@ -449,12 +469,12 @@ export function AppointmentWizard() {
                                   duration: 0.4,
                                 }}
                                 className={`w-6 h-6 rounded-full border-2 mt-3 flex items-center justify-center transition-all ${
-                                  data.service === service.id
+                                  appointment.service === service.id
                                     ? "border-primary bg-primary"
                                     : "border-gray-300"
                                 }`}
                               >
-                                {data.service === service.id && (
+                                {appointment.service === service.id && (
                                   <div className="w-2 h-2 bg-white rounded-full" />
                                 )}
                               </motion.div>
@@ -497,14 +517,14 @@ export function AppointmentWizard() {
                           whileHover={{ scale: 1.08 }}
                           whileTap={{ scale: 0.92 }}
                           className={`p-4 rounded-2xl border-2 transition-all backdrop-blur-sm text-center group ${
-                            data.selectedAreas.includes(area.id)
+                            appointment.selectedAreas.includes(area.id)
                               ? "border-secondary bg-secondary/20 shadow-lg shadow-secondary/30"
                               : "border-white/40 hover:border-secondary/50 bg-white/40 hover:bg-white/60"
                           }`}
                         >
                           <motion.div
                             animate={
-                              data.selectedAreas.includes(area.id)
+                              appointment.selectedAreas.includes(area.id)
                                 ? { scale: [1, 1.2, 1] }
                                 : {}
                             }
@@ -567,7 +587,7 @@ export function AppointmentWizard() {
                       animate={{ opacity: 1 }}
                       transition={{ delay: 0.2 }}
                       type="date"
-                      value={data.date}
+                      value={appointment.date}
                       onChange={(e) =>
                         handleInputChange("date", e.target.value)
                       }
@@ -611,7 +631,7 @@ export function AppointmentWizard() {
                           whileHover={{ scale: 1.08 }}
                           whileTap={{ scale: 0.92 }}
                           className={`p-4 rounded-2xl border-2 font-bold transition-all backdrop-blur-sm ${
-                            data.time === time
+                            appointment.time === time
                               ? "border-accent bg-accent/20 text-accent shadow-lg shadow-accent/30"
                               : "border-white/40 text-gray-700 hover:border-accent/50 bg-white/40 hover:bg-white/60"
                           }`}
@@ -622,7 +642,7 @@ export function AppointmentWizard() {
                     </motion.div>
                   </div>
 
-                  {data.service && (
+                  {appointment.service && (
                     <motion.div
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -630,13 +650,14 @@ export function AppointmentWizard() {
                     >
                       <p className="text-sm text-gray-600 mb-2">
                         <span className="font-bold text-primary">
-                          {getServiceName(data.service)}
+                          {getServiceName(appointment.service)}
                         </span>{" "}
-                        - ${getServicePrice(data.service)}
+                        - ${getServicePrice(appointment.service)}
                       </p>
-                      {data.selectedAreas.length > 0 && (
+                      {appointment.selectedAreas.length > 0 && (
                         <p className="text-sm text-gray-600 font-medium">
-                          Áreas: {data.selectedAreas.length} seleccionada(s)
+                          Áreas: {appointment.selectedAreas.length}{" "}
+                          seleccionada(s)
                         </p>
                       )}
                     </motion.div>
@@ -712,7 +733,7 @@ export function AppointmentWizard() {
                         <input
                           type={input.type}
                           placeholder={input.placeholder}
-                          value={data[input.field as keyof WizardData]}
+                          value={appointment[input.field as keyof WizardData]}
                           onChange={(e) =>
                             handleInputChange(
                               input.field as keyof WizardData,
@@ -734,7 +755,7 @@ export function AppointmentWizard() {
                       </label>
                       <textarea
                         placeholder="¿Alguna alergia o condición especial?"
-                        value={data.notes}
+                        value={appointment.notes}
                         onChange={(e) =>
                           handleInputChange("notes", e.target.value)
                         }
@@ -782,18 +803,18 @@ export function AppointmentWizard() {
                     {[
                       {
                         label: "Servicio",
-                        value: getServiceName(data.service),
-                        price: `$${getServicePrice(data.service).toFixed(2)}`,
+                        value: getServiceName(appointment.service),
+                        price: `$${getServicePrice(appointment.service).toFixed(2)}`,
                         icon: "🎯",
                       },
                       {
                         label: "Fecha y Hora",
-                        value: `${data.date} a las ${data.time}`,
+                        value: `${appointment.date} a las ${appointment.time}`,
                         icon: "📅",
                       },
                       {
                         label: "Información de Contacto",
-                        value: `${data.name} • ${data.phone}`,
+                        value: `${appointment.name} • ${appointment.phone}`,
                         icon: "👤",
                       },
                     ].map((item, idx) => (
@@ -822,7 +843,7 @@ export function AppointmentWizard() {
                       </motion.div>
                     ))}
 
-                    {data.selectedAreas.length > 0 && (
+                    {appointment.selectedAreas.length > 0 && (
                       <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -834,7 +855,7 @@ export function AppointmentWizard() {
                         </p>
                         <div className="flex flex-wrap gap-2">
                           {BODY_AREAS.filter((a) =>
-                            data.selectedAreas.includes(a.id),
+                            appointment.selectedAreas.includes(a.id),
                           ).map((area) => (
                             <motion.span
                               key={area.id}
