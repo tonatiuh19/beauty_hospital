@@ -54,3 +54,4 @@ temp/
 # Markdown files (except README)
 *.md
 !README.md
+.vercel

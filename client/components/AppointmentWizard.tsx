@@ -7,7 +7,6 @@ import {
   CheckCircle,
   AlertCircle,
 } from "lucide-react";
-import { ServiceCategory } from "@shared/database";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   fetchServices,
@@ -24,23 +23,14 @@ import {
   resetAppointment,
 } from "@/store/slices/appointmentSlice";
 
-// Category display icons
-const categoryIcons: Record<ServiceCategory, string> = {
-  [ServiceCategory.LASER_HAIR_REMOVAL]: "✨",
-  [ServiceCategory.FACIAL_TREATMENT]: "🧖",
-  [ServiceCategory.BODY_TREATMENT]: "💆",
-  [ServiceCategory.CONSULTATION]: "👨‍⚕️",
-  [ServiceCategory.OTHER]: "�",
-};
-
 const BODY_AREAS = [
-  { id: "face", label: "Cara", emoji: "👤" },
-  { id: "underarms", label: "Axilas", emoji: "💪" },
-  { id: "bikini", label: "Bikini", emoji: "👙" },
-  { id: "legs", label: "Piernas", emoji: "🦵" },
-  { id: "arms", label: "Brazos", emoji: "💪" },
-  { id: "back", label: "Espalda", emoji: "🔙" },
-  { id: "full", label: "Cuerpo Completo", emoji: "👯" },
+  { id: "face", label: "Cara" },
+  { id: "underarms", label: "Axilas" },
+  { id: "bikini", label: "Bikini" },
+  { id: "legs", label: "Piernas" },
+  { id: "arms", label: "Brazos" },
+  { id: "back", label: "Espalda" },
+  { id: "full", label: "Cuerpo Completo" },
 ];
 
 // Mock blocked dates (dates that are unavailable)
@@ -87,6 +77,11 @@ export function AppointmentWizard() {
 
   // Local state for validation errors
   const [errors, setErrors] = useState<ValidationErrors>({});
+
+  // Scroll to top when component mounts
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
 
   // Fetch services on component mount
   useEffect(() => {
@@ -415,10 +410,6 @@ export function AppointmentWizard() {
 
                   <motion.div className="grid gap-4 mb-8">
                     {services.map((service, idx) => {
-                      const icon =
-                        categoryIcons[service.category] ||
-                        categoryIcons[ServiceCategory.OTHER];
-
                       return (
                         <motion.button
                           key={service.id}
@@ -437,9 +428,8 @@ export function AppointmentWizard() {
                           {/* Background effect on hover */}
                           <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity" />
 
-                          <div className="relative flex justify-between items-start">
+                          <div className="relative flex justify-between items-center">
                             <div className="flex gap-4 flex-1">
-                              <div className="text-3xl">{icon}</div>
                               <div className="flex-1">
                                 <h3 className="font-bold text-foreground mb-1 text-lg">
                                   {service.name}
@@ -449,7 +439,7 @@ export function AppointmentWizard() {
                                     "Servicio profesional de calidad"}
                                 </p>
                                 <p className="text-xs text-gray-500 font-medium">
-                                  ⏱ {service.duration_minutes} minutos
+                                  {service.duration_minutes} minutos
                                 </p>
                               </div>
                             </div>
@@ -457,27 +447,6 @@ export function AppointmentWizard() {
                               <p className="font-bold text-lg text-primary">
                                 ${service.price.toFixed(2)}
                               </p>
-                              <motion.div
-                                animate={
-                                  appointment.service === service.id
-                                    ? {
-                                        scale: [1, 1.2, 1],
-                                      }
-                                    : {}
-                                }
-                                transition={{
-                                  duration: 0.4,
-                                }}
-                                className={`w-6 h-6 rounded-full border-2 mt-3 flex items-center justify-center transition-all ${
-                                  appointment.service === service.id
-                                    ? "border-primary bg-primary"
-                                    : "border-gray-300"
-                                }`}
-                              >
-                                {appointment.service === service.id && (
-                                  <div className="w-2 h-2 bg-white rounded-full" />
-                                )}
-                              </motion.div>
                             </div>
                           </div>
                         </motion.button>
@@ -522,17 +491,6 @@ export function AppointmentWizard() {
                               : "border-white/40 hover:border-secondary/50 bg-white/40 hover:bg-white/60"
                           }`}
                         >
-                          <motion.div
-                            animate={
-                              appointment.selectedAreas.includes(area.id)
-                                ? { scale: [1, 1.2, 1] }
-                                : {}
-                            }
-                            transition={{ duration: 0.3 }}
-                            className="text-3xl mb-2"
-                          >
-                            {area.emoji}
-                          </motion.div>
                           <p className="text-sm font-bold text-foreground group-hover:text-secondary transition-all">
                             {area.label}
                           </p>
@@ -568,7 +526,7 @@ export function AppointmentWizard() {
 
                   <div className="mb-8">
                     <label className="block font-bold text-foreground mb-3 text-lg">
-                      ��� Fecha disponible
+                      Fecha disponible
                     </label>
                     {errors.date && (
                       <motion.div
@@ -597,7 +555,7 @@ export function AppointmentWizard() {
 
                   <div className="mb-8">
                     <label className="block font-bold text-foreground mb-4 text-lg">
-                      🕐 Hora Preferida
+                      Hora Preferida
                     </label>
                     {errors.time && (
                       <motion.div
@@ -805,17 +763,14 @@ export function AppointmentWizard() {
                         label: "Servicio",
                         value: getServiceName(appointment.service),
                         price: `$${getServicePrice(appointment.service).toFixed(2)}`,
-                        icon: "🎯",
                       },
                       {
                         label: "Fecha y Hora",
                         value: `${appointment.date} a las ${appointment.time}`,
-                        icon: "📅",
                       },
                       {
                         label: "Información de Contacto",
                         value: `${appointment.name} • ${appointment.phone}`,
-                        icon: "👤",
                       },
                     ].map((item, idx) => (
                       <motion.div
@@ -828,7 +783,7 @@ export function AppointmentWizard() {
                         <div className="flex items-start justify-between">
                           <div>
                             <p className="text-sm text-gray-600 font-bold mb-2">
-                              {item.icon} {item.label}
+                              {item.label}
                             </p>
                             <p className="text-lg font-bold text-primary">
                               {item.value}
@@ -851,7 +806,7 @@ export function AppointmentWizard() {
                         className="p-5 rounded-2xl bg-white/50 border-2 border-white/40 backdrop-blur-sm"
                       >
                         <p className="text-sm text-gray-600 font-bold mb-3">
-                          🎨 Áreas de Tratamiento
+                          Áreas de Tratamiento
                         </p>
                         <div className="flex flex-wrap gap-2">
                           {BODY_AREAS.filter((a) =>
@@ -863,7 +818,7 @@ export function AppointmentWizard() {
                               animate={{ scale: 1 }}
                               className="px-4 py-2 bg-secondary/30 text-secondary rounded-full text-sm font-bold border border-secondary/50 backdrop-blur-sm"
                             >
-                              {area.emoji} {area.label}
+                              {area.label}
                             </motion.span>
                           ))}
                         </div>

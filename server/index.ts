@@ -14,6 +14,10 @@ import {
 import { handleGetServices, handleGetServiceById } from "./routes/services";
 
 export function createServer() {
+  console.log("Creating Express server...");
+  console.log("Environment:", process.env.NODE_ENV);
+  console.log("DB Host:", process.env.DB_HOST ? "Set" : "Missing");
+  
   const app = express();
 
   // Middleware
@@ -21,16 +25,36 @@ export function createServer() {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  // Test database connection on startup
-  testConnection().catch(console.error);
+  // Log all requests in production for debugging
+  if (process.env.NODE_ENV === "production") {
+    app.use((req, _res, next) => {
+      console.log(`${req.method} ${req.url}`);
+      next();
+    });
+  }
+
+  // Test database connection on startup (non-blocking for serverless)
+  if (process.env.NODE_ENV !== "production") {
+    testConnection().catch(console.error);
+  }
 
   // Health check
-  app.get("/api/health", (_req, res) => {
-    res.json({
-      success: true,
-      message: "Beauty Hospital API is running",
-      timestamp: new Date().toISOString(),
-    });
+  app.get("/api/health", async (_req, res) => {
+    try {
+      const dbConnected = await testConnection();
+      res.json({
+        success: true,
+        message: "Beauty Hospital API is running",
+        timestamp: new Date().toISOString(),
+        database: dbConnected ? "connected" : "disconnected",
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Health check failed",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
   });
 
   // Example API routes

@@ -1,9 +1,15 @@
 {
   "version": 2,
+  "buildCommand": "npm run build:client",
+  "outputDirectory": "dist/spa",
   "rewrites": [
     {
-      "source": "/api/(.*)",
+      "source": "/api/:path*",
       "destination": "/api"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
