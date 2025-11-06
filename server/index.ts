@@ -17,7 +17,7 @@ export function createServer() {
   console.log("Creating Express server...");
   console.log("Environment:", process.env.NODE_ENV);
   console.log("DB Host:", process.env.DB_HOST ? "Set" : "Missing");
-  
+
   const app = express();
 
   // Middleware
