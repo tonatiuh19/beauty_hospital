@@ -75,6 +75,51 @@ export interface RefreshTokenResponse {
   refreshToken: string;
 }
 
+// ==================== PASSWORDLESS AUTHENTICATION ====================
+export interface CheckUserRequest {
+  email: string;
+}
+
+export interface CheckUserResponse {
+  success: boolean;
+  exists: boolean;
+  user?: UserWithoutPassword;
+}
+
+export interface SendCodeRequest {
+  user_id: number;
+  email: string;
+}
+
+export interface SendCodeResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface VerifyCodeRequest {
+  user_id: number;
+  code: number;
+}
+
+export interface VerifyCodeResponse {
+  success: boolean;
+  user: UserWithoutPassword;
+}
+
+export interface CreatePasswordlessUserRequest {
+  email: string;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  date_of_birth: string;
+}
+
+export interface CreatePasswordlessUserResponse {
+  success: boolean;
+  exists: boolean;
+  user: UserWithoutPassword;
+}
+
 // ==================== USER MANAGEMENT ====================
 export interface CreateUserRequest {
   email: string;

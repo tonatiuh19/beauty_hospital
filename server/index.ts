@@ -12,6 +12,12 @@ import {
   handleGetCurrentUser,
 } from "./routes/auth";
 import { handleGetServices, handleGetServiceById } from "./routes/services";
+import {
+  checkUser,
+  sendCode,
+  verifyCode,
+  createUser,
+} from "./routes/auth-passwordless";
 
 export function createServer() {
   console.log("Creating Express server...");
@@ -25,13 +31,14 @@ export function createServer() {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  // Log all requests in production for debugging
-  if (process.env.NODE_ENV === "production") {
-    app.use((req, _res, next) => {
-      console.log(`${req.method} ${req.url}`);
-      next();
-    });
-  }
+  // Log all requests for debugging
+  app.use((req, _res, next) => {
+    console.log(`📨 ${req.method} ${req.url}`);
+    if (req.body && Object.keys(req.body).length > 0) {
+      console.log("   Body:", JSON.stringify(req.body, null, 2));
+    }
+    next();
+  });
 
   // Test database connection on startup (non-blocking for serverless)
   if (process.env.NODE_ENV !== "production") {
@@ -71,6 +78,12 @@ export function createServer() {
   app.post("/api/auth/refresh", handleRefreshToken);
   app.post("/api/auth/logout", handleLogout);
   app.get("/api/auth/me", authenticate, handleGetCurrentUser);
+
+  // ==================== PASSWORDLESS AUTH ROUTES ====================
+  app.post("/api/auth/check-user", checkUser);
+  app.post("/api/auth/send-code", sendCode);
+  app.post("/api/auth/verify-code", verifyCode);
+  app.post("/api/auth/create-user", createUser);
 
   // ==================== SERVICES ROUTES ====================
   app.get("/api/services", handleGetServices);
