@@ -155,6 +155,7 @@ export interface Appointment {
   scheduled_at: Date;
   duration_minutes: number;
   notes?: string;
+  booked_for_self: boolean; // true if appointment is for the logged-in user, false if for someone else
   created_by: number;
   created_at: Date;
   updated_at: Date;

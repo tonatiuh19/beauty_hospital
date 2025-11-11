@@ -10,6 +10,7 @@ export interface AppointmentState {
   email: string;
   phone: string;
   notes: string;
+  bookedForSelf: boolean | null; // null = not selected yet, true = for me, false = for someone else
   currentStep: number;
 }
 
@@ -23,6 +24,7 @@ const initialState: AppointmentState = {
   email: "",
   phone: "",
   notes: "",
+  bookedForSelf: null,
   currentStep: 1,
 };
 
@@ -74,6 +76,10 @@ const appointmentSlice = createSlice({
       if (action.payload.notes !== undefined)
         state.notes = action.payload.notes;
     },
+    // Set booking type
+    setBookedForSelf: (state, action: PayloadAction<boolean>) => {
+      state.bookedForSelf = action.payload;
+    },
     // Update current step
     setStep: (state, action: PayloadAction<number>) => {
       state.currentStep = action.payload;
@@ -105,6 +111,7 @@ export const {
   setDate,
   setTime,
   setPersonalInfo,
+  setBookedForSelf,
   setStep,
   nextStep,
   previousStep,

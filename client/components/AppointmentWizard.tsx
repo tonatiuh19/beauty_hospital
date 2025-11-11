@@ -6,7 +6,11 @@ import {
   Sparkles,
   CheckCircle,
   AlertCircle,
+  User,
+  Users,
 } from "lucide-react";
+import { loadStripe } from "@stripe/stripe-js";
+import { Elements } from "@stripe/react-stripe-js";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   fetchServices,
@@ -18,6 +22,7 @@ import {
   setDate,
   setTime,
   setPersonalInfo,
+  setBookedForSelf,
   nextStep,
   previousStep,
   resetAppointment,
@@ -34,6 +39,16 @@ import {
 } from "@/store/slices/businessHoursSlice";
 import { AuthModal } from "./AuthModal";
 import { SimpleCalendar } from "./SimpleCalendar";
+import { StripeCheckoutForm } from "./StripeCheckoutForm";
+import { AppointmentConfirmationModal } from "./AppointmentConfirmationModal";
+import axios from "@/lib/axios";
+import type { ApiResponse, StripePaymentResponse } from "@shared/api";
+
+// Initialize Stripe - get publishable key from environment
+const stripePromise = loadStripe(
+  import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ||
+    "pk_test_your_stripe_publishable_key",
+);
 
 const BODY_AREAS = [
   { id: "face", label: "Cara" },
@@ -85,11 +100,33 @@ export function AppointmentWizard() {
   // Local state for validation errors and auth modal
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+
+  // Stripe payment state
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [paymentId, setPaymentId] = useState<number | null>(null);
+  const [isCreatingPayment, setIsCreatingPayment] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   // Scroll to top when component mounts
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
+
+  // Scroll to top when step changes
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [step]);
+
+  // Auto-accept terms and privacy when reaching payment step
+  useEffect(() => {
+    if (step === 4 && isAuthenticated) {
+      setAcceptedTerms(true);
+      setAcceptedPrivacy(true);
+    }
+  }, [step, isAuthenticated]);
 
   // Fetch services on component mount
   useEffect(() => {
@@ -109,6 +146,12 @@ export function AppointmentWizard() {
       .split("T")[0];
     dispatch(fetchBlockedDates({ start_date: startDate, end_date: endDate }));
   }, [dispatch]);
+
+  // Auto-skip Step 3 if logged in and haven't made booking choice yet
+  useEffect(() => {
+    // This useEffect is no longer needed since we removed the old Step 3
+    // Step 3 is now the Sesión/Booking Type step
+  }, [step, isAuthenticated, appointment.bookedForSelf, user, dispatch]);
 
   const handleServiceSelect = (serviceId: number) => {
     dispatch(selectServiceAction(serviceId));
@@ -147,20 +190,49 @@ export function AppointmentWizard() {
     } else if (stepNum === 2) {
       if (!appointment.date) {
         newErrors.date = "Selecciona una fecha";
-      } else if (isDateBlocked(appointment.date, blockedDates)) {
-        newErrors.date =
-          "Esta fecha no está disponible. Por favor selecciona otra.";
+      } else {
+        // Check if the entire day is blocked (not just partial times)
+        const blockedTimesForDate = getBlockedTimesForDate(
+          appointment.date,
+          blockedDates,
+        );
+
+        // Only show error if there's an all-day block for this date
+        const hasAllDayBlock = blockedTimesForDate.some(
+          (block) => block.all_day,
+        );
+
+        if (hasAllDayBlock) {
+          newErrors.date =
+            "Esta fecha no está disponible. Por favor selecciona otra.";
+        }
       }
       if (!appointment.time) newErrors.time = "Selecciona una hora";
     } else if (stepNum === 3) {
-      if (!appointment.name.trim()) newErrors.name = "El nombre es requerido";
-      if (!appointment.email.trim()) newErrors.email = "El email es requerido";
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(appointment.email))
-        newErrors.email = "Email inválido";
-      if (!appointment.phone.trim())
-        newErrors.phone = "El teléfono es requerido";
-      if (!/^[0-9+\-\s()]{10,}$/.test(appointment.phone))
-        newErrors.phone = "Teléfono inválido";
+      // Step 3 requires authentication
+      if (!isAuthenticated) {
+        newErrors.service = "Debes iniciar sesión para continuar";
+        return true; // Block navigation
+      }
+
+      // Logged in users must select booking type
+      if (appointment.bookedForSelf === null) {
+        newErrors.service =
+          "Selecciona si la cita es para ti o para otra persona";
+      }
+
+      // If booking for someone else, validate their contact info
+      if (appointment.bookedForSelf === false) {
+        if (!appointment.name.trim()) newErrors.name = "El nombre es requerido";
+        if (!appointment.email.trim())
+          newErrors.email = "El email es requerido";
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(appointment.email))
+          newErrors.email = "Email inválido";
+        if (!appointment.phone.trim())
+          newErrors.phone = "El teléfono es requerido";
+        if (!/^[0-9+\-\s()]{10,}$/.test(appointment.phone))
+          newErrors.phone = "Teléfono inválido";
+      }
     }
 
     setErrors(newErrors);
@@ -177,21 +249,125 @@ export function AppointmentWizard() {
     dispatch(previousStep());
   };
 
-  const handleSubmit = () => {
-    // Check if user is authenticated before allowing final submission
-    if (!isAuthenticated) {
-      setShowAuthModal(true);
+  // Create payment intent when user reaches step 4 (payment)
+  const createPaymentIntent = async () => {
+    if (
+      !isAuthenticated ||
+      !user ||
+      !appointment.service ||
+      !appointment.date ||
+      !appointment.time
+    ) {
+      setPaymentError(
+        "Missing required appointment information or authentication",
+      );
       return;
     }
 
-    if (validateStep(step)) {
-      console.log("Appointment data:", appointment);
-      console.log("User:", user);
-      // Here you would send the data to your backend with user info
-      alert(`¡Cita reservada! Te contactaremos en ${appointment.phone}`);
-      // Reset form after submission
-      dispatch(resetAppointment());
+    setIsCreatingPayment(true);
+    setPaymentError(null);
+
+    try {
+      const scheduled_at = `${appointment.date}T${appointment.time}:00`;
+
+      const response = await axios.post<ApiResponse<StripePaymentResponse>>(
+        "/appointments/book-with-payment",
+        {
+          service_id: appointment.service,
+          scheduled_at,
+          duration_minutes: getServiceDuration(appointment.service),
+          notes: appointment.notes || undefined,
+          booked_for_self: appointment.bookedForSelf,
+          selected_areas: appointment.selectedAreas,
+          accepted_terms: acceptedTerms,
+          accepted_privacy: acceptedPrivacy,
+          payment_amount: getServicePrice(appointment.service),
+          currency: "mxn",
+        },
+      );
+
+      if (response.data.success && response.data.data) {
+        setClientSecret(response.data.data.clientSecret);
+        setPaymentId(response.data.data.paymentId);
+      } else {
+        setPaymentError(response.data.error || "Failed to create payment");
+      }
+    } catch (error: any) {
+      console.error("Payment creation error:", error);
+      setPaymentError(
+        error.response?.data?.error ||
+          "Error al crear el pago. Por favor intenta de nuevo.",
+      );
+    } finally {
+      setIsCreatingPayment(false);
     }
+  };
+
+  // Handle successful payment
+  const handlePaymentSuccess = async () => {
+    try {
+      // Confirm payment on backend
+      const response = await axios.post("/appointments/confirm-payment", {
+        payment_intent_id: clientSecret?.split("_secret_")[0],
+      });
+
+      if (response.data.success) {
+        // Reset form
+        dispatch(resetAppointment());
+        setClientSecret(null);
+        setPaymentId(null);
+        setAcceptedTerms(false);
+        setAcceptedPrivacy(false);
+        // Show confirmation modal
+        setShowConfirmationModal(true);
+      }
+    } catch (error: any) {
+      console.error("Payment confirmation error:", error);
+      setPaymentError("Error al confirmar el pago");
+    }
+  };
+
+  // Handle payment error
+  const handlePaymentError = (error: string) => {
+    setPaymentError(error);
+  };
+
+  // Handle confirmation modal close
+  const handleConfirmationClose = () => {
+    setShowConfirmationModal(false);
+  };
+
+  // Watch for step 4 (payment) and terms acceptance to create payment intent
+  useEffect(() => {
+    console.log("Payment useEffect triggered:", {
+      step,
+      acceptedTerms,
+      acceptedPrivacy,
+      clientSecret: !!clientSecret,
+      isCreatingPayment,
+      isAuthenticated,
+      hasUser: !!user,
+    });
+
+    if (
+      step === 4 &&
+      acceptedTerms &&
+      acceptedPrivacy &&
+      !clientSecret &&
+      !isCreatingPayment &&
+      isAuthenticated &&
+      user
+    ) {
+      console.log("Creating payment intent...");
+      createPaymentIntent();
+    }
+  }, [step, acceptedTerms, acceptedPrivacy, isAuthenticated, user]);
+
+  const handleSubmit = () => {
+    // This function is no longer used for final submission
+    // Payment is handled by the Stripe form
+    // Just for backwards compatibility with navigation
+    console.log("Submit called - payment should be handled by Stripe form");
   };
 
   const getServiceName = (id: number | null) => {
@@ -207,6 +383,12 @@ export function AppointmentWizard() {
   const getServiceDuration = (id: number | null) => {
     if (!id) return 60; // Default 60 minutes
     return services.find((s) => s.id === id)?.duration_minutes || 60;
+  };
+
+  const getAreaLabels = (areaIds: string[]) => {
+    return areaIds.map(
+      (id) => BODY_AREAS.find((area) => area.id === id)?.label || id,
+    );
   };
 
   // Generate time slots based on service duration and business hours for selected date
@@ -372,7 +554,9 @@ export function AppointmentWizard() {
         />
       </div>
 
-      <div className="max-w-2xl mx-auto relative z-10">
+      <div
+        className={`mx-auto relative z-10 transition-all duration-500 ${step === 4 ? "max-w-6xl" : "max-w-2xl"}`}
+      >
         {/* Header with enhanced styling */}
         <motion.div
           initial={{ opacity: 0, y: -30 }}
@@ -498,8 +682,8 @@ export function AppointmentWizard() {
                         : s === 2
                           ? "Fecha"
                           : s === 3
-                            ? "Datos"
-                            : "Confirmar"}
+                            ? "Sesión"
+                            : "Pago"}
                     </motion.span>
                   </motion.div>
                 );
@@ -526,11 +710,11 @@ export function AppointmentWizard() {
           className="relative mb-8"
         >
           {/* Neon glow effect */}
-          <div className="absolute inset-0 bg-primary/20 rounded-3xl blur-xl opacity-75" />
+          <div className="absolute inset-0 bg-primary/20 rounded-3xl blur-xl opacity-75 pointer-events-none" />
 
           <div className="relative bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl overflow-hidden border border-white/40">
             {/* Solid color border effect */}
-            <div className="absolute inset-0 bg-primary/5 opacity-0 hover:opacity-100 transition-opacity duration-500 rounded-3xl" />
+            <div className="absolute inset-0 bg-primary/5 opacity-0 hover:opacity-100 transition-opacity duration-500 rounded-3xl pointer-events-none" />
 
             <AnimatePresence mode="wait">
               {/* Step 1: Service Selection */}
@@ -842,7 +1026,7 @@ export function AppointmentWizard() {
                 </motion.div>
               )}
 
-              {/* Step 3: User Information */}
+              {/* Step 3: Authentication & Booking Type Selection + Contact Info */}
               {step === 3 && (
                 <motion.div
                   key="step3"
@@ -853,98 +1037,285 @@ export function AppointmentWizard() {
                   transition={{ duration: 0.4 }}
                   className="p-6 sm:p-10"
                 >
-                  <motion.h2
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.2 }}
-                    className="text-3xl font-bold mb-2 text-accent"
-                  >
-                    Tu Información Personal
-                  </motion.h2>
-                  <p className="text-gray-600 mb-8">
-                    Completa tus datos para confirmar la cita
-                  </p>
+                  {!isAuthenticated ? (
+                    <>
+                      <div className="text-center mb-10">
+                        <motion.div
+                          initial={{ scale: 0, rotate: -180 }}
+                          animate={{ scale: 1, rotate: 0 }}
+                          transition={{
+                            type: "spring",
+                            delay: 0.2,
+                            stiffness: 100,
+                          }}
+                          className="mx-auto w-20 h-20 bg-amber-500 rounded-full flex items-center justify-center mb-6 shadow-2xl shadow-amber-500/50"
+                        >
+                          <AlertCircle className="w-10 h-10 text-white" />
+                        </motion.div>
+                        <h2 className="text-3xl font-bold mb-3 text-amber-600">
+                          Inicia Sesión para Continuar
+                        </h2>
+                        <p className="text-gray-600 text-lg mb-6">
+                          Por favor inicia sesión o crea una cuenta para
+                          reservar tu cita
+                        </p>
+                        <motion.button
+                          onClick={() => setShowAuthModal(true)}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          className="px-8 py-4 bg-primary text-white rounded-xl font-bold hover:shadow-lg hover:shadow-primary/50 transition-all"
+                        >
+                          Iniciar Sesión / Registrarse
+                        </motion.button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-center mb-10">
+                        <motion.div
+                          initial={{ scale: 0, rotate: -180 }}
+                          animate={{ scale: 1, rotate: 0 }}
+                          transition={{
+                            type: "spring",
+                            delay: 0.2,
+                            stiffness: 100,
+                          }}
+                          className="mx-auto w-20 h-20 bg-blue-500 rounded-full flex items-center justify-center mb-6 shadow-2xl shadow-blue-500/50"
+                        >
+                          <CheckCircle className="w-10 h-10 text-white" />
+                        </motion.div>
+                        <h2 className="text-3xl font-bold mb-3 text-blue-600">
+                          ¿Para Quién es la Cita?
+                        </h2>
+                        <p className="text-gray-600 text-lg">
+                          Selecciona si la cita es para ti o para otra persona
+                        </p>
+                      </div>
 
-                  <motion.div className="space-y-6">
-                    {[
-                      {
-                        label: "Nombre Completo",
-                        placeholder: "Juan García",
-                        type: "text",
-                        field: "name",
-                      },
-                      {
-                        label: "Email",
-                        placeholder: "juan@example.com",
-                        type: "email",
-                        field: "email",
-                      },
-                      {
-                        label: "Teléfono",
-                        placeholder: "+52 1234567890",
-                        type: "tel",
-                        field: "phone",
-                      },
-                    ].map((input, idx) => (
                       <motion.div
-                        key={input.field}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.2 + idx * 0.1 }}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.6 }}
+                        className="p-5 rounded-2xl bg-emerald-100/60 border-2 border-emerald-300/60 backdrop-blur-sm mb-8"
                       >
-                        <label className="block text-sm font-bold text-foreground mb-3">
-                          {input.label}
-                        </label>
-                        {errors[input.field] && (
-                          <motion.div
-                            initial={{ opacity: 0, y: -10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="mb-2 p-3 bg-red-50 border border-red-300 rounded-lg flex gap-2 items-start backdrop-blur-sm"
-                          >
-                            <AlertCircle className="text-red-600 flex-shrink-0 w-4 h-4 mt-0.5" />
-                            <span className="text-sm text-red-700 font-medium">
-                              {errors[input.field]}
-                            </span>
-                          </motion.div>
-                        )}
-                        <input
-                          type={input.type}
-                          placeholder={input.placeholder}
-                          value={appointment[input.field as keyof WizardData]}
-                          onChange={(e) =>
-                            handleInputChange(
-                              input.field as keyof WizardData,
-                              e.target.value,
-                            )
-                          }
-                          className="w-full px-5 py-4 border-2 border-white/40 bg-white/40 backdrop-blur-sm rounded-2xl focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/20 transition-all text-foreground font-medium"
-                        />
+                        <p className="text-sm text-emerald-900 font-bold leading-relaxed flex items-start gap-2">
+                          <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                          <span>
+                            Sesión iniciada como {user?.first_name}{" "}
+                            {user?.last_name} ({user?.email})
+                          </span>
+                        </p>
                       </motion.div>
-                    ))}
 
-                    <motion.div
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: 0.5 }}
-                    >
-                      <label className="block text-sm font-bold text-foreground mb-3">
-                        Notas o Comentarios (Opcional)
-                      </label>
-                      <textarea
-                        placeholder="¿Alguna alergia o condición especial?"
-                        value={appointment.notes}
-                        onChange={(e) =>
-                          handleInputChange("notes", e.target.value)
-                        }
-                        rows={4}
-                        className="w-full px-5 py-4 border-2 border-white/40 bg-white/40 backdrop-blur-sm rounded-2xl focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/20 transition-all text-foreground font-medium resize-none"
-                      />
-                    </motion.div>
-                  </motion.div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                        <motion.button
+                          onClick={() => {
+                            dispatch(setBookedForSelf(true));
+                            // Auto-fill with logged-in user's data
+                            if (user) {
+                              dispatch(
+                                setPersonalInfo({
+                                  name: `${user.first_name} ${user.last_name}`,
+                                  email: user.email,
+                                  phone: user.phone || "",
+                                }),
+                              );
+                            }
+                          }}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.3 }}
+                          whileHover={{ scale: 1.03 }}
+                          whileTap={{ scale: 0.97 }}
+                          className={`group relative p-8 text-center rounded-2xl border-2 backdrop-blur-sm transition-all overflow-hidden ${
+                            appointment.bookedForSelf === true
+                              ? "border-primary bg-primary/10 shadow-lg shadow-primary/30"
+                              : "border-white/40 hover:border-primary/50 bg-white/40 hover:bg-white/60"
+                          }`}
+                        >
+                          <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          <div className="relative">
+                            <div className="mx-auto w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mb-4">
+                              <User className="w-8 h-8 text-primary" />
+                            </div>
+                            <h3 className="font-bold text-lg mb-2">Para Mí</h3>
+                            <p className="text-sm text-gray-600">
+                              La cita será para {user?.first_name}{" "}
+                              {user?.last_name}
+                            </p>
+                          </div>
+                        </motion.button>
+
+                        <motion.button
+                          onClick={() => {
+                            dispatch(setBookedForSelf(false));
+                            // Clear any auto-filled data so user can enter the other person's info
+                            dispatch(
+                              setPersonalInfo({
+                                name: "",
+                                email: "",
+                                phone: "",
+                              }),
+                            );
+                          }}
+                          initial={{ opacity: 0, x: 20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.4 }}
+                          whileHover={{ scale: 1.03 }}
+                          whileTap={{ scale: 0.97 }}
+                          className={`group relative p-8 text-center rounded-2xl border-2 backdrop-blur-sm transition-all overflow-hidden ${
+                            appointment.bookedForSelf === false
+                              ? "border-secondary bg-secondary/10 shadow-lg shadow-secondary/30"
+                              : "border-white/40 hover:border-secondary/50 bg-white/40 hover:bg-white/60"
+                          }`}
+                        >
+                          <div className="absolute inset-0 bg-secondary/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          <div className="relative">
+                            <div className="mx-auto w-16 h-16 bg-secondary/20 rounded-full flex items-center justify-center mb-4">
+                              <Users className="w-8 h-8 text-secondary" />
+                            </div>
+                            <h3 className="font-bold text-lg mb-2">
+                              Para Otra Persona
+                            </h3>
+                            <p className="text-sm text-gray-600">
+                              La cita será para alguien más
+                            </p>
+                          </div>
+                        </motion.button>
+                      </div>
+
+                      {appointment.bookedForSelf !== null && (
+                        <>
+                          <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="p-5 rounded-2xl bg-blue-100/40 border-2 border-blue-300/40 backdrop-blur-sm mb-8"
+                          >
+                            <p className="text-sm text-blue-900 font-bold leading-relaxed">
+                              {appointment.bookedForSelf
+                                ? "✓ Perfecto! La información de contacto será la tuya."
+                                : "✓ Por favor proporciona la información de contacto de la persona para quien es la cita."}
+                            </p>
+                          </motion.div>
+
+                          {/* Notes field for "Para Mí" */}
+                          {appointment.bookedForSelf === true && (
+                            <motion.div
+                              initial={{ opacity: 0, y: 20 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="mb-6"
+                            >
+                              <label className="block text-sm font-bold text-foreground mb-3">
+                                Notas o Comentarios (Opcional)
+                              </label>
+                              <textarea
+                                placeholder="¿Alguna alergia o condición especial?"
+                                value={appointment.notes}
+                                onChange={(e) =>
+                                  handleInputChange("notes", e.target.value)
+                                }
+                                rows={4}
+                                className="w-full px-5 py-4 border-2 border-white/40 bg-white/40 backdrop-blur-sm rounded-2xl focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/20 transition-all text-foreground font-medium resize-none"
+                              />
+                            </motion.div>
+                          )}
+                        </>
+                      )}
+
+                      {/* Contact info form for "Para Otra Persona" */}
+                      {appointment.bookedForSelf === false && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="space-y-6 mt-8"
+                        >
+                          <h3 className="text-xl font-bold text-gray-800 mb-4">
+                            Información de Contacto
+                          </h3>
+                          {[
+                            {
+                              label: "Nombre Completo",
+                              placeholder: "Nombre de la persona",
+                              type: "text",
+                              field: "name",
+                            },
+                            {
+                              label: "Email",
+                              placeholder: "email@example.com",
+                              type: "email",
+                              field: "email",
+                            },
+                            {
+                              label: "Teléfono",
+                              placeholder: "+52 1234567890",
+                              type: "tel",
+                              field: "phone",
+                            },
+                          ].map((input, idx) => (
+                            <motion.div
+                              key={input.field}
+                              initial={{ opacity: 0, x: -20 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: 0.2 + idx * 0.1 }}
+                            >
+                              <label className="block text-sm font-bold text-foreground mb-3">
+                                {input.label}
+                              </label>
+                              {errors[input.field] && (
+                                <motion.div
+                                  initial={{ opacity: 0, y: -10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  className="mb-2 p-3 bg-red-50 border border-red-300 rounded-lg flex gap-2 items-start backdrop-blur-sm"
+                                >
+                                  <AlertCircle className="text-red-600 flex-shrink-0 w-4 h-4 mt-0.5" />
+                                  <span className="text-sm text-red-700 font-medium">
+                                    {errors[input.field]}
+                                  </span>
+                                </motion.div>
+                              )}
+                              <input
+                                type={input.type}
+                                placeholder={input.placeholder}
+                                value={
+                                  appointment[input.field as keyof WizardData]
+                                }
+                                onChange={(e) =>
+                                  handleInputChange(
+                                    input.field as keyof WizardData,
+                                    e.target.value,
+                                  )
+                                }
+                                className="w-full px-5 py-4 border-2 border-white/40 bg-white/40 backdrop-blur-sm rounded-2xl focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/20 transition-all text-foreground font-medium"
+                              />
+                            </motion.div>
+                          ))}
+
+                          <motion.div
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: 0.5 }}
+                          >
+                            <label className="block text-sm font-bold text-foreground mb-3">
+                              Notas o Comentarios (Opcional)
+                            </label>
+                            <textarea
+                              placeholder="¿Alguna alergia o condición especial?"
+                              value={appointment.notes}
+                              onChange={(e) =>
+                                handleInputChange("notes", e.target.value)
+                              }
+                              rows={4}
+                              className="w-full px-5 py-4 border-2 border-white/40 bg-white/40 backdrop-blur-sm rounded-2xl focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/20 transition-all text-foreground font-medium resize-none"
+                            />
+                          </motion.div>
+                        </motion.div>
+                      )}
+                    </>
+                  )}
                 </motion.div>
               )}
 
-              {/* Step 4: Confirmation */}
+              {/* Step 4: Checkout & Payment */}
               {step === 4 && (
                 <motion.div
                   key="step4"
@@ -969,130 +1340,269 @@ export function AppointmentWizard() {
                       <CheckCircle className="w-10 h-10 text-white" />
                     </motion.div>
                     <h2 className="text-3xl font-bold mb-3 text-emerald-600">
-                      Reserva Casi Lista
+                      Resumen y Pago
                     </h2>
                     <p className="text-gray-600 text-lg">
-                      Revisa los detalles y confirma tu cita
+                      Revisa los detalles y completa tu reserva
                     </p>
                   </div>
 
-                  <motion.div className="space-y-4 mb-8">
-                    {[
-                      {
-                        label: "Servicio",
-                        value: getServiceName(appointment.service),
-                        price: `$${getServicePrice(appointment.service).toFixed(2)}`,
-                      },
-                      {
-                        label: "Fecha y Hora",
-                        value: `${appointment.date} a las ${appointment.time}`,
-                      },
-                      {
-                        label: "Información de Contacto",
-                        value: `${appointment.name} • ${appointment.phone}`,
-                      },
-                    ].map((item, idx) => (
+                  {/* Two Column Layout */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* Left Column - Payment Form (2/3 width) */}
+                    <div className="lg:col-span-2 space-y-6">
+                      {/* Payment Section - Stripe Integration */}
                       <motion.div
-                        key={idx}
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.1 + idx * 0.1 }}
-                        className="p-5 rounded-2xl bg-white/50 border-2 border-white/40 backdrop-blur-sm hover:border-primary/30 transition-all"
+                        transition={{ delay: 0.3 }}
                       >
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <p className="text-sm text-gray-600 font-bold mb-2">
-                              {item.label}
+                        <h3 className="text-xl font-bold text-gray-800 mb-4">
+                          Método de Pago
+                        </h3>
+
+                        {/* Terms and Conditions */}
+                        <motion.div
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.4 }}
+                          className="space-y-4 mb-6"
+                        >
+                          <div className="flex items-start gap-3">
+                            <input
+                              type="checkbox"
+                              id="terms"
+                              checked={acceptedTerms}
+                              onChange={(e) =>
+                                setAcceptedTerms(e.target.checked)
+                              }
+                              className="mt-1 w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                            />
+                            <label
+                              htmlFor="terms"
+                              className="text-sm text-gray-700 cursor-pointer select-none"
+                            >
+                              Acepto los{" "}
+                              <a
+                                href="/terminos"
+                                target="_blank"
+                                className="text-primary font-bold hover:underline"
+                              >
+                                Términos y Condiciones
+                              </a>{" "}
+                              del servicio
+                            </label>
+                          </div>
+
+                          <div className="flex items-start gap-3">
+                            <input
+                              type="checkbox"
+                              id="privacy"
+                              checked={acceptedPrivacy}
+                              onChange={(e) =>
+                                setAcceptedPrivacy(e.target.checked)
+                              }
+                              className="mt-1 w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                            />
+                            <label
+                              htmlFor="privacy"
+                              className="text-sm text-gray-700 cursor-pointer select-none"
+                            >
+                              Acepto la{" "}
+                              <a
+                                href="/privacidad"
+                                target="_blank"
+                                className="text-primary font-bold hover:underline"
+                              >
+                                Política de Privacidad
+                              </a>{" "}
+                              y el tratamiento de mis datos personales
+                            </label>
+                          </div>
+                        </motion.div>
+
+                        {/* Show payment form only after terms are accepted */}
+                        {!acceptedTerms || !acceptedPrivacy ? (
+                          <div className="p-8 rounded-2xl bg-amber-50 border-2 border-amber-300 text-center">
+                            <AlertCircle className="w-12 h-12 text-amber-600 mx-auto mb-4" />
+                            <p className="text-amber-800 font-medium">
+                              ✓ Por favor acepta los términos y condiciones y la
+                              política de privacidad para continuar con el pago
                             </p>
-                            <p className="text-lg font-bold text-primary">
-                              {item.value}
+                          </div>
+                        ) : isCreatingPayment ? (
+                          <div className="p-8 rounded-2xl bg-blue-50 border-2 border-blue-300 text-center">
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                            <p className="text-blue-800 font-medium">
+                              Preparando método de pago seguro...
                             </p>
-                            {item.price && (
-                              <p className="text-lg font-bold text-primary mt-1">
-                                {item.price}
+                          </div>
+                        ) : paymentError ? (
+                          <div className="p-6 rounded-2xl bg-red-50 border-2 border-red-300">
+                            <div className="flex items-start gap-3">
+                              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-sm text-red-800 font-medium mb-2">
+                                  Error al preparar el pago
+                                </p>
+                                <p className="text-sm text-red-700">
+                                  {paymentError}
+                                </p>
+                                <button
+                                  onClick={createPaymentIntent}
+                                  className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
+                                >
+                                  Intentar de nuevo
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : clientSecret ? (
+                          <Elements
+                            stripe={stripePromise}
+                            options={{
+                              clientSecret,
+                              appearance: {
+                                theme: "stripe",
+                                variables: {
+                                  colorPrimary: "#ec4899",
+                                  colorBackground: "#ffffff",
+                                  colorText: "#1f2937",
+                                  colorDanger: "#ef4444",
+                                  fontFamily: "system-ui, sans-serif",
+                                  borderRadius: "12px",
+                                },
+                              },
+                            }}
+                          >
+                            <StripeCheckoutForm
+                              amount={getServicePrice(appointment.service)}
+                              onSuccess={handlePaymentSuccess}
+                              onError={handlePaymentError}
+                            />
+                          </Elements>
+                        ) : null}
+                      </motion.div>
+
+                      {/* Info Notice */}
+                      <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.5 }}
+                        className="p-5 rounded-2xl bg-blue-100/40 border-2 border-blue-300/40 backdrop-blur-sm"
+                      >
+                        <p className="text-sm text-blue-900 font-bold leading-relaxed">
+                          ✓ Recibirás una confirmación por email y WhatsApp una
+                          vez que se procese tu pago. Nuestro equipo se
+                          contactará contigo para confirmar los detalles.
+                        </p>
+                      </motion.div>
+                    </div>
+
+                    {/* Right Column - Summary Panel (1/3 width) */}
+                    <div className="lg:col-span-1">
+                      <motion.div
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.3 }}
+                        className="sticky top-4 space-y-4"
+                      >
+                        <h3 className="text-lg font-bold text-gray-800 mb-4">
+                          Resumen de tu Cita
+                        </h3>
+
+                        {/* Summary Cards */}
+                        <div className="space-y-3">
+                          <div className="p-4 rounded-xl bg-white/50 border border-white/40 backdrop-blur-sm">
+                            <p className="text-xs text-gray-600 font-bold mb-1">
+                              Servicio
+                            </p>
+                            <p className="text-sm font-bold text-primary">
+                              {getServiceName(appointment.service)}
+                            </p>
+                          </div>
+
+                          <div className="p-4 rounded-xl bg-white/50 border border-white/40 backdrop-blur-sm">
+                            <p className="text-xs text-gray-600 font-bold mb-1">
+                              Fecha y Hora
+                            </p>
+                            <p className="text-sm font-bold text-gray-800">
+                              {appointment.date}
+                            </p>
+                            <p className="text-sm font-bold text-gray-800">
+                              {appointment.time}
+                            </p>
+                          </div>
+
+                          <div className="p-4 rounded-xl bg-white/50 border border-white/40 backdrop-blur-sm">
+                            <p className="text-xs text-gray-600 font-bold mb-1">
+                              Duración
+                            </p>
+                            <p className="text-sm font-bold text-gray-800">
+                              {getServiceDuration(appointment.service)} min
+                            </p>
+                          </div>
+
+                          <div className="p-4 rounded-xl bg-white/50 border border-white/40 backdrop-blur-sm">
+                            <p className="text-xs text-gray-600 font-bold mb-1">
+                              Contacto
+                            </p>
+                            <p className="text-sm font-bold text-gray-800">
+                              {appointment.name}
+                            </p>
+                            <p className="text-xs text-gray-600 mt-1">
+                              {appointment.email}
+                            </p>
+                            <p className="text-xs text-gray-600">
+                              {appointment.phone}
+                            </p>
+                          </div>
+
+                          {appointment.selectedAreas.length > 0 && (
+                            <div className="p-4 rounded-xl bg-white/50 border border-white/40 backdrop-blur-sm">
+                              <p className="text-xs text-gray-600 font-bold mb-2">
+                                Áreas
                               </p>
-                            )}
+                              <div className="flex flex-wrap gap-1">
+                                {BODY_AREAS.filter((a) =>
+                                  appointment.selectedAreas.includes(a.id),
+                                ).map((area) => (
+                                  <span
+                                    key={area.id}
+                                    className="px-2 py-1 bg-secondary/30 text-secondary rounded-full text-xs font-bold"
+                                  >
+                                    {area.label}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {appointment.notes && (
+                            <div className="p-4 rounded-xl bg-white/50 border border-white/40 backdrop-blur-sm">
+                              <p className="text-xs text-gray-600 font-bold mb-1">
+                                Notas
+                              </p>
+                              <p className="text-xs text-gray-700">
+                                {appointment.notes}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Total */}
+                          <div className="p-4 rounded-xl bg-gradient-to-r from-primary/20 to-emerald-500/20 border-2 border-primary/40 backdrop-blur-sm">
+                            <p className="text-xs text-gray-600 font-bold mb-1">
+                              Total a Pagar
+                            </p>
+                            <p className="text-2xl font-bold text-primary">
+                              ${getServicePrice(appointment.service).toFixed(2)}
+                            </p>
+                            <p className="text-xs text-gray-600">MXN</p>
                           </div>
                         </div>
                       </motion.div>
-                    ))}
-
-                    {appointment.selectedAreas.length > 0 && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.4 }}
-                        className="p-5 rounded-2xl bg-white/50 border-2 border-white/40 backdrop-blur-sm"
-                      >
-                        <p className="text-sm text-gray-600 font-bold mb-3">
-                          Áreas de Tratamiento
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {BODY_AREAS.filter((a) =>
-                            appointment.selectedAreas.includes(a.id),
-                          ).map((area) => (
-                            <motion.span
-                              key={area.id}
-                              initial={{ scale: 0 }}
-                              animate={{ scale: 1 }}
-                              className="px-4 py-2 bg-secondary/30 text-secondary rounded-full text-sm font-bold border border-secondary/50 backdrop-blur-sm"
-                            >
-                              {area.label}
-                            </motion.span>
-                          ))}
-                        </div>
-                      </motion.div>
-                    )}
-                  </motion.div>
-
-                  {/* Login requirement notice */}
-                  {!isAuthenticated && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.6 }}
-                      className="p-5 rounded-2xl bg-amber-100/60 border-2 border-amber-300/60 backdrop-blur-sm mb-8"
-                    >
-                      <p className="text-sm text-amber-900 font-bold leading-relaxed flex items-start gap-2">
-                        <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                        <span>
-                          Para confirmar tu cita necesitamos verificar tu
-                          identidad. Al hacer clic en "Confirmar Cita" te
-                          pediremos iniciar sesión o crear una cuenta.
-                        </span>
-                      </p>
-                    </motion.div>
-                  )}
-
-                  {isAuthenticated && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.6 }}
-                      className="p-5 rounded-2xl bg-emerald-100/60 border-2 border-emerald-300/60 backdrop-blur-sm mb-8"
-                    >
-                      <p className="text-sm text-emerald-900 font-bold leading-relaxed flex items-start gap-2">
-                        <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                        <span>
-                          Sesión iniciada como {user?.first_name}{" "}
-                          {user?.last_name} ({user?.email})
-                        </span>
-                      </p>
-                    </motion.div>
-                  )}
-
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.7 }}
-                    className="p-5 rounded-2xl bg-blue-100/40 border-2 border-blue-300/40 backdrop-blur-sm mb-8"
-                  >
-                    <p className="text-sm text-blue-900 font-bold leading-relaxed">
-                      ✓ Recibirás una confirmación por email y WhatsApp una vez
-                      que confirmes tu cita. Nuestro equipo se contactará
-                      contigo para confirmar los detalles.
-                    </p>
-                  </motion.div>
+                    </div>
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -1117,23 +1627,48 @@ export function AppointmentWizard() {
               {step < 4 ? (
                 <motion.button
                   onClick={handleNext}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="flex items-center gap-2 px-8 py-3 bg-primary text-white rounded-xl font-bold hover:shadow-lg hover:shadow-primary/50 transition-all backdrop-blur-sm"
+                  disabled={
+                    (step === 3 && !isAuthenticated) ||
+                    (step === 3 &&
+                      isAuthenticated &&
+                      appointment.bookedForSelf === null)
+                  }
+                  whileHover={
+                    !(
+                      (step === 3 && !isAuthenticated) ||
+                      (step === 3 &&
+                        isAuthenticated &&
+                        appointment.bookedForSelf === null)
+                    )
+                      ? { scale: 1.05 }
+                      : {}
+                  }
+                  whileTap={
+                    !(
+                      (step === 3 && !isAuthenticated) ||
+                      (step === 3 &&
+                        isAuthenticated &&
+                        appointment.bookedForSelf === null)
+                    )
+                      ? { scale: 0.95 }
+                      : {}
+                  }
+                  className={`flex items-center gap-2 px-8 py-3 rounded-xl font-bold transition-all backdrop-blur-sm ${
+                    (step === 3 && !isAuthenticated) ||
+                    (step === 3 &&
+                      isAuthenticated &&
+                      appointment.bookedForSelf === null)
+                      ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                      : "bg-primary text-white hover:shadow-lg hover:shadow-primary/50"
+                  }`}
                 >
                   Siguiente
                   <ChevronRight size={20} />
                 </motion.button>
               ) : (
-                <motion.button
-                  onClick={handleSubmit}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="flex items-center gap-2 px-8 py-3 bg-emerald-500 text-white rounded-xl font-bold hover:shadow-2xl hover:shadow-emerald-500/50 transition-all backdrop-blur-sm"
-                >
-                  <CheckCircle size={20} />
-                  Confirmar Cita
-                </motion.button>
+                <div className="text-sm text-gray-600 font-medium">
+                  Complete el pago arriba para confirmar
+                </div>
               )}
             </div>
           </div>
@@ -1157,6 +1692,22 @@ export function AppointmentWizard() {
 
       {/* Auth Modal - show when user tries to submit without being logged in */}
       <AuthModal open={showAuthModal} onOpenChange={setShowAuthModal} />
+
+      {/* Confirmation Modal - show after successful payment */}
+      <AppointmentConfirmationModal
+        open={showConfirmationModal}
+        onClose={handleConfirmationClose}
+        appointmentDetails={{
+          serviceName: getServiceName(appointment.service),
+          date: appointment.date,
+          time: appointment.time,
+          duration: getServiceDuration(appointment.service),
+          areas: getAreaLabels(appointment.selectedAreas),
+          contactEmail: user?.email || appointment.email,
+          contactPhone: user?.phone || appointment.phone,
+          amount: getServicePrice(appointment.service),
+        }}
+      />
     </div>
   );
 }

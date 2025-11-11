@@ -180,6 +180,10 @@ export interface CreateAppointmentRequest {
   scheduled_at: string; // ISO datetime string
   duration_minutes?: number;
   notes?: string;
+  booked_for_self: boolean; // true if appointment is for the logged-in user
+  selected_areas?: string[]; // body areas for the treatment
+  accepted_terms: boolean;
+  accepted_privacy: boolean;
 }
 
 export interface UpdateAppointmentRequest {
@@ -226,11 +230,20 @@ export interface CreateStripePaymentRequest {
   amount: number;
   currency?: string;
   description?: string;
+  service_name?: string;
+}
+
+export interface CreateAppointmentWithPaymentRequest
+  extends CreateAppointmentRequest {
+  // Combines appointment creation with payment processing
+  payment_amount: number;
+  currency?: string;
 }
 
 export interface StripePaymentResponse {
   clientSecret: string;
   paymentId: number;
+  paymentIntentId: string;
 }
 
 export interface ConfirmPaymentRequest {

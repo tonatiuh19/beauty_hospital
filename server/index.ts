@@ -33,6 +33,10 @@ import {
   cancelAppointment,
 } from "./routes/appointments";
 import {
+  bookAppointmentWithPayment,
+  confirmAppointmentPayment,
+} from "./routes/appointments-payment";
+import {
   getBusinessHours,
   getBusinessHoursByDay,
 } from "./routes/business-hours";
@@ -124,6 +128,16 @@ export function createServer() {
 
   // ==================== APPOINTMENTS ROUTES ====================
   app.post("/api/appointments", authenticate, createAppointment);
+  app.post(
+    "/api/appointments/book-with-payment",
+    authenticate,
+    bookAppointmentWithPayment,
+  );
+  app.post(
+    "/api/appointments/confirm-payment",
+    authenticate,
+    confirmAppointmentPayment,
+  );
   app.get("/api/appointments", authenticate, getAppointments);
   app.get("/api/appointments/:id", authenticate, getAppointmentById);
   app.put("/api/appointments/:id", authenticate, updateAppointment);

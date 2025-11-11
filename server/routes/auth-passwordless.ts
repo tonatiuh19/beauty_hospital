@@ -2,6 +2,8 @@ import { RequestHandler } from "express";
 import pool from "../db/connection";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
 import nodemailer from "nodemailer";
+import { generateToken } from "../utils/auth";
+import { UserRole } from "@shared/database";
 
 // Types for request bodies
 interface CheckUserRequest {
@@ -228,9 +230,17 @@ export const verifyCode: RequestHandler = async (req, res) => {
       [user_id],
     );
 
+    // Generate JWT token
+    const token = generateToken({
+      id: userRows[0].id,
+      email: userRows[0].email,
+      role: userRows[0].role as UserRole,
+    });
+
     res.json({
       success: true,
       user: userRows[0],
+      token,
     });
   } catch (error) {
     console.error("Error verifying code:", error);

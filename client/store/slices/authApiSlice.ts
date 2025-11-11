@@ -20,6 +20,7 @@ interface SendCodeResponse {
 interface VerifyCodeResponse {
   success: boolean;
   user: User;
+  token: string;
 }
 
 interface CreateUserResponse {
@@ -85,6 +86,8 @@ export const verifyLoginCode = createAsyncThunk<
       );
 
       if (response.data.success && response.data.user) {
+        // Store token in localStorage
+        localStorage.setItem("token", response.data.token);
         dispatch(setUser(response.data.user));
         return response.data.user;
       }
@@ -136,6 +139,7 @@ export const createNewUser = createAsyncThunk<
 export const logout = createAsyncThunk<void, void>(
   "auth/logout",
   async (_, { dispatch }) => {
+    localStorage.removeItem("token");
     dispatch(clearUser());
   },
 );
