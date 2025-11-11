@@ -226,6 +226,39 @@ export interface Notification {
   created_at: Date;
 }
 
+// ==================== BLOCKED DATES TYPES ====================
+export interface BlockedDate {
+  id: number;
+  start_date: Date;
+  end_date: Date;
+  start_time?: string; // HH:MM:SS format or null for all-day
+  end_time?: string; // HH:MM:SS format or null for all-day
+  all_day: boolean; // true = entire day blocked, false = specific time range
+  reason?: string;
+  notes?: string;
+  created_by: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface BlockedDateWithCreator extends BlockedDate {
+  created_by_user: UserWithoutPassword;
+}
+
+// ==================== BUSINESS HOURS TYPES ====================
+export interface BusinessHours {
+  id: number;
+  day_of_week: number; // 0=Sunday, 1=Monday, ..., 6=Saturday
+  is_open: boolean;
+  open_time: string; // HH:MM:SS format
+  close_time: string; // HH:MM:SS format
+  break_start?: string | null; // HH:MM:SS format
+  break_end?: string | null; // HH:MM:SS format
+  notes?: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
 // ==================== AUDIT LOG TYPES ====================
 export interface AuditLog {
   id: number;

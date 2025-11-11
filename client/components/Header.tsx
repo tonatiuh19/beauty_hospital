@@ -89,13 +89,16 @@ export function Header() {
             }}
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="flex items-center gap-2 cursor-pointer"
+            className="flex items-center gap-2 cursor-pointer flex-shrink-0"
           >
             <div className="w-8 h-8 bg-gradient-to-r from-primary to-secondary rounded-lg flex items-center justify-center">
               <span className="text-white font-bold">✨</span>
             </div>
-            <span className="text-xl font-bold text-foreground">
+            <span className="text-lg sm:text-xl font-bold text-foreground hidden sm:block">
               Hospital de Depilación
+            </span>
+            <span className="text-lg font-bold text-foreground sm:hidden">
+              H. Depilación
             </span>
           </motion.a>
 

@@ -22,6 +22,18 @@ import {
   previousStep,
   resetAppointment,
 } from "@/store/slices/appointmentSlice";
+import {
+  fetchBlockedDates,
+  isDateBlocked,
+  isTimeBlocked,
+  getBlockedTimesForDate,
+} from "@/store/slices/blockedDatesSlice";
+import {
+  fetchBusinessHours,
+  getBusinessHoursForDay,
+} from "@/store/slices/businessHoursSlice";
+import { AuthModal } from "./AuthModal";
+import { SimpleCalendar } from "./SimpleCalendar";
 
 const BODY_AREAS = [
   { id: "face", label: "Cara" },
@@ -32,16 +44,6 @@ const BODY_AREAS = [
   { id: "back", label: "Espalda" },
   { id: "full", label: "Cuerpo Completo" },
 ];
-
-// Mock blocked dates (dates that are unavailable)
-const BLOCKED_DATES = new Set([
-  "2024-01-02",
-  "2024-01-03",
-  "2024-01-08",
-  "2024-01-15",
-  "2024-01-22",
-  "2024-01-29",
-]);
 
 interface WizardData {
   service: number | null;
@@ -73,10 +75,16 @@ export function AppointmentWizard() {
     error: servicesError,
   } = useAppSelector((state) => state.services);
   const appointment = useAppSelector((state) => state.appointment);
+  const { isAuthenticated, user } = useAppSelector((state) => state.auth);
+  const { blockedDates, loading: loadingBlockedDates } = useAppSelector(
+    (state) => state.blockedDates,
+  );
+  const { businessHours } = useAppSelector((state) => state.businessHours);
   const step = appointment.currentStep;
 
-  // Local state for validation errors
+  // Local state for validation errors and auth modal
   const [errors, setErrors] = useState<ValidationErrors>({});
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   // Scroll to top when component mounts
   useEffect(() => {
@@ -86,6 +94,20 @@ export function AppointmentWizard() {
   // Fetch services on component mount
   useEffect(() => {
     dispatch(fetchServices());
+  }, [dispatch]);
+
+  // Fetch business hours on component mount
+  useEffect(() => {
+    dispatch(fetchBusinessHours());
+  }, [dispatch]);
+
+  // Fetch blocked dates for the next 3 months
+  useEffect(() => {
+    const startDate = new Date().toISOString().split("T")[0];
+    const endDate = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split("T")[0];
+    dispatch(fetchBlockedDates({ start_date: startDate, end_date: endDate }));
   }, [dispatch]);
 
   const handleServiceSelect = (serviceId: number) => {
@@ -123,7 +145,12 @@ export function AppointmentWizard() {
       if (appointment.selectedAreas.length === 0)
         newErrors.selectedAreas = "Selecciona al menos un área";
     } else if (stepNum === 2) {
-      if (!appointment.date) newErrors.date = "Selecciona una fecha";
+      if (!appointment.date) {
+        newErrors.date = "Selecciona una fecha";
+      } else if (isDateBlocked(appointment.date, blockedDates)) {
+        newErrors.date =
+          "Esta fecha no está disponible. Por favor selecciona otra.";
+      }
       if (!appointment.time) newErrors.time = "Selecciona una hora";
     } else if (stepNum === 3) {
       if (!appointment.name.trim()) newErrors.name = "El nombre es requerido";
@@ -151,9 +178,16 @@ export function AppointmentWizard() {
   };
 
   const handleSubmit = () => {
+    // Check if user is authenticated before allowing final submission
+    if (!isAuthenticated) {
+      setShowAuthModal(true);
+      return;
+    }
+
     if (validateStep(step)) {
       console.log("Appointment data:", appointment);
-      // Here you would send the data to your backend
+      console.log("User:", user);
+      // Here you would send the data to your backend with user info
       alert(`¡Cita reservada! Te contactaremos en ${appointment.phone}`);
       // Reset form after submission
       dispatch(resetAppointment());
@@ -168,6 +202,133 @@ export function AppointmentWizard() {
   const getServicePrice = (id: number | null) => {
     if (!id) return 0;
     return services.find((s) => s.id === id)?.price || 0;
+  };
+
+  const getServiceDuration = (id: number | null) => {
+    if (!id) return 60; // Default 60 minutes
+    return services.find((s) => s.id === id)?.duration_minutes || 60;
+  };
+
+  // Generate time slots based on service duration and business hours for selected date
+  const generateTimeSlots = (durationMinutes: number): string[] => {
+    const slots: string[] = [];
+
+    // Get business hours for the selected date's day of week
+    if (!appointment.date) return slots;
+
+    const date = new Date(appointment.date);
+    const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday
+    const hours = getBusinessHoursForDay(dayOfWeek, businessHours);
+
+    // Default business hours if not loaded yet (9am-6pm with 1pm-2pm break)
+    let openHour = 9,
+      openMin = 0;
+    let closeHour = 18,
+      closeMin = 0;
+    let breakStartMinutes: number | null = null;
+    let breakEndMinutes: number | null = null;
+
+    if (hours) {
+      // If business hours found, check if closed
+      if (!hours.is_open) return slots;
+
+      // Parse opening and closing times
+      [openHour, openMin] = hours.open_time.split(":").map(Number);
+      [closeHour, closeMin] = hours.close_time.split(":").map(Number);
+
+      // Parse break times if they exist
+      if (hours.break_start && hours.break_end) {
+        const [breakStartHour, breakStartMin] = hours.break_start
+          .split(":")
+          .map(Number);
+        const [breakEndHour, breakEndMin] = hours.break_end
+          .split(":")
+          .map(Number);
+        breakStartMinutes = breakStartHour * 60 + breakStartMin;
+        breakEndMinutes = breakEndHour * 60 + breakEndMin;
+      }
+    } else {
+      // Use default break time if business hours not loaded
+      breakStartMinutes = 13 * 60; // 1:00 PM
+      breakEndMinutes = 14 * 60; // 2:00 PM
+    }
+
+    const startMinutes = openHour * 60 + openMin;
+    const endMinutes = closeHour * 60 + closeMin;
+
+    let currentMinutes = startMinutes;
+
+    while (currentMinutes + durationMinutes <= endMinutes) {
+      // Check if slot would overlap with break time
+      const slotEndMinutes = currentMinutes + durationMinutes;
+
+      // An appointment overlaps with break if:
+      // - It starts before break ends AND
+      // - It ends after break starts
+      const overlapsBreak =
+        breakStartMinutes !== null &&
+        breakEndMinutes !== null &&
+        currentMinutes < breakEndMinutes &&
+        slotEndMinutes > breakStartMinutes;
+
+      if (!overlapsBreak) {
+        const slotHours = Math.floor(currentMinutes / 60);
+        const slotMinutes = currentMinutes % 60;
+        const timeString = `${slotHours.toString().padStart(2, "0")}:${slotMinutes.toString().padStart(2, "0")}`;
+        slots.push(timeString);
+      }
+
+      // Move to next slot based on duration
+      currentMinutes += durationMinutes;
+    }
+
+    return slots;
+  };
+
+  // Check if a time slot conflicts with blocked times considering service duration
+  const isTimeSlotBlocked = (
+    date: string,
+    startTime: string,
+    durationMinutes: number,
+  ): { blocked: boolean; reason?: string } => {
+    if (!date) return { blocked: false };
+
+    // Convert start time to minutes
+    const [startHour, startMin] = startTime.split(":").map(Number);
+    const startMinutes = startHour * 60 + startMin;
+    const endMinutes = startMinutes + durationMinutes;
+
+    // Check each blocked period for the date
+    const blockedTimes = getBlockedTimesForDate(date, blockedDates);
+
+    for (const block of blockedTimes) {
+      // If it's an all-day block, the time is blocked
+      if (block.all_day) {
+        return { blocked: true, reason: block.reason };
+      }
+
+      // Parse blocked time range (handle both HH:MM and HH:MM:SS formats)
+      if (block.start_time && block.end_time) {
+        const startParts = block.start_time.split(":");
+        const endParts = block.end_time.split(":");
+
+        const blockStartHour = parseInt(startParts[0], 10);
+        const blockStartMin = parseInt(startParts[1], 10);
+        const blockEndHour = parseInt(endParts[0], 10);
+        const blockEndMin = parseInt(endParts[1], 10);
+
+        const blockStartMinutes = blockStartHour * 60 + blockStartMin;
+        const blockEndMinutes = blockEndHour * 60 + blockEndMin;
+
+        // Check if appointment slot overlaps with blocked time
+        // Overlap occurs if: (start1 < end2) AND (end1 > start2)
+        if (startMinutes < blockEndMinutes && endMinutes > blockStartMinutes) {
+          return { blocked: true, reason: block.reason };
+        }
+      }
+    }
+
+    return { blocked: false };
   };
 
   const stepVariants = {
@@ -528,28 +689,13 @@ export function AppointmentWizard() {
                     <label className="block font-bold text-foreground mb-3 text-lg">
                       Fecha disponible
                     </label>
-                    {errors.date && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="mb-4 p-4 bg-red-50 border border-red-300 rounded-xl flex gap-3 items-start backdrop-blur-sm"
-                      >
-                        <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5 w-5 h-5" />
-                        <span className="text-sm text-red-700 font-medium">
-                          {errors.date}
-                        </span>
-                      </motion.div>
-                    )}
-                    <motion.input
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: 0.2 }}
-                      type="date"
-                      value={appointment.date}
-                      onChange={(e) =>
-                        handleInputChange("date", e.target.value)
-                      }
-                      className="w-full px-5 py-4 border-2 border-white/40 bg-white/40 backdrop-blur-sm rounded-2xl focus:border-secondary focus:outline-none focus:ring-4 focus:ring-secondary/20 transition-all text-foreground font-medium"
+                    <SimpleCalendar
+                      selected={appointment.date}
+                      onSelect={(dateString) => {
+                        handleInputChange("date", dateString);
+                      }}
+                      blockedDates={blockedDates}
+                      error={errors.date}
                     />
                   </div>
 
@@ -569,35 +715,108 @@ export function AppointmentWizard() {
                         </span>
                       </motion.div>
                     )}
+                    {appointment.service && (
+                      <div className="mb-3 text-sm text-muted-foreground">
+                        Duración del servicio:{" "}
+                        {getServiceDuration(appointment.service)} minutos
+                      </div>
+                    )}
                     <motion.div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {[
-                        "09:00",
-                        "10:00",
-                        "11:00",
-                        "14:00",
-                        "15:00",
-                        "16:00",
-                        "17:00",
-                        "18:00",
-                      ].map((time, idx) => (
-                        <motion.button
-                          key={time}
-                          onClick={() => handleInputChange("time", time)}
-                          initial={{ opacity: 0, scale: 0.8 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ delay: 0.2 + idx * 0.04 }}
-                          whileHover={{ scale: 1.08 }}
-                          whileTap={{ scale: 0.92 }}
-                          className={`p-4 rounded-2xl border-2 font-bold transition-all backdrop-blur-sm ${
-                            appointment.time === time
-                              ? "border-accent bg-accent/20 text-accent shadow-lg shadow-accent/30"
-                              : "border-white/40 text-gray-700 hover:border-accent/50 bg-white/40 hover:bg-white/60"
-                          }`}
-                        >
-                          {time}
-                        </motion.button>
-                      ))}
+                      {appointment.service &&
+                        generateTimeSlots(
+                          getServiceDuration(appointment.service),
+                        ).map((time, idx) => {
+                          // Check if this time slot is blocked considering appointment duration
+                          const { blocked, reason } = isTimeSlotBlocked(
+                            appointment.date,
+                            time,
+                            getServiceDuration(appointment.service),
+                          );
+
+                          return (
+                            <motion.button
+                              key={time}
+                              onClick={() =>
+                                !blocked && handleInputChange("time", time)
+                              }
+                              disabled={blocked}
+                              initial={{ opacity: 0, scale: 0.8 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              transition={{ delay: 0.2 + idx * 0.04 }}
+                              whileHover={!blocked ? { scale: 1.08 } : {}}
+                              whileTap={!blocked ? { scale: 0.92 } : {}}
+                              className={`p-4 rounded-2xl border-2 font-bold transition-all backdrop-blur-sm relative ${
+                                blocked
+                                  ? "border-red-200 bg-red-50 text-red-400 cursor-not-allowed opacity-60"
+                                  : appointment.time === time
+                                    ? "border-accent bg-accent/20 text-accent shadow-lg shadow-accent/30"
+                                    : "border-white/40 text-gray-700 hover:border-accent/50 bg-white/40 hover:bg-white/60"
+                              }`}
+                              title={
+                                blocked ? reason || "Horario no disponible" : ""
+                              }
+                            >
+                              {time}
+                              {blocked && (
+                                <span className="absolute top-1 right-1 text-xs">
+                                  🚫
+                                </span>
+                              )}
+                            </motion.button>
+                          );
+                        })}
                     </motion.div>
+
+                    {/* Show blocked times info for selected date */}
+                    {appointment.date && (
+                      <>
+                        {(() => {
+                          const blockedTimes = getBlockedTimesForDate(
+                            appointment.date,
+                            blockedDates,
+                          );
+                          if (blockedTimes.length > 0) {
+                            return (
+                              <motion.div
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl"
+                              >
+                                <p className="text-xs font-semibold text-amber-900 mb-2">
+                                  ⚠️ Horarios bloqueados para esta fecha:
+                                </p>
+                                <div className="space-y-1">
+                                  {blockedTimes.map((block, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="text-xs text-amber-800"
+                                    >
+                                      {block.all_day ? (
+                                        <span className="font-medium">
+                                          Todo el día
+                                        </span>
+                                      ) : (
+                                        <span className="font-medium">
+                                          {block.start_time.substring(0, 5)} -{" "}
+                                          {block.end_time.substring(0, 5)}
+                                        </span>
+                                      )}
+                                      {block.reason && (
+                                        <span className="text-amber-600">
+                                          {" "}
+                                          • {block.reason}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </motion.div>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </>
+                    )}
                   </div>
 
                   {appointment.service && (
@@ -826,10 +1045,46 @@ export function AppointmentWizard() {
                     )}
                   </motion.div>
 
+                  {/* Login requirement notice */}
+                  {!isAuthenticated && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.6 }}
+                      className="p-5 rounded-2xl bg-amber-100/60 border-2 border-amber-300/60 backdrop-blur-sm mb-8"
+                    >
+                      <p className="text-sm text-amber-900 font-bold leading-relaxed flex items-start gap-2">
+                        <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                        <span>
+                          Para confirmar tu cita necesitamos verificar tu
+                          identidad. Al hacer clic en "Confirmar Cita" te
+                          pediremos iniciar sesión o crear una cuenta.
+                        </span>
+                      </p>
+                    </motion.div>
+                  )}
+
+                  {isAuthenticated && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.6 }}
+                      className="p-5 rounded-2xl bg-emerald-100/60 border-2 border-emerald-300/60 backdrop-blur-sm mb-8"
+                    >
+                      <p className="text-sm text-emerald-900 font-bold leading-relaxed flex items-start gap-2">
+                        <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                        <span>
+                          Sesión iniciada como {user?.first_name}{" "}
+                          {user?.last_name} ({user?.email})
+                        </span>
+                      </p>
+                    </motion.div>
+                  )}
+
                   <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.5 }}
+                    transition={{ delay: 0.7 }}
                     className="p-5 rounded-2xl bg-blue-100/40 border-2 border-blue-300/40 backdrop-blur-sm mb-8"
                   >
                     <p className="text-sm text-blue-900 font-bold leading-relaxed">
@@ -899,6 +1154,9 @@ export function AppointmentWizard() {
           </p>
         </motion.div>
       </div>
+
+      {/* Auth Modal - show when user tries to submit without being logged in */}
+      <AuthModal open={showAuthModal} onOpenChange={setShowAuthModal} />
     </div>
   );
 }

@@ -3,6 +3,8 @@ import servicesReducer from "./slices/servicesSlice";
 import appointmentReducer from "./slices/appointmentSlice";
 import appointmentApiReducer from "./slices/appointmentApiSlice";
 import authReducer from "./slices/authSlice";
+import blockedDatesReducer from "./slices/blockedDatesSlice";
+import businessHoursReducer from "./slices/businessHoursSlice";
 
 // Configure the store
 export const store = configureStore({
@@ -11,6 +13,8 @@ export const store = configureStore({
     appointment: appointmentReducer,
     appointmentApi: appointmentApiReducer,
     auth: authReducer,
+    blockedDates: blockedDatesReducer,
+    businessHours: businessHoursReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

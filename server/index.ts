@@ -18,6 +18,24 @@ import {
   verifyCode,
   createUser,
 } from "./routes/auth-passwordless";
+import {
+  getBlockedDates,
+  checkDateBlocked,
+  createBlockedDate,
+  updateBlockedDate,
+  deleteBlockedDate,
+} from "./routes/blocked-dates";
+import {
+  createAppointment,
+  getAppointments,
+  getAppointmentById,
+  updateAppointment,
+  cancelAppointment,
+} from "./routes/appointments";
+import {
+  getBusinessHours,
+  getBusinessHoursByDay,
+} from "./routes/business-hours";
 
 export function createServer() {
   console.log("Creating Express server...");
@@ -88,6 +106,28 @@ export function createServer() {
   // ==================== SERVICES ROUTES ====================
   app.get("/api/services", handleGetServices);
   app.get("/api/services/:id", handleGetServiceById);
+
+  // ==================== BLOCKED DATES ROUTES ====================
+  // Public routes - needed for appointment calendar
+  app.get("/api/blocked-dates", getBlockedDates);
+  app.get("/api/blocked-dates/check", checkDateBlocked);
+
+  // Admin-only routes
+  app.post("/api/blocked-dates", authenticate, createBlockedDate);
+  app.put("/api/blocked-dates/:id", authenticate, updateBlockedDate);
+  app.delete("/api/blocked-dates/:id", authenticate, deleteBlockedDate);
+
+  // ==================== BUSINESS HOURS ROUTES ====================
+  // Public routes - needed for appointment calendar
+  app.get("/api/business-hours", getBusinessHours);
+  app.get("/api/business-hours/day/:dayOfWeek", getBusinessHoursByDay);
+
+  // ==================== APPOINTMENTS ROUTES ====================
+  app.post("/api/appointments", authenticate, createAppointment);
+  app.get("/api/appointments", authenticate, getAppointments);
+  app.get("/api/appointments/:id", authenticate, getAppointmentById);
+  app.put("/api/appointments/:id", authenticate, updateAppointment);
+  app.delete("/api/appointments/:id", authenticate, cancelAppointment);
 
   // ==================== PROTECTED ROUTES (Examples) ====================
   // TODO: Add more routes for patients, appointments, payments, etc.

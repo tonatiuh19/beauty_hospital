@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Nov 09, 2025 at 01:40 PM
+-- Generation Time: Nov 10, 2025 at 07:25 PM
 -- Server version: 5.7.23-23
 -- PHP Version: 8.1.33
 
@@ -59,6 +59,81 @@ CREATE TABLE `audit_logs` (
   `user_agent` text COLLATE utf8mb4_unicode_ci,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `blocked_dates`
+--
+
+CREATE TABLE `blocked_dates` (
+  `id` int(11) NOT NULL,
+  `start_date` date NOT NULL,
+  `end_date` date NOT NULL,
+  `start_time` time DEFAULT NULL,
+  `end_time` time DEFAULT NULL,
+  `all_day` tinyint(1) NOT NULL DEFAULT '1',
+  `reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `notes` text COLLATE utf8mb4_unicode_ci,
+  `created_by` int(11) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `blocked_dates`
+--
+
+INSERT INTO `blocked_dates` (`id`, `start_date`, `end_date`, `start_time`, `end_time`, `all_day`, `reason`, `notes`, `created_by`, `created_at`, `updated_at`) VALUES
+(1, '2025-11-15', '2025-11-15', NULL, NULL, 1, 'Día festivo', 'Clínica cerrada por festividad nacional', 1, '2025-11-10 20:18:30', '2025-11-10 20:18:30'),
+(2, '2025-12-25', '2025-12-25', NULL, NULL, 1, 'Navidad', 'Cerrado por Navidad', 1, '2025-11-10 20:18:30', '2025-11-10 20:18:30'),
+(3, '2026-01-01', '2026-01-01', NULL, NULL, 1, 'Año Nuevo', 'Cerrado por Año Nuevo', 1, '2025-11-10 20:18:30', '2025-11-10 20:18:30'),
+(4, '2025-12-20', '2025-12-26', NULL, NULL, 1, 'Vacaciones de fin de año', 'Personal en vacaciones navideñas', 1, '2025-11-10 20:18:30', '2025-11-10 20:18:30'),
+(5, '2026-02-14', '2026-02-16', NULL, NULL, 1, 'Mantenimiento de equipos', 'Mantenimiento programado de equipos láser', 1, '2025-11-10 20:18:30', '2025-11-10 20:18:30'),
+(6, '2025-11-20', '2025-11-20', NULL, NULL, 1, 'Evento especial', 'Capacitación del personal médico', 1, '2025-11-10 20:18:30', '2025-11-10 20:18:30'),
+(7, '2025-12-15', '2025-12-15', NULL, NULL, 1, 'Junta administrativa', 'Reunión anual del equipo', 1, '2025-11-10 20:18:30', '2025-11-10 20:18:30'),
+(8, '2026-03-15', '2026-03-20', NULL, NULL, 1, 'Vacaciones de primavera', 'Clínica cerrada temporalmente', 1, '2025-11-10 20:18:30', '2025-11-10 20:18:30'),
+(9, '2026-04-10', '2026-04-10', NULL, NULL, 1, 'Actualización de sistemas', 'Actualización del sistema de gestión', 1, '2025-11-10 20:18:30', '2025-11-10 20:18:30'),
+(10, '2025-11-18', '2025-11-18', '09:00:00', '12:00:00', 0, 'Mantenimiento matutino', 'Mantenimiento de equipos en la mañana', 1, '2025-11-10 21:44:33', '2025-11-10 21:44:33'),
+(11, '2025-11-22', '2025-11-22', '14:00:00', '18:00:00', 0, 'Capacitación vespertina', 'Capacitación del personal en la tarde', 1, '2025-11-10 21:44:33', '2025-11-10 21:44:33'),
+(12, '2025-11-25', '2025-11-25', '10:00:00', '11:30:00', 0, 'Reunión ejecutiva', 'Reunión con proveedores médicos', 1, '2025-11-10 21:44:33', '2025-11-10 21:44:33'),
+(13, '2025-11-27', '2025-11-27', '13:00:00', '14:30:00', 0, 'Almuerzo extendido', 'Evento especial del personal', 1, '2025-11-10 21:44:33', '2025-11-10 21:44:33'),
+(14, '2025-11-29', '2025-11-29', '12:00:00', '13:00:00', 0, 'Pausa del mediodía', 'Cierre temporal para reorganización', 1, '2025-11-10 21:44:33', '2025-11-10 21:44:33'),
+(15, '2025-12-01', '2025-12-05', '16:00:00', '18:00:00', 0, 'Sesiones de capacitación', 'Capacitación diaria en horario vespertino', 1, '2025-11-10 21:44:33', '2025-11-10 21:44:33'),
+(16, '2025-12-10', '2025-12-10', '09:00:00', '10:30:00', 0, 'Inspección sanitaria', 'Visita de inspección de salud', 1, '2025-11-10 21:44:33', '2025-11-10 21:44:33'),
+(17, '2025-12-12', '2025-12-12', '08:00:00', '09:30:00', 0, 'Preparación especial', 'Preparación de equipos para procedimiento especial', 1, '2025-11-10 21:44:33', '2025-11-10 21:44:33');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `business_hours`
+--
+
+CREATE TABLE `business_hours` (
+  `id` int(11) NOT NULL,
+  `day_of_week` tinyint(4) NOT NULL COMMENT '0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday',
+  `is_open` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Whether the hospital is open on this day',
+  `open_time` time NOT NULL DEFAULT '09:00:00' COMMENT 'Opening time',
+  `close_time` time NOT NULL DEFAULT '18:00:00' COMMENT 'Closing time',
+  `break_start` time DEFAULT NULL COMMENT 'Optional lunch/break start time',
+  `break_end` time DEFAULT NULL COMMENT 'Optional lunch/break end time',
+  `notes` text COLLATE utf8mb4_unicode_ci COMMENT 'Additional notes about this day',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `business_hours`
+--
+
+INSERT INTO `business_hours` (`id`, `day_of_week`, `is_open`, `open_time`, `close_time`, `break_start`, `break_end`, `notes`, `created_at`, `updated_at`) VALUES
+(1, 0, 0, '09:00:00', '18:00:00', NULL, NULL, 'Domingo - Cerrado', '2025-11-11 01:20:44', '2025-11-11 01:20:44'),
+(2, 1, 1, '09:00:00', '18:00:00', '13:00:00', '14:00:00', 'Lunes', '2025-11-11 01:20:44', '2025-11-11 01:20:44'),
+(3, 2, 1, '09:00:00', '18:00:00', '13:00:00', '14:00:00', 'Martes', '2025-11-11 01:20:44', '2025-11-11 01:20:44'),
+(4, 3, 1, '09:00:00', '18:00:00', '13:00:00', '14:00:00', 'Miércoles', '2025-11-11 01:20:44', '2025-11-11 01:20:44'),
+(5, 4, 1, '09:00:00', '18:00:00', '13:00:00', '14:00:00', 'Jueves', '2025-11-11 01:20:44', '2025-11-11 01:20:44'),
+(6, 5, 1, '09:00:00', '18:00:00', '13:00:00', '14:00:00', 'Viernes', '2025-11-11 01:20:44', '2025-11-11 01:20:44'),
+(7, 6, 1, '09:00:00', '14:00:00', NULL, NULL, 'Sábado - Medio día', '2025-11-11 01:20:44', '2025-11-11 01:20:44');
 
 -- --------------------------------------------------------
 
@@ -171,6 +246,19 @@ CREATE TABLE `patients` (
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+--
+-- Dumping data for table `patients`
+--
+
+INSERT INTO `patients` (`id`, `user_id`, `first_name`, `last_name`, `email`, `phone`, `date_of_birth`, `gender`, `address`, `city`, `state`, `zip_code`, `emergency_contact_name`, `emergency_contact_phone`, `notes`, `is_active`, `created_at`, `updated_at`) VALUES
+(1, NULL, 'Alex', 'Gomez', 'axgoomez@gmail.com', '4741400363', '2002-07-18', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-09 20:11:54', '2025-11-09 20:11:54'),
+(2, NULL, 'Alex', 'Gomez', 'axgoomez@gmail.com', '4741400363', '1993-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-10 17:03:20', '2025-11-10 17:03:20'),
+(3, NULL, 'Alex', 'Gomez', 'axgoomez@gmail.com', '4741400363', '1993-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-10 17:12:12', '2025-11-10 17:12:12'),
+(4, NULL, 'Alex', 'Gomez', 'axgoomez@gmail.com', '4741400363', '1993-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-10 17:14:00', '2025-11-10 17:14:00'),
+(5, NULL, 'Alex', 'Gomez', 'axgoomez@gmail.com', '4741400363', '1993-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-10 17:20:28', '2025-11-10 17:20:28'),
+(6, NULL, 'Alex', 'Gomez', 'axgoomez@gmail.com', '4741400363', '1993-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-10 17:26:08', '2025-11-10 17:26:08'),
+(7, 9, 'Alex', 'Gomez', 'axgoomez@gmail.com', '4741400363', '1993-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-10 17:33:24', '2025-11-10 17:33:24');
+
 -- --------------------------------------------------------
 
 --
@@ -263,7 +351,8 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`id`, `email`, `password_hash`, `role`, `first_name`, `last_name`, `phone`, `is_active`, `created_at`, `updated_at`, `last_login`) VALUES
-(1, 'admin@beautyhospital.com', '$2b$10$TBsX8oVXgbglL8nZqEpygO0PliVXZRqbQHPOEaUxKwhdfHr27ir5a', 'admin', 'Admin', 'User', '+1234567890', 1, '2025-11-03 01:54:22', '2025-11-03 01:54:22', NULL);
+(1, 'admin@beautyhospital.com', '$2b$10$TBsX8oVXgbglL8nZqEpygO0PliVXZRqbQHPOEaUxKwhdfHr27ir5a', 'admin', 'Admin', 'User', '+1234567890', 1, '2025-11-03 01:54:22', '2025-11-03 01:54:22', NULL),
+(9, 'axgoomez@gmail.com', '', 'patient', 'Alex', 'Gomez', '4741400363', 1, '2025-11-10 17:33:24', '2025-11-10 17:36:04', '2025-11-10 17:36:04');
 
 -- --------------------------------------------------------
 
@@ -278,6 +367,13 @@ CREATE TABLE `users_sessions` (
   `user_session` tinyint(1) NOT NULL,
   `user_session_date_start` datetime NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `users_sessions`
+--
+
+INSERT INTO `users_sessions` (`id`, `user_id`, `session_code`, `user_session`, `user_session_date_start`) VALUES
+(10, 9, 775640, 1, '2025-11-10 11:35:47');
 
 --
 -- Indexes for dumped tables
@@ -304,6 +400,25 @@ ALTER TABLE `audit_logs`
   ADD KEY `idx_entity` (`entity_type`,`entity_id`),
   ADD KEY `idx_action` (`action`),
   ADD KEY `idx_created_at` (`created_at`);
+
+--
+-- Indexes for table `blocked_dates`
+--
+ALTER TABLE `blocked_dates`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_start_date` (`start_date`),
+  ADD KEY `idx_end_date` (`end_date`),
+  ADD KEY `idx_date_range` (`start_date`,`end_date`),
+  ADD KEY `created_by` (`created_by`),
+  ADD KEY `idx_active_blocks` (`start_date`,`end_date`),
+  ADD KEY `idx_time_range` (`start_time`,`end_time`);
+
+--
+-- Indexes for table `business_hours`
+--
+ALTER TABLE `business_hours`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_day` (`day_of_week`);
 
 --
 -- Indexes for table `contracts`
@@ -418,6 +533,18 @@ ALTER TABLE `audit_logs`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `blocked_dates`
+--
+ALTER TABLE `blocked_dates`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
+
+--
+-- AUTO_INCREMENT for table `business_hours`
+--
+ALTER TABLE `business_hours`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+
+--
 -- AUTO_INCREMENT for table `contracts`
 --
 ALTER TABLE `contracts`
@@ -445,7 +572,7 @@ ALTER TABLE `notifications`
 -- AUTO_INCREMENT for table `patients`
 --
 ALTER TABLE `patients`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
 
 --
 -- AUTO_INCREMENT for table `payments`
@@ -469,13 +596,13 @@ ALTER TABLE `services`
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
 
 --
 -- AUTO_INCREMENT for table `users_sessions`
 --
 ALTER TABLE `users_sessions`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
 
 --
 -- Constraints for dumped tables
@@ -495,6 +622,12 @@ ALTER TABLE `appointments`
 --
 ALTER TABLE `audit_logs`
   ADD CONSTRAINT `audit_logs_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `blocked_dates`
+--
+ALTER TABLE `blocked_dates`
+  ADD CONSTRAINT `blocked_dates_ibfk_1` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`);
 
 --
 -- Constraints for table `contracts`

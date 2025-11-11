@@ -16,6 +16,8 @@ import type {
   MedicalRecord,
   MedicalMedia,
   Notification,
+  BlockedDate,
+  BlockedDateWithCreator,
   UserRole,
   AppointmentStatus,
   PaymentStatus,
@@ -348,6 +350,32 @@ export interface RevenueReportRequest {
   date_from: string;
   date_to: string;
   group_by?: "day" | "week" | "month";
+}
+
+// ==================== BLOCKED DATES ====================
+export interface CreateBlockedDateRequest {
+  start_date: string; // ISO date format
+  end_date: string; // ISO date format
+  start_time?: string; // HH:MM format (optional, for time-specific blocks)
+  end_time?: string; // HH:MM format (optional, for time-specific blocks)
+  all_day?: boolean; // true = entire day blocked, false = specific time range
+  reason?: string;
+  notes?: string;
+}
+
+export interface UpdateBlockedDateRequest {
+  start_date?: string;
+  end_date?: string;
+  start_time?: string;
+  end_time?: string;
+  all_day?: boolean;
+  reason?: string;
+  notes?: string;
+}
+
+export interface GetBlockedDatesRequest extends PaginationParams {
+  start_date?: string; // Filter blocked dates >= this date
+  end_date?: string; // Filter blocked dates <= this date
 }
 
 /**
