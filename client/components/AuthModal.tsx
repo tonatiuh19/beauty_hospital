@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { PhoneInput } from "./ui/phone-input";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
 import {
   checkUserExists,
@@ -33,6 +34,7 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isPhoneValid, setIsPhoneValid] = useState(false);
 
   // Reset form
   const resetForm = () => {
@@ -46,6 +48,7 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
     setDateOfBirth("");
     setError("");
     setIsSubmitting(false);
+    setIsPhoneValid(false);
   };
 
   // Handle email submission
@@ -338,12 +341,11 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
 
               <div className="space-y-2">
                 <Label htmlFor="phone">Teléfono</Label>
-                <Input
+                <PhoneInput
                   id="phone"
-                  type="tel"
-                  placeholder="+52 123 456 7890"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={setPhone}
+                  onValidationChange={setIsPhoneValid}
                   required
                   disabled={isSubmitting}
                 />
@@ -363,7 +365,8 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
                   !firstName ||
                   !lastName ||
                   !dateOfBirth ||
-                  !phone
+                  !phone ||
+                  !isPhoneValid
                 }
               >
                 {isSubmitting ? (

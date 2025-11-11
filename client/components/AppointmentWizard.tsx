@@ -45,6 +45,7 @@ import { AuthModal } from "./AuthModal";
 import { SimpleCalendar } from "./SimpleCalendar";
 import { StripeCheckoutForm } from "./StripeCheckoutForm";
 import { AppointmentConfirmationModal } from "./AppointmentConfirmationModal";
+import { PhoneInput } from "./ui/phone-input";
 import axios from "@/lib/axios";
 import type { ApiResponse, StripePaymentResponse } from "@shared/api";
 
@@ -108,6 +109,7 @@ export function AppointmentWizard() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+  const [isPhoneValid, setIsPhoneValid] = useState(false);
 
   // Stripe payment state
   const [clientSecret, setClientSecret] = useState<string | null>(null);
@@ -247,8 +249,9 @@ export function AppointmentWizard() {
           newErrors.email = "Email inválido";
         if (!appointment.phone.trim())
           newErrors.phone = "El teléfono es requerido";
-        if (!/^[0-9+\-\s()]{10,}$/.test(appointment.phone))
-          newErrors.phone = "Teléfono inválido";
+        // Phone validation now handled by PhoneInput component
+        if (!isPhoneValid)
+          newErrors.phone = "El teléfono debe contener 10 dígitos";
       }
     }
 
@@ -1299,63 +1302,101 @@ export function AppointmentWizard() {
                           <h3 className="text-xl font-bold text-gray-800 mb-4">
                             Información de Contacto
                           </h3>
-                          {[
-                            {
-                              label: "Nombre Completo",
-                              placeholder: "Nombre de la persona",
-                              type: "text",
-                              field: "name",
-                            },
-                            {
-                              label: "Email",
-                              placeholder: "email@example.com",
-                              type: "email",
-                              field: "email",
-                            },
-                            {
-                              label: "Teléfono",
-                              placeholder: "+52 1234567890",
-                              type: "tel",
-                              field: "phone",
-                            },
-                          ].map((input, idx) => (
-                            <motion.div
-                              key={input.field}
-                              initial={{ opacity: 0, x: -20 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              transition={{ delay: 0.2 + idx * 0.1 }}
-                            >
-                              <label className="block text-sm font-bold text-foreground mb-3">
-                                {input.label}
-                              </label>
-                              {errors[input.field] && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: -10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  className="mb-2 p-3 bg-red-50 border border-red-300 rounded-lg flex gap-2 items-start backdrop-blur-sm"
-                                >
-                                  <AlertCircle className="text-red-600 flex-shrink-0 w-4 h-4 mt-0.5" />
-                                  <span className="text-sm text-red-700 font-medium">
-                                    {errors[input.field]}
-                                  </span>
-                                </motion.div>
-                              )}
-                              <input
-                                type={input.type}
-                                placeholder={input.placeholder}
-                                value={
-                                  appointment[input.field as keyof WizardData]
-                                }
-                                onChange={(e) =>
-                                  handleInputChange(
-                                    input.field as keyof WizardData,
-                                    e.target.value,
-                                  )
-                                }
-                                className="w-full px-5 py-4 border-2 border-white/40 bg-white/40 backdrop-blur-sm rounded-2xl focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/20 transition-all text-foreground font-medium"
-                              />
-                            </motion.div>
-                          ))}
+
+                          {/* Name Field */}
+                          <motion.div
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: 0.2 }}
+                          >
+                            <label className="block text-sm font-bold text-foreground mb-3">
+                              Nombre Completo
+                            </label>
+                            {errors.name && (
+                              <motion.div
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="mb-2 p-3 bg-red-50 border border-red-300 rounded-lg flex gap-2 items-start backdrop-blur-sm"
+                              >
+                                <AlertCircle className="text-red-600 flex-shrink-0 w-4 h-4 mt-0.5" />
+                                <span className="text-sm text-red-700 font-medium">
+                                  {errors.name}
+                                </span>
+                              </motion.div>
+                            )}
+                            <input
+                              type="text"
+                              placeholder="Nombre de la persona"
+                              value={appointment.name}
+                              onChange={(e) =>
+                                handleInputChange("name", e.target.value)
+                              }
+                              className="w-full px-5 py-4 border-2 border-white/40 bg-white/40 backdrop-blur-sm rounded-2xl focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/20 transition-all text-foreground font-medium"
+                            />
+                          </motion.div>
+
+                          {/* Email Field */}
+                          <motion.div
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: 0.3 }}
+                          >
+                            <label className="block text-sm font-bold text-foreground mb-3">
+                              Email
+                            </label>
+                            {errors.email && (
+                              <motion.div
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="mb-2 p-3 bg-red-50 border border-red-300 rounded-lg flex gap-2 items-start backdrop-blur-sm"
+                              >
+                                <AlertCircle className="text-red-600 flex-shrink-0 w-4 h-4 mt-0.5" />
+                                <span className="text-sm text-red-700 font-medium">
+                                  {errors.email}
+                                </span>
+                              </motion.div>
+                            )}
+                            <input
+                              type="email"
+                              placeholder="email@example.com"
+                              value={appointment.email}
+                              onChange={(e) =>
+                                handleInputChange("email", e.target.value)
+                              }
+                              className="w-full px-5 py-4 border-2 border-white/40 bg-white/40 backdrop-blur-sm rounded-2xl focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/20 transition-all text-foreground font-medium"
+                            />
+                          </motion.div>
+
+                          {/* Phone Field with PhoneInput component */}
+                          <motion.div
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: 0.4 }}
+                          >
+                            <label className="block text-sm font-bold text-foreground mb-3">
+                              Teléfono
+                            </label>
+                            {errors.phone && (
+                              <motion.div
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="mb-2 p-3 bg-red-50 border border-red-300 rounded-lg flex gap-2 items-start backdrop-blur-sm"
+                              >
+                                <AlertCircle className="text-red-600 flex-shrink-0 w-4 h-4 mt-0.5" />
+                                <span className="text-sm text-red-700 font-medium">
+                                  {errors.phone}
+                                </span>
+                              </motion.div>
+                            )}
+                            <PhoneInput
+                              value={appointment.phone}
+                              onChange={(value) =>
+                                handleInputChange("phone", value)
+                              }
+                              onValidationChange={setIsPhoneValid}
+                              className="px-5 py-4 border-2 border-white/40 bg-white/40 backdrop-blur-sm rounded-2xl focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/20 transition-all text-foreground font-medium"
+                            />
+                          </motion.div>
 
                           <motion.div
                             initial={{ opacity: 0, x: -20 }}
