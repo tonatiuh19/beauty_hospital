@@ -55,18 +55,18 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
     setIsSubmitting(true);
 
     try {
-      // Check if user exists
+      // Check if patient exists
       const result = await dispatch(checkUserExists({ email })).unwrap();
 
-      if (result.exists && result.user) {
-        // User exists, send verification code
-        setUserId(result.user.id);
+      if (result.exists && result.patient) {
+        // Patient exists, send verification code
+        setUserId(result.patient.id);
         await dispatch(
-          sendVerificationCode({ user_id: result.user.id, email }),
+          sendVerificationCode({ patient_id: result.patient.id, email }),
         ).unwrap();
         setStep("verify-code");
       } else {
-        // User doesn't exist, go to sign up
+        // Patient doesn't exist, go to sign up
         setStep("sign-up");
       }
     } catch (err: any) {
@@ -84,11 +84,11 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
 
     try {
       if (!userId) {
-        throw new Error("Usuario no encontrado");
+        throw new Error("Paciente no encontrado");
       }
 
       await dispatch(
-        verifyLoginCode({ user_id: userId, code: parseInt(code) }),
+        verifyLoginCode({ patient_id: userId, code: parseInt(code) }),
       ).unwrap();
 
       // Success! Close modal
@@ -108,21 +108,21 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
     setIsSubmitting(true);
 
     try {
-      // Create new user
-      const newUser = await dispatch(
+      // Create new patient
+      const newPatient = await dispatch(
         createNewUser({
           email,
           first_name: firstName,
           last_name: lastName,
-          phone: phone,
-          date_of_birth: dateOfBirth,
+          phone: phone || undefined,
+          date_of_birth: dateOfBirth || undefined,
         }),
       ).unwrap();
 
-      // Send verification code to new user
-      setUserId(newUser.id);
+      // Send verification code to new patient
+      setUserId(newPatient.id);
       await dispatch(
-        sendVerificationCode({ user_id: newUser.id, email }),
+        sendVerificationCode({ patient_id: newPatient.id, email }),
       ).unwrap();
 
       // Go to verification step
@@ -142,7 +142,9 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
     setIsSubmitting(true);
 
     try {
-      await dispatch(sendVerificationCode({ user_id: userId, email })).unwrap();
+      await dispatch(
+        sendVerificationCode({ patient_id: userId, email }),
+      ).unwrap();
       setError("");
     } catch (err: any) {
       setError(err || "Error al reenviar código");

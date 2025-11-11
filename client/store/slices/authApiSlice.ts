@@ -1,15 +1,15 @@
 import { createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "axios";
-import { User, setUser, clearUser, setLoading } from "./authSlice";
+import { Patient, setUser, clearUser, setLoading } from "./authSlice";
 
 // API base URL
 const API_URL = "/api/auth";
 
 // Response types
-interface CheckUserResponse {
+interface CheckPatientResponse {
   success: boolean;
   exists: boolean;
-  user?: User;
+  patient?: Patient;
 }
 
 interface SendCodeResponse {
@@ -19,44 +19,45 @@ interface SendCodeResponse {
 
 interface VerifyCodeResponse {
   success: boolean;
-  user: User;
+  patient: Patient;
   token: string;
+  refreshToken: string;
 }
 
-interface CreateUserResponse {
+interface CreatePatientResponse {
   success: boolean;
   exists: boolean;
-  user: User;
+  patient: Patient;
 }
 
-// Check if user exists by email
+// Check if patient exists by email
 export const checkUserExists = createAsyncThunk<
-  CheckUserResponse,
+  CheckPatientResponse,
   { email: string }
 >("auth/checkUser", async ({ email }, { rejectWithValue }) => {
   try {
-    const response = await axios.post<CheckUserResponse>(
+    const response = await axios.post<CheckPatientResponse>(
       `${API_URL}/check-user`,
       { email },
     );
     return response.data;
   } catch (error: any) {
     return rejectWithValue(
-      error.response?.data?.message || "Failed to check user",
+      error.response?.data?.message || "Failed to check patient",
     );
   }
 });
 
-// Send verification code to user's email
+// Send verification code to patient's email
 export const sendVerificationCode = createAsyncThunk<
   SendCodeResponse,
-  { user_id: number; email: string }
->("auth/sendCode", async ({ user_id, email }, { rejectWithValue }) => {
+  { patient_id: number; email: string }
+>("auth/sendCode", async ({ patient_id, email }, { rejectWithValue }) => {
   try {
     const response = await axios.post<SendCodeResponse>(
       `${API_URL}/send-code`,
       {
-        user_id,
+        patient_id,
         email,
       },
     );
@@ -70,26 +71,27 @@ export const sendVerificationCode = createAsyncThunk<
 
 // Verify the code and log in
 export const verifyLoginCode = createAsyncThunk<
-  User,
-  { user_id: number; code: number }
+  Patient,
+  { patient_id: number; code: number }
 >(
   "auth/verifyCode",
-  async ({ user_id, code }, { dispatch, rejectWithValue }) => {
+  async ({ patient_id, code }, { dispatch, rejectWithValue }) => {
     try {
       dispatch(setLoading(true));
       const response = await axios.post<VerifyCodeResponse>(
         `${API_URL}/verify-code`,
         {
-          user_id,
+          patient_id,
           code,
         },
       );
 
-      if (response.data.success && response.data.user) {
-        // Store token in localStorage
+      if (response.data.success && response.data.patient) {
+        // Store tokens in localStorage
         localStorage.setItem("token", response.data.token);
-        dispatch(setUser(response.data.user));
-        return response.data.user;
+        localStorage.setItem("refreshToken", response.data.refreshToken);
+        dispatch(setUser(response.data.patient));
+        return response.data.patient;
       }
 
       throw new Error("Invalid response from server");
@@ -102,35 +104,35 @@ export const verifyLoginCode = createAsyncThunk<
   },
 );
 
-// Create a new user account
+// Create a new patient account
 export const createNewUser = createAsyncThunk<
-  User,
+  Patient,
   {
     email: string;
     first_name: string;
     last_name: string;
-    phone: string;
-    date_of_birth: string;
+    phone?: string;
+    date_of_birth?: string;
   }
->("auth/createUser", async (userData, { dispatch, rejectWithValue }) => {
+>("auth/createUser", async (patientData, { dispatch, rejectWithValue }) => {
   try {
     dispatch(setLoading(true));
-    const response = await axios.post<CreateUserResponse>(
+    const response = await axios.post<CreatePatientResponse>(
       `${API_URL}/create-user`,
-      userData,
+      patientData,
     );
 
-    if (response.data.success && response.data.user) {
-      // Don't set user yet, wait for verification code
+    if (response.data.success && response.data.patient) {
+      // Don't set patient yet, wait for verification code
       dispatch(setLoading(false));
-      return response.data.user;
+      return response.data.patient;
     }
 
     throw new Error("Invalid response from server");
   } catch (error: any) {
     dispatch(setLoading(false));
     return rejectWithValue(
-      error.response?.data?.message || "Failed to create user",
+      error.response?.data?.message || "Failed to create patient",
     );
   }
 });
@@ -140,6 +142,7 @@ export const logout = createAsyncThunk<void, void>(
   "auth/logout",
   async (_, { dispatch }) => {
     localStorage.removeItem("token");
+    localStorage.removeItem("refreshToken");
     dispatch(clearUser());
   },
 );

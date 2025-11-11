@@ -7,6 +7,7 @@ import type {
   User,
   UserWithoutPassword,
   Patient,
+  PatientWithoutPassword,
   Appointment,
   AppointmentWithDetails,
   Payment,
@@ -54,7 +55,7 @@ export interface LoginRequest {
 }
 
 export interface LoginResponse {
-  user: UserWithoutPassword;
+  patient: PatientWithoutPassword;
   token: string;
   refreshToken: string;
 }
@@ -65,7 +66,7 @@ export interface RegisterRequest {
   first_name: string;
   last_name: string;
   phone?: string;
-  role?: UserRole;
+  date_of_birth?: string; // ISO date string
 }
 
 export interface RefreshTokenRequest {
@@ -85,11 +86,11 @@ export interface CheckUserRequest {
 export interface CheckUserResponse {
   success: boolean;
   exists: boolean;
-  user?: UserWithoutPassword;
+  patient?: PatientWithoutPassword;
 }
 
 export interface SendCodeRequest {
-  user_id: number;
+  patient_id: number;
   email: string;
 }
 
@@ -99,27 +100,29 @@ export interface SendCodeResponse {
 }
 
 export interface VerifyCodeRequest {
-  user_id: number;
+  patient_id: number;
   code: number;
 }
 
 export interface VerifyCodeResponse {
   success: boolean;
-  user: UserWithoutPassword;
+  patient: PatientWithoutPassword;
+  token: string;
+  refreshToken: string;
 }
 
-export interface CreatePasswordlessUserRequest {
+export interface CreatePasswordlessPatientRequest {
   email: string;
   first_name: string;
   last_name: string;
-  phone: string;
-  date_of_birth: string;
+  phone?: string;
+  date_of_birth?: string;
 }
 
-export interface CreatePasswordlessUserResponse {
+export interface CreatePasswordlessPatientResponse {
   success: boolean;
   exists: boolean;
-  user: UserWithoutPassword;
+  patient: PatientWithoutPassword;
 }
 
 // ==================== USER MANAGEMENT ====================
@@ -174,7 +177,15 @@ export interface SearchPatientsRequest extends PaginationParams {
 
 // ==================== APPOINTMENT MANAGEMENT ====================
 export interface CreateAppointmentRequest {
-  patient_id: number;
+  patient_id?: number; // Optional - if not provided, will create new patient
+  patient_info?: {
+    // Required if patient_id not provided
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string;
+    date_of_birth?: string;
+  };
   doctor_id?: number;
   service_id: number;
   scheduled_at: string; // ISO datetime string

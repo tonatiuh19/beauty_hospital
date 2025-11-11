@@ -36,28 +36,42 @@ async function isDateTimeBlocked(
 
 /**
  * POST /api/appointments
- * Create a new appointment (authenticated users only)
+ * Create a new appointment (authenticated patients only)
+ * Supports creating new patient records when booking for another person
  */
 export const createAppointment: RequestHandler = async (req, res) => {
-  try {
-    const { patient_id, service_id, scheduled_at, duration_minutes, notes } =
-      req.body;
-    const userId = req.user?.id;
+  const connection = await db.getConnection();
 
-    if (!userId) {
+  try {
+    const {
+      patient_id,
+      patient_info,
+      service_id,
+      scheduled_at,
+      duration_minutes,
+      notes,
+      booked_for_self,
+      selected_areas,
+    } = req.body;
+    const loggedInPatientId = req.user?.id;
+
+    if (!loggedInPatientId) {
       const response: ApiResponse = {
         success: false,
-        error: "User not authenticated",
+        error: "Patient not authenticated",
       };
       return res.status(401).json(response);
     }
 
+    await connection.beginTransaction();
+
     // Validate required fields
-    if (!patient_id || !service_id || !scheduled_at) {
+    if (!service_id || !scheduled_at) {
       const response: ApiResponse = {
         success: false,
-        error: "patient_id, service_id, and scheduled_at are required",
+        error: "service_id and scheduled_at are required",
       };
+      await connection.rollback();
       return res.status(400).json(response);
     }
 
@@ -78,13 +92,72 @@ export const createAppointment: RequestHandler = async (req, res) => {
           ? `The selected time is not available. Reason: ${reason}`
           : "The selected date/time is not available. Please choose another time.",
       };
+      await connection.rollback();
       return res.status(400).json(response);
     }
 
+    // Determine the patient_id for the appointment
+    let appointmentPatientId: number;
+
+    if (booked_for_self) {
+      // Appointment is for the logged-in patient
+      appointmentPatientId = loggedInPatientId;
+    } else {
+      // Appointment is for another person
+      if (patient_id) {
+        // Use existing patient_id if provided
+        appointmentPatientId = patient_id;
+      } else if (patient_info) {
+        // Create new patient record
+        const { first_name, last_name, email, phone, date_of_birth } =
+          patient_info;
+
+        if (!first_name || !last_name || !email || !phone) {
+          const response: ApiResponse = {
+            success: false,
+            error:
+              "Patient info must include first_name, last_name, email, and phone",
+          };
+          await connection.rollback();
+          return res.status(400).json(response);
+        }
+
+        // Check if patient with this email already exists
+        const [existingPatients] = await connection.query<RowDataPacket[]>(
+          "SELECT id FROM patients WHERE email = ?",
+          [email],
+        );
+
+        if (existingPatients.length > 0) {
+          // Patient already exists - use their existing ID
+          // This avoids creating duplicate patient records
+          appointmentPatientId = existingPatients[0].id;
+        } else {
+          // Patient doesn't exist - create new patient record
+          // They can sign up later to claim and authenticate their account
+          const [patientResult] = await connection.query<ResultSetHeader>(
+            `INSERT INTO patients (first_name, last_name, email, phone, date_of_birth, role, is_active)
+             VALUES (?, ?, ?, ?, ?, 'patient', 1)`,
+            [first_name, last_name, email, phone, date_of_birth || null],
+          );
+
+          appointmentPatientId = patientResult.insertId;
+        }
+      } else {
+        const response: ApiResponse = {
+          success: false,
+          error:
+            "Either patient_id or patient_info must be provided when not booking for self",
+        };
+        await connection.rollback();
+        return res.status(400).json(response);
+      }
+    }
+
     // Verify patient exists
-    const [patientRows] = await db.query<RowDataPacket[]>(
+    const [patientRows] = await connection.query<RowDataPacket[]>(
       "SELECT id FROM patients WHERE id = ?",
-      [patient_id],
+      [appointmentPatientId],
     );
 
     if (patientRows.length === 0) {
@@ -92,11 +165,12 @@ export const createAppointment: RequestHandler = async (req, res) => {
         success: false,
         error: "Patient not found",
       };
+      await connection.rollback();
       return res.status(404).json(response);
     }
 
     // Verify service exists
-    const [serviceRows] = await db.query<RowDataPacket[]>(
+    const [serviceRows] = await connection.query<RowDataPacket[]>(
       "SELECT id, duration_minutes FROM services WHERE id = ? AND is_active = 1",
       [service_id],
     );
@@ -106,29 +180,40 @@ export const createAppointment: RequestHandler = async (req, res) => {
         success: false,
         error: "Service not found or is inactive",
       };
+      await connection.rollback();
       return res.status(404).json(response);
     }
 
     // Use service duration if not provided
     const finalDuration = duration_minutes || serviceRows[0].duration_minutes;
 
+    // Serialize selected_areas to JSON string if provided
+    const areasJson = selected_areas ? JSON.stringify(selected_areas) : null;
+
+    // Create notes with selected areas if provided
+    let finalNotes = notes || "";
+    if (selected_areas && selected_areas.length > 0) {
+      finalNotes = `${finalNotes}\nÁreas seleccionadas: ${selected_areas.join(", ")}`;
+    }
+
     const query = `
       INSERT INTO appointments 
-      (patient_id, service_id, scheduled_at, duration_minutes, notes, created_by, status)
-      VALUES (?, ?, ?, ?, ?, ?, 'scheduled')
+      (patient_id, service_id, scheduled_at, duration_minutes, notes, booked_for_self, created_by, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'scheduled')
     `;
 
-    const [result] = await db.query<ResultSetHeader>(query, [
-      patient_id,
+    const [result] = await connection.query<ResultSetHeader>(query, [
+      appointmentPatientId,
       service_id,
       scheduled_at,
       finalDuration,
-      notes || null,
-      userId,
+      finalNotes.trim() || null,
+      booked_for_self ? 1 : 0,
+      loggedInPatientId, // created_by is the logged-in patient
     ]);
 
     // Fetch the created appointment with details
-    const [rows] = await db.query<RowDataPacket[]>(
+    const [rows] = await connection.query<RowDataPacket[]>(
       `SELECT 
         a.*,
         p.first_name as patient_first_name,
@@ -147,6 +232,8 @@ export const createAppointment: RequestHandler = async (req, res) => {
       [result.insertId],
     );
 
+    await connection.commit();
+
     const appointment = rows[0];
 
     const response: ApiResponse<Appointment> = {
@@ -157,12 +244,15 @@ export const createAppointment: RequestHandler = async (req, res) => {
 
     res.status(201).json(response);
   } catch (error) {
+    await connection.rollback();
     console.error("Error creating appointment:", error);
     const response: ApiResponse = {
       success: false,
       error: "Failed to create appointment",
     };
     res.status(500).json(response);
+  } finally {
+    connection.release();
   }
 };
 

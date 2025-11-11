@@ -2,25 +2,24 @@ import { RequestHandler } from "express";
 import pool from "../db/connection";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
 import nodemailer from "nodemailer";
-import { generateToken } from "../utils/auth";
-import { UserRole } from "@shared/database";
+import { generateToken, generateRefreshToken } from "../utils/auth";
 
 // Types for request bodies
-interface CheckUserRequest {
+interface CheckPatientRequest {
   email: string;
 }
 
 interface SendCodeRequest {
-  user_id: number;
+  patient_id: number;
   email: string;
 }
 
 interface VerifyCodeRequest {
-  user_id: number;
+  patient_id: number;
   code: number;
 }
 
-interface CreateUserRequest {
+interface CreatePatientRequest {
   email: string;
   first_name: string;
   last_name: string;
@@ -29,7 +28,7 @@ interface CreateUserRequest {
 }
 
 // Response types
-interface UserData {
+interface PatientData {
   id: number;
   email: string;
   role: string;
@@ -37,45 +36,47 @@ interface UserData {
   last_name: string;
   phone: string | null;
   is_active: number;
+  is_email_verified: number;
+  date_of_birth: string | null;
   created_at: string;
   last_login: string | null;
 }
 
 interface SessionData {
   id: number;
-  user_id: number;
+  patient_id: number;
   session_code: number;
   user_session: number;
   user_session_date_start: string;
 }
 
 /**
- * Check if a user exists by email
+ * Check if a patient exists by email
  * POST /api/auth/check-user
  */
 export const checkUser: RequestHandler = async (req, res) => {
   try {
-    const { email } = req.body as CheckUserRequest;
+    const { email } = req.body as CheckPatientRequest;
 
     if (!email) {
       res.status(400).json({ success: false, message: "Email is required" });
       return;
     }
 
-    const [rows] = await pool.query<(UserData & RowDataPacket)[]>(
-      `SELECT id, email, role, first_name, last_name, phone, is_active, created_at, last_login
-       FROM users
+    const [rows] = await pool.query<(PatientData & RowDataPacket)[]>(
+      `SELECT id, email, role, first_name, last_name, phone, is_active, is_email_verified, date_of_birth, created_at, last_login
+       FROM patients
        WHERE email = ?`,
       [email],
     );
 
     if (rows.length > 0) {
-      res.json({ success: true, exists: true, user: rows[0] });
+      res.json({ success: true, exists: true, patient: rows[0] });
     } else {
       res.json({ success: true, exists: false });
     }
   } catch (error) {
-    console.error("Error checking user:", error);
+    console.error("Error checking patient:", error);
     if (error instanceof Error) {
       console.error("Error details:", error.message);
     }
@@ -84,7 +85,7 @@ export const checkUser: RequestHandler = async (req, res) => {
 };
 
 /**
- * Send verification code to user's email
+ * Send verification code to patient's email
  * POST /api/auth/send-code
  */
 export const sendCode: RequestHandler = async (req, res) => {
@@ -92,38 +93,40 @@ export const sendCode: RequestHandler = async (req, res) => {
     console.log("🔵 sendCode endpoint called");
     console.log("   Request body:", req.body);
 
-    const { user_id, email } = req.body as SendCodeRequest;
+    const { patient_id, email } = req.body as SendCodeRequest;
 
-    if (!user_id || !email) {
-      console.log("❌ Missing user_id or email");
+    if (!patient_id || !email) {
+      console.log("❌ Missing patient_id or email");
       res
         .status(400)
-        .json({ success: false, message: "User ID and email are required" });
+        .json({ success: false, message: "Patient ID and email are required" });
       return;
     }
 
-    console.log("   User ID:", user_id);
+    console.log("   Patient ID:", patient_id);
     console.log("   Email:", email);
 
-    // Get user name from DB
-    console.log("📊 Querying user from database...");
-    const [userRows] = await pool.query<(UserData & RowDataPacket)[]>(
-      "SELECT first_name, last_name FROM users WHERE id = ?",
-      [user_id],
+    // Get patient name from DB
+    console.log("📊 Querying patient from database...");
+    const [patientRows] = await pool.query<(PatientData & RowDataPacket)[]>(
+      "SELECT first_name, last_name FROM patients WHERE id = ?",
+      [patient_id],
     );
 
-    if (userRows.length === 0) {
-      console.log("❌ User not found in database");
-      res.status(404).json({ success: false, message: "User not found" });
+    if (patientRows.length === 0) {
+      console.log("❌ Patient not found in database");
+      res.status(404).json({ success: false, message: "Patient not found" });
       return;
     }
 
-    const user_name = `${userRows[0].first_name} ${userRows[0].last_name}`;
-    console.log("✅ User found:", user_name);
+    const patient_name = `${patientRows[0].first_name} ${patientRows[0].last_name}`;
+    console.log("✅ Patient found:", patient_name);
 
-    // Delete old session codes for this user
+    // Delete old session codes for this patient
     console.log("🗑️  Deleting old session codes...");
-    await pool.query("DELETE FROM users_sessions WHERE user_id = ?", [user_id]);
+    await pool.query("DELETE FROM users_sessions WHERE patient_id = ?", [
+      patient_id,
+    ]);
 
     // Generate session code (fixed for test email, random otherwise)
     let session_code: number;
@@ -148,9 +151,9 @@ export const sendCode: RequestHandler = async (req, res) => {
     console.log("💾 Inserting session code into database...");
     const date_start = new Date();
     await pool.query<ResultSetHeader>(
-      `INSERT INTO users_sessions (user_id, session_code, user_session, user_session_date_start)
+      `INSERT INTO users_sessions (patient_id, session_code, user_session, user_session_date_start)
        VALUES (?, ?, 0, ?)`,
-      [user_id, session_code, date_start],
+      [patient_id, session_code, date_start],
     );
     console.log("✅ Session code saved");
 
@@ -158,7 +161,7 @@ export const sendCode: RequestHandler = async (req, res) => {
     console.log("📧 Calling sendVerificationEmail...");
     const emailSent = await sendVerificationEmail(
       email,
-      user_name,
+      patient_name,
       session_code,
     );
 
@@ -181,27 +184,27 @@ export const sendCode: RequestHandler = async (req, res) => {
 };
 
 /**
- * Verify the code entered by user
+ * Verify the code entered by patient
  * POST /api/auth/verify-code
  */
 export const verifyCode: RequestHandler = async (req, res) => {
   try {
-    const { user_id, code } = req.body as VerifyCodeRequest;
+    const { patient_id, code } = req.body as VerifyCodeRequest;
 
-    if (!user_id || !code) {
+    if (!patient_id || !code) {
       res
         .status(400)
-        .json({ success: false, message: "User ID and code are required" });
+        .json({ success: false, message: "Patient ID and code are required" });
       return;
     }
 
     // Check if code is valid (within last 10 minutes)
     const [sessionRows] = await pool.query<(SessionData & RowDataPacket)[]>(
-      `SELECT id, user_id, session_code, user_session
+      `SELECT id, patient_id, session_code, user_session
        FROM users_sessions
-       WHERE user_id = ? AND session_code = ? 
+       WHERE patient_id = ? AND session_code = ? 
        AND user_session_date_start > DATE_SUB(NOW(), INTERVAL 10 MINUTE)`,
-      [user_id, code],
+      [patient_id, code],
     );
 
     if (sessionRows.length === 0) {
@@ -217,30 +220,49 @@ export const verifyCode: RequestHandler = async (req, res) => {
       [sessionRows[0].id],
     );
 
-    // Update last login
-    await pool.query("UPDATE users SET last_login = NOW() WHERE id = ?", [
-      user_id,
-    ]);
+    // Update last login and mark email as verified
+    await pool.query(
+      "UPDATE patients SET last_login = NOW(), is_email_verified = 1 WHERE id = ?",
+      [patient_id],
+    );
 
-    // Get updated user data
-    const [userRows] = await pool.query<(UserData & RowDataPacket)[]>(
-      `SELECT id, email, role, first_name, last_name, phone, is_active, created_at, last_login
-       FROM users
+    // Get updated patient data
+    const [patientRows] = await pool.query<(PatientData & RowDataPacket)[]>(
+      `SELECT id, email, role, first_name, last_name, phone, is_active, is_email_verified, date_of_birth, created_at, last_login
+       FROM patients
        WHERE id = ?`,
-      [user_id],
+      [patient_id],
     );
 
     // Generate JWT token
     const token = generateToken({
-      id: userRows[0].id,
-      email: userRows[0].email,
-      role: userRows[0].role as UserRole,
+      id: patientRows[0].id,
+      email: patientRows[0].email,
+      role: "patient" as any,
     });
+
+    // Generate refresh token
+    const refreshToken = generateRefreshToken({
+      id: patientRows[0].id,
+      email: patientRows[0].email,
+      role: "patient" as any,
+    });
+
+    // Store refresh token in database
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
+
+    await pool.query(
+      `INSERT INTO refresh_tokens (patient_id, token, expires_at)
+       VALUES (?, ?, ?)`,
+      [patient_id, refreshToken, expiresAt],
+    );
 
     res.json({
       success: true,
-      user: userRows[0],
+      patient: patientRows[0],
       token,
+      refreshToken,
     });
   } catch (error) {
     console.error("Error verifying code:", error);
@@ -252,7 +274,7 @@ export const verifyCode: RequestHandler = async (req, res) => {
 };
 
 /**
- * Create a new user account
+ * Create a new patient account
  * POST /api/auth/create-user
  */
 export const createUser: RequestHandler = async (req, res) => {
@@ -260,58 +282,51 @@ export const createUser: RequestHandler = async (req, res) => {
 
   try {
     const { email, first_name, last_name, phone, date_of_birth } =
-      req.body as CreateUserRequest;
+      req.body as CreatePatientRequest;
 
-    if (!email || !first_name || !last_name || !phone || !date_of_birth) {
+    if (!email || !first_name || !last_name) {
       res.status(400).json({
         success: false,
-        message:
-          "Email, first name, last name, phone, and date of birth are required",
+        message: "Email, first name, and last name are required",
       });
       return;
     }
 
     await connection.beginTransaction();
 
-    // Check if user already exists
-    const [existingUsers] = await connection.query<
-      (UserData & RowDataPacket)[]
+    // Check if patient already exists
+    const [existingPatients] = await connection.query<
+      (PatientData & RowDataPacket)[]
     >(
-      `SELECT id, email, role, first_name, last_name, phone, is_active, created_at, last_login
-       FROM users
+      `SELECT id, email, role, first_name, last_name, phone, is_active, is_email_verified, date_of_birth, created_at, last_login
+       FROM patients
        WHERE email = ? FOR UPDATE`,
       [email],
     );
 
-    if (existingUsers.length > 0) {
+    if (existingPatients.length > 0) {
       await connection.commit();
-      res.json({ success: true, exists: true, user: existingUsers[0] });
+      res.json({ success: true, exists: true, patient: existingPatients[0] });
       return;
     }
 
-    // Create new user (no password_hash needed for passwordless auth)
+    // Create new patient (no password_hash for passwordless auth)
     const [result] = await connection.query<ResultSetHeader>(
-      `INSERT INTO users (email, password_hash, role, first_name, last_name, phone, is_active)
-       VALUES (?, '', 'patient', ?, ?, ?, 1)`,
-      [email, first_name, last_name, phone || null],
+      `INSERT INTO patients (email, role, first_name, last_name, phone, date_of_birth, is_active)
+       VALUES (?, 'patient', ?, ?, ?, ?, 1)`,
+      [email, first_name, last_name, phone || null, date_of_birth || null],
     );
 
-    const newUserId = result.insertId;
+    const newPatientId = result.insertId;
 
-    // Create patient record
-    // Both phone and date_of_birth are now required fields from the frontend
-    await connection.query<ResultSetHeader>(
-      `INSERT INTO patients (user_id, first_name, last_name, email, phone, date_of_birth)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [newUserId, first_name, last_name, email, phone, date_of_birth],
-    );
-
-    // Get the created user data
-    const [newUserRows] = await connection.query<(UserData & RowDataPacket)[]>(
-      `SELECT id, email, role, first_name, last_name, phone, is_active, created_at, last_login
-       FROM users
+    // Get the created patient data
+    const [newPatientRows] = await connection.query<
+      (PatientData & RowDataPacket)[]
+    >(
+      `SELECT id, email, role, first_name, last_name, phone, is_active, is_email_verified, date_of_birth, created_at, last_login
+       FROM patients
        WHERE id = ?`,
-      [newUserId],
+      [newPatientId],
     );
 
     await connection.commit();
@@ -319,11 +334,11 @@ export const createUser: RequestHandler = async (req, res) => {
     res.json({
       success: true,
       exists: false,
-      user: newUserRows[0],
+      patient: newPatientRows[0],
     });
   } catch (error) {
     await connection.rollback();
-    console.error("Error creating user:", error);
+    console.error("Error creating patient:", error);
 
     // Log more details for debugging
     if (error instanceof Error) {

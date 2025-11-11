@@ -86,12 +86,13 @@ export type UserWithoutPassword = Omit<User, "password_hash">;
 // ==================== PATIENT TYPES ====================
 export interface Patient {
   id: number;
-  user_id?: number; // Link to user account (optional for walk-ins)
   first_name: string;
   last_name: string;
   email: string;
-  phone: string;
-  date_of_birth: Date;
+  password_hash?: string; // For patient authentication (null for walk-ins or externally booked)
+  role: "patient";
+  phone?: string; // Made optional - can be collected during signup or first appointment
+  date_of_birth?: Date; // Made optional - can be collected during signup or first appointment
   gender?: "male" | "female" | "other";
   address?: string;
   city?: string;
@@ -101,9 +102,13 @@ export interface Patient {
   emergency_contact_phone?: string;
   notes?: string;
   is_active: boolean;
+  is_email_verified: boolean;
+  last_login?: Date;
   created_at: Date;
   updated_at: Date;
 }
+
+export type PatientWithoutPassword = Omit<Patient, "password_hash">;
 
 // ==================== MEDICAL RECORD TYPES ====================
 export interface MedicalRecord {
@@ -162,7 +167,7 @@ export interface Appointment {
 }
 
 export interface AppointmentWithDetails extends Appointment {
-  patient: Patient;
+  patient: PatientWithoutPassword;
   doctor?: UserWithoutPassword;
   service: Service;
 }
@@ -206,7 +211,7 @@ export interface Contract {
 }
 
 export interface ContractWithDetails extends Contract {
-  patient: Patient;
+  patient: PatientWithoutPassword;
   service: Service;
   created_by_user: UserWithoutPassword;
 }
@@ -263,7 +268,8 @@ export interface BusinessHours {
 // ==================== AUDIT LOG TYPES ====================
 export interface AuditLog {
   id: number;
-  user_id: number;
+  user_id?: number; // For staff actions (admin, doctor, receptionist, etc.)
+  patient_id?: number; // For patient actions
   action: string;
   entity_type: string;
   entity_id: number;

@@ -1,7 +1,7 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 
-// User type
-export interface User {
+// Patient type (matching the backend Patient interface)
+export interface Patient {
   id: number;
   email: string;
   role: string;
@@ -9,13 +9,15 @@ export interface User {
   last_name: string;
   phone: string | null;
   is_active: number;
+  is_email_verified: number;
+  date_of_birth: string | null;
   created_at: string;
   last_login: string | null;
 }
 
 // Auth state
 interface AuthState {
-  user: User | null;
+  user: Patient | null;
   isAuthenticated: boolean;
   isLoading: boolean;
 }
@@ -32,7 +34,7 @@ const authSlice = createSlice({
   name: "auth",
   initialState,
   reducers: {
-    setUser: (state, action: PayloadAction<User>) => {
+    setUser: (state, action: PayloadAction<Patient>) => {
       state.user = action.payload;
       state.isAuthenticated = true;
       state.isLoading = false;

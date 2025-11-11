@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Nov 10, 2025 at 07:25 PM
+-- Generation Time: Nov 10, 2025 at 10:38 PM
 -- Server version: 5.7.23-23
 -- PHP Version: 8.1.33
 
@@ -36,10 +36,20 @@ CREATE TABLE `appointments` (
   `scheduled_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `duration_minutes` int(11) NOT NULL,
   `notes` text COLLATE utf8mb4_unicode_ci,
-  `created_by` int(11) NOT NULL,
+  `created_by` int(11) NOT NULL COMMENT 'Patient ID who created the appointment (logged-in user)',
+  `booked_for_self` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Whether appointment is for the logged-in user (1) or someone else (0)',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `appointments`
+--
+
+INSERT INTO `appointments` (`id`, `patient_id`, `doctor_id`, `service_id`, `status`, `scheduled_at`, `duration_minutes`, `notes`, `created_by`, `booked_for_self`, `created_at`, `updated_at`) VALUES
+(8, 9, NULL, 1, 'confirmed', '2025-11-14 18:30:00', 30, NULL, 9, 1, '2025-11-11 04:26:46', '2025-11-11 04:26:46'),
+(9, 9, NULL, 2, 'confirmed', '2025-11-21 17:15:00', 45, NULL, 9, 0, '2025-11-11 04:33:59', '2025-11-11 04:33:59'),
+(10, 10, NULL, 1, 'confirmed', '2025-11-14 16:30:00', 30, NULL, 9, 0, '2025-11-11 04:37:46', '2025-11-11 04:37:46');
 
 -- --------------------------------------------------------
 
@@ -49,7 +59,8 @@ CREATE TABLE `appointments` (
 
 CREATE TABLE `audit_logs` (
   `id` int(11) NOT NULL,
-  `user_id` int(11) NOT NULL,
+  `user_id` int(11) DEFAULT NULL,
+  `patient_id` int(11) DEFAULT NULL,
   `action` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `entity_type` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `entity_id` int(11) NOT NULL,
@@ -227,12 +238,15 @@ CREATE TABLE `notifications` (
 
 CREATE TABLE `patients` (
   `id` int(11) NOT NULL,
-  `user_id` int(11) DEFAULT NULL,
   `first_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `last_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `phone` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `date_of_birth` date NOT NULL,
+  `password_hash` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `role` enum('patient') COLLATE utf8mb4_unicode_ci DEFAULT 'patient',
+  `is_email_verified` tinyint(1) DEFAULT '0',
+  `last_login` timestamp NULL DEFAULT NULL,
+  `phone` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `date_of_birth` date DEFAULT NULL,
   `gender` enum('male','female','other') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `address` text COLLATE utf8mb4_unicode_ci,
   `city` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -250,14 +264,9 @@ CREATE TABLE `patients` (
 -- Dumping data for table `patients`
 --
 
-INSERT INTO `patients` (`id`, `user_id`, `first_name`, `last_name`, `email`, `phone`, `date_of_birth`, `gender`, `address`, `city`, `state`, `zip_code`, `emergency_contact_name`, `emergency_contact_phone`, `notes`, `is_active`, `created_at`, `updated_at`) VALUES
-(1, NULL, 'Alex', 'Gomez', 'axgoomez@gmail.com', '4741400363', '2002-07-18', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-09 20:11:54', '2025-11-09 20:11:54'),
-(2, NULL, 'Alex', 'Gomez', 'axgoomez@gmail.com', '4741400363', '1993-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-10 17:03:20', '2025-11-10 17:03:20'),
-(3, NULL, 'Alex', 'Gomez', 'axgoomez@gmail.com', '4741400363', '1993-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-10 17:12:12', '2025-11-10 17:12:12'),
-(4, NULL, 'Alex', 'Gomez', 'axgoomez@gmail.com', '4741400363', '1993-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-10 17:14:00', '2025-11-10 17:14:00'),
-(5, NULL, 'Alex', 'Gomez', 'axgoomez@gmail.com', '4741400363', '1993-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-10 17:20:28', '2025-11-10 17:20:28'),
-(6, NULL, 'Alex', 'Gomez', 'axgoomez@gmail.com', '4741400363', '1993-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-10 17:26:08', '2025-11-10 17:26:08'),
-(7, 9, 'Alex', 'Gomez', 'axgoomez@gmail.com', '4741400363', '1993-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-10 17:33:24', '2025-11-10 17:33:24');
+INSERT INTO `patients` (`id`, `first_name`, `last_name`, `email`, `password_hash`, `role`, `is_email_verified`, `last_login`, `phone`, `date_of_birth`, `gender`, `address`, `city`, `state`, `zip_code`, `emergency_contact_name`, `emergency_contact_phone`, `notes`, `is_active`, `created_at`, `updated_at`) VALUES
+(9, 'Alex', 'Gomez', 'axgoomez@gmail.com', NULL, 'patient', 1, '2025-11-11 04:26:07', '4741400363', '1999-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 04:25:54', '2025-11-11 04:26:07'),
+(10, 'Felix', 'Gomez', 'tonatiuh.gom@gmail.com', NULL, 'patient', 0, NULL, '4741400363', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 04:37:34', '2025-11-11 04:37:34');
 
 -- --------------------------------------------------------
 
@@ -282,6 +291,15 @@ CREATE TABLE `payments` (
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+--
+-- Dumping data for table `payments`
+--
+
+INSERT INTO `payments` (`id`, `appointment_id`, `patient_id`, `amount`, `payment_method`, `payment_status`, `stripe_payment_id`, `stripe_payment_intent_id`, `transaction_id`, `notes`, `processed_by`, `processed_at`, `created_at`, `updated_at`) VALUES
+(7, 8, 9, 500.00, 'stripe', 'completed', 'pi_3SS9A4AxpuzS9HfB1rvSYVga', 'pi_3SS9A4AxpuzS9HfB1rvSYVga', NULL, NULL, 9, '2025-11-11 04:26:46', '2025-11-11 04:26:33', '2025-11-11 04:26:46'),
+(8, 9, 9, 800.00, 'stripe', 'completed', 'pi_3SS9H4AxpuzS9HfB3YBou4A5', 'pi_3SS9H4AxpuzS9HfB3YBou4A5', NULL, NULL, 9, '2025-11-11 04:33:59', '2025-11-11 04:33:46', '2025-11-11 04:33:59'),
+(9, 10, 10, 500.00, 'stripe', 'completed', 'pi_3SS9KlAxpuzS9HfB0CYibD1N', 'pi_3SS9KlAxpuzS9HfB0CYibD1N', NULL, NULL, 9, '2025-11-11 04:37:47', '2025-11-11 04:37:35', '2025-11-11 04:37:47');
+
 -- --------------------------------------------------------
 
 --
@@ -290,11 +308,19 @@ CREATE TABLE `payments` (
 
 CREATE TABLE `refresh_tokens` (
   `id` int(11) NOT NULL,
-  `user_id` int(11) NOT NULL,
+  `user_id` int(11) DEFAULT NULL,
+  `patient_id` int(11) DEFAULT NULL,
   `token` varchar(500) COLLATE utf8mb4_unicode_ci NOT NULL,
   `expires_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `refresh_tokens`
+--
+
+INSERT INTO `refresh_tokens` (`id`, `user_id`, `patient_id`, `token`, `expires_at`, `created_at`) VALUES
+(1, NULL, 9, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6OSwiZW1haWwiOiJheGdvb21lekBnbWFpbC5jb20iLCJyb2xlIjoicGF0aWVudCIsImlhdCI6MTc2MjgzNTE2NywiZXhwIjoxNzYzNDM5OTY3fQ.p_YninY4EOtkXRhlZsxfkdkp2kBRyFPsdAoCDXNGdpA', '2025-11-18 04:26:07', '2025-11-11 04:26:07');
 
 -- --------------------------------------------------------
 
@@ -352,7 +378,7 @@ CREATE TABLE `users` (
 
 INSERT INTO `users` (`id`, `email`, `password_hash`, `role`, `first_name`, `last_name`, `phone`, `is_active`, `created_at`, `updated_at`, `last_login`) VALUES
 (1, 'admin@beautyhospital.com', '$2b$10$TBsX8oVXgbglL8nZqEpygO0PliVXZRqbQHPOEaUxKwhdfHr27ir5a', 'admin', 'Admin', 'User', '+1234567890', 1, '2025-11-03 01:54:22', '2025-11-03 01:54:22', NULL),
-(9, 'axgoomez@gmail.com', '', 'patient', 'Alex', 'Gomez', '4741400363', 1, '2025-11-10 17:33:24', '2025-11-10 17:36:04', '2025-11-10 17:36:04');
+(9, 'axgoomez@gmail.com', '', 'patient', 'Alex', 'Gomez', '4741400363', 1, '2025-11-10 17:33:24', '2025-11-11 03:04:36', '2025-11-11 03:04:36');
 
 -- --------------------------------------------------------
 
@@ -362,7 +388,8 @@ INSERT INTO `users` (`id`, `email`, `password_hash`, `role`, `first_name`, `last
 
 CREATE TABLE `users_sessions` (
   `id` int(11) NOT NULL,
-  `user_id` int(11) NOT NULL,
+  `user_id` int(11) DEFAULT NULL,
+  `patient_id` int(11) DEFAULT NULL,
   `session_code` int(6) NOT NULL,
   `user_session` tinyint(1) NOT NULL,
   `user_session_date_start` datetime NOT NULL
@@ -372,8 +399,8 @@ CREATE TABLE `users_sessions` (
 -- Dumping data for table `users_sessions`
 --
 
-INSERT INTO `users_sessions` (`id`, `user_id`, `session_code`, `user_session`, `user_session_date_start`) VALUES
-(10, 9, 775640, 1, '2025-11-10 11:35:47');
+INSERT INTO `users_sessions` (`id`, `user_id`, `patient_id`, `session_code`, `user_session`, `user_session_date_start`) VALUES
+(13, NULL, 9, 975847, 1, '2025-11-10 22:25:55');
 
 --
 -- Indexes for dumped tables
@@ -384,12 +411,13 @@ INSERT INTO `users_sessions` (`id`, `user_id`, `session_code`, `user_session`, `
 --
 ALTER TABLE `appointments`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `created_by` (`created_by`),
   ADD KEY `idx_patient_id` (`patient_id`),
   ADD KEY `idx_doctor_id` (`doctor_id`),
   ADD KEY `idx_service_id` (`service_id`),
   ADD KEY `idx_status` (`status`),
-  ADD KEY `idx_scheduled_at` (`scheduled_at`);
+  ADD KEY `idx_scheduled_at` (`scheduled_at`),
+  ADD KEY `idx_booked_for_self` (`booked_for_self`),
+  ADD KEY `idx_created_by` (`created_by`);
 
 --
 -- Indexes for table `audit_logs`
@@ -399,7 +427,8 @@ ALTER TABLE `audit_logs`
   ADD KEY `idx_user_id` (`user_id`),
   ADD KEY `idx_entity` (`entity_type`,`entity_id`),
   ADD KEY `idx_action` (`action`),
-  ADD KEY `idx_created_at` (`created_at`);
+  ADD KEY `idx_created_at` (`created_at`),
+  ADD KEY `idx_patient_id` (`patient_id`);
 
 --
 -- Indexes for table `blocked_dates`
@@ -464,9 +493,9 @@ ALTER TABLE `notifications`
 --
 ALTER TABLE `patients`
   ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_email` (`email`),
   ADD KEY `idx_email` (`email`),
   ADD KEY `idx_phone` (`phone`),
-  ADD KEY `idx_user_id` (`user_id`),
   ADD KEY `idx_is_active` (`is_active`),
   ADD KEY `idx_name` (`first_name`,`last_name`);
 
@@ -489,7 +518,8 @@ ALTER TABLE `refresh_tokens`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `token` (`token`),
   ADD KEY `idx_token` (`token`),
-  ADD KEY `idx_user_id` (`user_id`);
+  ADD KEY `idx_user_id` (`user_id`),
+  ADD KEY `idx_patient_id` (`patient_id`);
 
 --
 -- Indexes for table `services`
@@ -514,7 +544,8 @@ ALTER TABLE `users`
 --
 ALTER TABLE `users_sessions`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_user_id` (`user_id`);
+  ADD KEY `idx_user_id` (`user_id`),
+  ADD KEY `idx_patient_id` (`patient_id`);
 
 --
 -- AUTO_INCREMENT for dumped tables
@@ -524,7 +555,7 @@ ALTER TABLE `users_sessions`
 -- AUTO_INCREMENT for table `appointments`
 --
 ALTER TABLE `appointments`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
 
 --
 -- AUTO_INCREMENT for table `audit_logs`
@@ -572,19 +603,19 @@ ALTER TABLE `notifications`
 -- AUTO_INCREMENT for table `patients`
 --
 ALTER TABLE `patients`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
 
 --
 -- AUTO_INCREMENT for table `payments`
 --
 ALTER TABLE `payments`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
 
 --
 -- AUTO_INCREMENT for table `refresh_tokens`
 --
 ALTER TABLE `refresh_tokens`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `services`
@@ -602,7 +633,7 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `users_sessions`
 --
 ALTER TABLE `users_sessions`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
 
 --
 -- Constraints for dumped tables
@@ -621,7 +652,9 @@ ALTER TABLE `appointments`
 -- Constraints for table `audit_logs`
 --
 ALTER TABLE `audit_logs`
-  ADD CONSTRAINT `audit_logs_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+  ADD CONSTRAINT `audit_logs_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `audit_logs_ibfk_2` FOREIGN KEY (`patient_id`) REFERENCES `patients` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `audit_logs_ibfk_3` FOREIGN KEY (`patient_id`) REFERENCES `patients` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `blocked_dates`
@@ -660,12 +693,6 @@ ALTER TABLE `notifications`
   ADD CONSTRAINT `notifications_ibfk_2` FOREIGN KEY (`appointment_id`) REFERENCES `appointments` (`id`) ON DELETE SET NULL;
 
 --
--- Constraints for table `patients`
---
-ALTER TABLE `patients`
-  ADD CONSTRAINT `patients_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL;
-
---
 -- Constraints for table `payments`
 --
 ALTER TABLE `payments`
@@ -677,13 +704,17 @@ ALTER TABLE `payments`
 -- Constraints for table `refresh_tokens`
 --
 ALTER TABLE `refresh_tokens`
-  ADD CONSTRAINT `refresh_tokens_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+  ADD CONSTRAINT `refresh_tokens_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `refresh_tokens_ibfk_2` FOREIGN KEY (`patient_id`) REFERENCES `patients` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `refresh_tokens_ibfk_3` FOREIGN KEY (`patient_id`) REFERENCES `patients` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `users_sessions`
 --
 ALTER TABLE `users_sessions`
-  ADD CONSTRAINT `users_sessions_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+  ADD CONSTRAINT `users_sessions_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `users_sessions_ibfk_2` FOREIGN KEY (`patient_id`) REFERENCES `patients` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `users_sessions_ibfk_3` FOREIGN KEY (`patient_id`) REFERENCES `patients` (`id`) ON DELETE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

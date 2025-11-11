@@ -270,6 +270,18 @@ export function AppointmentWizard() {
     try {
       const scheduled_at = `${appointment.date}T${appointment.time}:00`;
 
+      // Prepare patient_info when booking for another person
+      const patient_info =
+        !appointment.bookedForSelf && appointment.name && appointment.email
+          ? {
+              // Split name into first_name and last_name
+              first_name: appointment.name.split(" ")[0] || appointment.name,
+              last_name: appointment.name.split(" ").slice(1).join(" ") || "",
+              email: appointment.email,
+              phone: appointment.phone,
+            }
+          : undefined;
+
       const response = await axios.post<ApiResponse<StripePaymentResponse>>(
         "/appointments/book-with-payment",
         {
@@ -278,6 +290,7 @@ export function AppointmentWizard() {
           duration_minutes: getServiceDuration(appointment.service),
           notes: appointment.notes || undefined,
           booked_for_self: appointment.bookedForSelf,
+          patient_info, // Include patient info when booking for someone else
           selected_areas: appointment.selectedAreas,
           accepted_terms: acceptedTerms,
           accepted_privacy: acceptedPrivacy,

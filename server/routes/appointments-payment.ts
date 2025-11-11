@@ -33,6 +33,7 @@ export const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
 
     const {
       patient_id,
+      patient_info,
       service_id,
       scheduled_at,
       duration_minutes,
@@ -74,58 +75,90 @@ export const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
       return res.status(400).json(response);
     }
 
-    // Use userId as patient_id if not provided (booking for self)
-    const effectivePatientId = patient_id || userId;
+    // Determine the patient_id for the appointment
+    let finalPatientId: number;
+
+    if (booked_for_self) {
+      // Appointment is for the logged-in patient
+      finalPatientId = userId;
+    } else {
+      // Appointment is for another person
+      if (patient_id) {
+        // Use existing patient_id if provided
+        finalPatientId = patient_id;
+      } else if (patient_info) {
+        // Create new patient record or reuse existing one
+        const { first_name, last_name, email, phone, date_of_birth } =
+          patient_info;
+
+        if (!first_name || !last_name || !email || !phone) {
+          const response: ApiResponse = {
+            success: false,
+            error:
+              "Patient info must include first_name, last_name, email, and phone when booking for someone else",
+          };
+          return res.status(400).json(response);
+        }
+
+        // Check if patient with this email already exists
+        const [existingPatients] = await db.query<any[]>(
+          "SELECT id FROM patients WHERE email = ?",
+          [email],
+        );
+
+        if (existingPatients.length > 0) {
+          // Patient already exists - use their existing ID
+          finalPatientId = existingPatients[0].id;
+          console.log(
+            `♻️  Reusing existing patient with email ${email}, ID: ${finalPatientId}`,
+          );
+        } else {
+          // Patient doesn't exist - create new patient record
+          const [patientResult] = await db.query<ResultSetHeader>(
+            `INSERT INTO patients (first_name, last_name, email, phone, date_of_birth, role, is_active)
+             VALUES (?, ?, ?, ?, ?, 'patient', 1)`,
+            [first_name, last_name, email, phone, date_of_birth || null],
+          );
+
+          finalPatientId = patientResult.insertId;
+          console.log(
+            `✨ Created new patient with email ${email}, ID: ${finalPatientId}`,
+          );
+        }
+      } else {
+        const response: ApiResponse = {
+          success: false,
+          error:
+            "Either patient_id or patient_info must be provided when not booking for self",
+        };
+        return res.status(400).json(response);
+      }
+    }
 
     // Start a transaction
     const connection = await db.getConnection();
     await connection.beginTransaction();
 
     try {
-      // If no patient_id provided, find or create patient record for this user
-      let finalPatientId = patient_id;
+      console.log("💰 Creating payment for patient ID:", finalPatientId);
 
-      if (!patient_id) {
-        // Check if patient record exists for this user
-        const [existingPatients] = await connection.query<any[]>(
-          "SELECT id FROM patients WHERE user_id = ?",
-          [userId],
-        );
+      // Verify patient exists
+      const [patientRows] = await connection.query<any[]>(
+        "SELECT id, email, first_name, last_name FROM patients WHERE id = ?",
+        [finalPatientId],
+      );
 
-        if (existingPatients.length > 0) {
-          finalPatientId = existingPatients[0].id;
-          console.log("✅ Found existing patient record:", finalPatientId);
-        } else {
-          // Get user details to create patient record
-          const [userRows] = await connection.query<any[]>(
-            "SELECT first_name, last_name, email, phone FROM users WHERE id = ?",
-            [userId],
-          );
-
-          if (userRows.length === 0) {
-            await connection.rollback();
-            connection.release();
-            const response: ApiResponse = {
-              success: false,
-              error: "User not found",
-            };
-            return res.status(404).json(response);
-          }
-
-          const user = userRows[0];
-
-          // Create patient record
-          const [patientResult] = await connection.query<ResultSetHeader>(
-            `INSERT INTO patients 
-            (user_id, first_name, last_name, email, phone, date_of_birth, is_active)
-            VALUES (?, ?, ?, ?, ?, '1990-01-01', 1)`,
-            [userId, user.first_name, user.last_name, user.email, user.phone],
-          );
-
-          finalPatientId = patientResult.insertId;
-          console.log("✅ Created new patient record:", finalPatientId);
-        }
+      if (patientRows.length === 0) {
+        await connection.rollback();
+        connection.release();
+        const response: ApiResponse = {
+          success: false,
+          error: "Patient not found",
+        };
+        return res.status(404).json(response);
       }
+
+      console.log("✅ Patient verified:", patientRows[0].email);
 
       // Get service details
       const [serviceRows] = await connection.query<any[]>(
@@ -150,8 +183,8 @@ export const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
         amount: Math.round(payment_amount * 100), // Convert to cents
         currency: currency,
         metadata: {
-          user_id: userId.toString(),
           patient_id: finalPatientId.toString(),
+          created_by_patient_id: userId.toString(), // Patient who created the booking
           service_id: service_id.toString(),
           service_name: service.name,
           scheduled_at: scheduled_at,
