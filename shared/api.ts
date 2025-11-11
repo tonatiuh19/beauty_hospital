@@ -226,6 +226,23 @@ export interface CheckAvailabilityRequest {
   service_id: number;
 }
 
+export interface BookedTimeSlot {
+  start_time: string; // HH:MM format
+  duration_minutes: number;
+  appointment_id: number;
+}
+
+export interface GetBookedTimeSlotsRequest {
+  date: string; // ISO date format (YYYY-MM-DD)
+  service_id?: number; // Optional - filter by service
+}
+
+export interface GetBookedTimeSlotsResponse {
+  date: string;
+  service_id: number | null;
+  booked_slots: BookedTimeSlot[];
+}
+
 // ==================== PAYMENT MANAGEMENT ====================
 export interface CreatePaymentRequest {
   appointment_id?: number;

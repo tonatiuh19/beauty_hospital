@@ -37,6 +37,10 @@ import {
   fetchBusinessHours,
   getBusinessHoursForDay,
 } from "@/store/slices/businessHoursSlice";
+import {
+  fetchBookedSlots,
+  isTimeSlotBooked,
+} from "@/store/slices/bookedSlotsSlice";
 import { AuthModal } from "./AuthModal";
 import { SimpleCalendar } from "./SimpleCalendar";
 import { StripeCheckoutForm } from "./StripeCheckoutForm";
@@ -95,6 +99,7 @@ export function AppointmentWizard() {
     (state) => state.blockedDates,
   );
   const { businessHours } = useAppSelector((state) => state.businessHours);
+  const bookedSlotsState = useAppSelector((state) => state.bookedSlots);
   const step = appointment.currentStep;
 
   // Local state for validation errors and auth modal
@@ -146,6 +151,18 @@ export function AppointmentWizard() {
       .split("T")[0];
     dispatch(fetchBlockedDates({ start_date: startDate, end_date: endDate }));
   }, [dispatch]);
+
+  // Fetch booked appointments when date or service changes
+  useEffect(() => {
+    if (appointment.date && appointment.service) {
+      dispatch(
+        fetchBookedSlots({
+          date: appointment.date,
+          service_id: appointment.service,
+        }),
+      );
+    }
+  }, [appointment.date, appointment.service, dispatch]);
 
   // Auto-skip Step 3 if logged in and haven't made booking choice yet
   useEffect(() => {
@@ -521,6 +538,16 @@ export function AppointmentWizard() {
           return { blocked: true, reason: block.reason };
         }
       }
+    }
+
+    // Check if time slot overlaps with existing booked appointments
+    const bookedCheck = isTimeSlotBooked(
+      bookedSlotsState,
+      startTime,
+      durationMinutes,
+    );
+    if (bookedCheck.booked) {
+      return { blocked: true, reason: bookedCheck.reason };
     }
 
     return { blocked: false };

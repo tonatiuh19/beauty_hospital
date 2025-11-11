@@ -5,6 +5,7 @@ import appointmentApiReducer from "./slices/appointmentApiSlice";
 import authReducer from "./slices/authSlice";
 import blockedDatesReducer from "./slices/blockedDatesSlice";
 import businessHoursReducer from "./slices/businessHoursSlice";
+import bookedSlotsReducer from "./slices/bookedSlotsSlice";
 
 // Configure the store
 export const store = configureStore({
@@ -15,6 +16,7 @@ export const store = configureStore({
     auth: authReducer,
     blockedDates: blockedDatesReducer,
     businessHours: businessHoursReducer,
+    bookedSlots: bookedSlotsReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

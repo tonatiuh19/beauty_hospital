@@ -31,6 +31,7 @@ import {
   getAppointmentById,
   updateAppointment,
   cancelAppointment,
+  getBookedTimeSlots,
 } from "./routes/appointments";
 import {
   bookAppointmentWithPayment,
@@ -127,6 +128,9 @@ export function createServer() {
   app.get("/api/business-hours/day/:dayOfWeek", getBusinessHoursByDay);
 
   // ==================== APPOINTMENTS ROUTES ====================
+  // Public route - needed for showing available time slots
+  app.get("/api/appointments/booked-slots", getBookedTimeSlots);
+
   app.post("/api/appointments", authenticate, createAppointment);
   app.post(
     "/api/appointments/book-with-payment",

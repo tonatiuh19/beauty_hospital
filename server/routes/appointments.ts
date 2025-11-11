@@ -563,3 +563,81 @@ export const cancelAppointment: RequestHandler = async (req, res) => {
     res.status(500).json(response);
   }
 };
+
+/**
+ * GET /api/appointments/booked-slots
+ * Get booked time slots for a specific date and service (public endpoint - no auth required)
+ * This is used to show unavailable time slots in the appointment booking wizard
+ */
+export const getBookedTimeSlots: RequestHandler = async (req, res) => {
+  try {
+    const { date, service_id } = req.query;
+
+    if (!date) {
+      const response: ApiResponse = {
+        success: false,
+        error: "date parameter is required",
+      };
+      return res.status(400).json(response);
+    }
+
+    // Build query to fetch appointments for the given date
+    let query = `
+      SELECT 
+        a.id,
+        a.scheduled_at,
+        a.duration_minutes,
+        s.duration_minutes as service_duration
+      FROM appointments a
+      LEFT JOIN services s ON a.service_id = s.id
+      WHERE DATE(a.scheduled_at) = ?
+      AND a.status IN ('scheduled', 'confirmed')
+    `;
+    const params: any[] = [date];
+
+    // Optionally filter by service_id
+    if (service_id) {
+      query += ` AND a.service_id = ?`;
+      params.push(service_id);
+    }
+
+    query += ` ORDER BY a.scheduled_at`;
+
+    const [rows] = await db.query<RowDataPacket[]>(query, params);
+
+    // Transform the results into time slots
+    const bookedSlots = rows.map((row) => {
+      const scheduledAt = new Date(row.scheduled_at);
+      const hours = scheduledAt.getHours().toString().padStart(2, "0");
+      const minutes = scheduledAt.getMinutes().toString().padStart(2, "0");
+      const startTime = `${hours}:${minutes}`;
+
+      // Use appointment duration or service duration
+      const duration = row.duration_minutes || row.service_duration || 60;
+
+      return {
+        start_time: startTime,
+        duration_minutes: duration,
+        appointment_id: row.id,
+      };
+    });
+
+    const response: ApiResponse = {
+      success: true,
+      data: {
+        date,
+        service_id: service_id ? Number(service_id) : null,
+        booked_slots: bookedSlots,
+      },
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error("Error fetching booked time slots:", error);
+    const response: ApiResponse = {
+      success: false,
+      error: "Failed to fetch booked time slots",
+    };
+    res.status(500).json(response);
+  }
+};
