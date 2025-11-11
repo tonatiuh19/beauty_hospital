@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Nov 10, 2025 at 10:38 PM
+-- Generation Time: Nov 10, 2025 at 11:15 PM
 -- Server version: 5.7.23-23
 -- PHP Version: 8.1.33
 
@@ -49,7 +49,9 @@ CREATE TABLE `appointments` (
 INSERT INTO `appointments` (`id`, `patient_id`, `doctor_id`, `service_id`, `status`, `scheduled_at`, `duration_minutes`, `notes`, `created_by`, `booked_for_self`, `created_at`, `updated_at`) VALUES
 (8, 9, NULL, 1, 'confirmed', '2025-11-14 18:30:00', 30, NULL, 9, 1, '2025-11-11 04:26:46', '2025-11-11 04:26:46'),
 (9, 9, NULL, 2, 'confirmed', '2025-11-21 17:15:00', 45, NULL, 9, 0, '2025-11-11 04:33:59', '2025-11-11 04:33:59'),
-(10, 10, NULL, 1, 'confirmed', '2025-11-14 16:30:00', 30, NULL, 9, 0, '2025-11-11 04:37:46', '2025-11-11 04:37:46');
+(10, 10, NULL, 1, 'confirmed', '2025-11-14 16:30:00', 30, NULL, 9, 0, '2025-11-11 04:37:46', '2025-11-11 04:37:46'),
+(11, 9, NULL, 5, 'confirmed', '2025-11-28 22:30:00', 90, NULL, 9, 1, '2025-11-11 04:39:42', '2025-11-11 04:39:42'),
+(13, 11, NULL, 6, 'confirmed', '2025-11-13 15:00:00', 30, NULL, 9, 0, '2025-11-11 05:14:13', '2025-11-11 05:14:13');
 
 -- --------------------------------------------------------
 
@@ -265,8 +267,9 @@ CREATE TABLE `patients` (
 --
 
 INSERT INTO `patients` (`id`, `first_name`, `last_name`, `email`, `password_hash`, `role`, `is_email_verified`, `last_login`, `phone`, `date_of_birth`, `gender`, `address`, `city`, `state`, `zip_code`, `emergency_contact_name`, `emergency_contact_phone`, `notes`, `is_active`, `created_at`, `updated_at`) VALUES
-(9, 'Alex', 'Gomez', 'axgoomez@gmail.com', NULL, 'patient', 1, '2025-11-11 04:26:07', '4741400363', '1999-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 04:25:54', '2025-11-11 04:26:07'),
-(10, 'Felix', 'Gomez', 'tonatiuh.gom@gmail.com', NULL, 'patient', 0, NULL, '4741400363', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 04:37:34', '2025-11-11 04:37:34');
+(9, 'Alex', 'Gomez', 'axgoomez@gmail.com', NULL, 'patient', 1, '2025-11-11 05:06:00', '4741400363', '1999-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 04:25:54', '2025-11-11 05:06:00'),
+(10, 'Felix', 'Gomez', 'tonatiuh.gom@gmail.com', NULL, 'patient', 0, NULL, '4741400363', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 04:37:34', '2025-11-11 04:37:34'),
+(11, 'Felix', 'Gomez', 'test@gmail.com', NULL, 'patient', 0, NULL, '1234567890', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 05:13:59', '2025-11-11 05:13:59');
 
 -- --------------------------------------------------------
 
@@ -298,7 +301,10 @@ CREATE TABLE `payments` (
 INSERT INTO `payments` (`id`, `appointment_id`, `patient_id`, `amount`, `payment_method`, `payment_status`, `stripe_payment_id`, `stripe_payment_intent_id`, `transaction_id`, `notes`, `processed_by`, `processed_at`, `created_at`, `updated_at`) VALUES
 (7, 8, 9, 500.00, 'stripe', 'completed', 'pi_3SS9A4AxpuzS9HfB1rvSYVga', 'pi_3SS9A4AxpuzS9HfB1rvSYVga', NULL, NULL, 9, '2025-11-11 04:26:46', '2025-11-11 04:26:33', '2025-11-11 04:26:46'),
 (8, 9, 9, 800.00, 'stripe', 'completed', 'pi_3SS9H4AxpuzS9HfB3YBou4A5', 'pi_3SS9H4AxpuzS9HfB3YBou4A5', NULL, NULL, 9, '2025-11-11 04:33:59', '2025-11-11 04:33:46', '2025-11-11 04:33:59'),
-(9, 10, 10, 500.00, 'stripe', 'completed', 'pi_3SS9KlAxpuzS9HfB0CYibD1N', 'pi_3SS9KlAxpuzS9HfB0CYibD1N', NULL, NULL, 9, '2025-11-11 04:37:47', '2025-11-11 04:37:35', '2025-11-11 04:37:47');
+(9, 10, 10, 500.00, 'stripe', 'completed', 'pi_3SS9KlAxpuzS9HfB0CYibD1N', 'pi_3SS9KlAxpuzS9HfB0CYibD1N', NULL, NULL, 9, '2025-11-11 04:37:47', '2025-11-11 04:37:35', '2025-11-11 04:37:47'),
+(10, 11, 9, 2000.00, 'stripe', 'completed', 'pi_3SS9MXAxpuzS9HfB1ciIwitO', 'pi_3SS9MXAxpuzS9HfB1ciIwitO', NULL, NULL, 9, '2025-11-11 04:39:42', '2025-11-11 04:39:25', '2025-11-11 04:39:42'),
+(11, NULL, 9, 500.00, 'stripe', 'pending', NULL, 'pi_3SS9mOAxpuzS9HfB2PnTFuKc', NULL, NULL, 9, NULL, '2025-11-11 05:06:08', '2025-11-11 05:06:08'),
+(12, 13, 11, 300.00, 'stripe', 'completed', 'pi_3SS9u0AxpuzS9HfB4aQVNolm', 'pi_3SS9u0AxpuzS9HfB4aQVNolm', NULL, NULL, 9, '2025-11-11 05:14:13', '2025-11-11 05:14:01', '2025-11-11 05:14:13');
 
 -- --------------------------------------------------------
 
@@ -320,7 +326,8 @@ CREATE TABLE `refresh_tokens` (
 --
 
 INSERT INTO `refresh_tokens` (`id`, `user_id`, `patient_id`, `token`, `expires_at`, `created_at`) VALUES
-(1, NULL, 9, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6OSwiZW1haWwiOiJheGdvb21lekBnbWFpbC5jb20iLCJyb2xlIjoicGF0aWVudCIsImlhdCI6MTc2MjgzNTE2NywiZXhwIjoxNzYzNDM5OTY3fQ.p_YninY4EOtkXRhlZsxfkdkp2kBRyFPsdAoCDXNGdpA', '2025-11-18 04:26:07', '2025-11-11 04:26:07');
+(1, NULL, 9, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6OSwiZW1haWwiOiJheGdvb21lekBnbWFpbC5jb20iLCJyb2xlIjoicGF0aWVudCIsImlhdCI6MTc2MjgzNTE2NywiZXhwIjoxNzYzNDM5OTY3fQ.p_YninY4EOtkXRhlZsxfkdkp2kBRyFPsdAoCDXNGdpA', '2025-11-18 04:26:07', '2025-11-11 04:26:07'),
+(2, NULL, 9, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6OSwiZW1haWwiOiJheGdvb21lekBnbWFpbC5jb20iLCJyb2xlIjoicGF0aWVudCIsImlhdCI6MTc2MjgzNzU2MCwiZXhwIjoxNzYzNDQyMzYwfQ.oG_0c2iOf8lgSizQa9legZy5s9J4PAjskOOvBumisko', '2025-11-18 05:06:01', '2025-11-11 05:06:00');
 
 -- --------------------------------------------------------
 
@@ -400,7 +407,7 @@ CREATE TABLE `users_sessions` (
 --
 
 INSERT INTO `users_sessions` (`id`, `user_id`, `patient_id`, `session_code`, `user_session`, `user_session_date_start`) VALUES
-(13, NULL, 9, 975847, 1, '2025-11-10 22:25:55');
+(14, NULL, 9, 299961, 1, '2025-11-10 23:05:48');
 
 --
 -- Indexes for dumped tables
@@ -414,7 +421,6 @@ ALTER TABLE `appointments`
   ADD KEY `idx_patient_id` (`patient_id`),
   ADD KEY `idx_doctor_id` (`doctor_id`),
   ADD KEY `idx_service_id` (`service_id`),
-  ADD KEY `idx_status` (`status`),
   ADD KEY `idx_scheduled_at` (`scheduled_at`),
   ADD KEY `idx_booked_for_self` (`booked_for_self`),
   ADD KEY `idx_created_by` (`created_by`);
@@ -555,7 +561,7 @@ ALTER TABLE `users_sessions`
 -- AUTO_INCREMENT for table `appointments`
 --
 ALTER TABLE `appointments`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
 
 --
 -- AUTO_INCREMENT for table `audit_logs`
@@ -603,19 +609,19 @@ ALTER TABLE `notifications`
 -- AUTO_INCREMENT for table `patients`
 --
 ALTER TABLE `patients`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
 
 --
 -- AUTO_INCREMENT for table `payments`
 --
 ALTER TABLE `payments`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
 
 --
 -- AUTO_INCREMENT for table `refresh_tokens`
 --
 ALTER TABLE `refresh_tokens`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `services`
@@ -633,7 +639,7 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `users_sessions`
 --
 ALTER TABLE `users_sessions`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=15;
 
 --
 -- Constraints for dumped tables

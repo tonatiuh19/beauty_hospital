@@ -324,10 +324,28 @@ export function AppointmentWizard() {
       }
     } catch (error: any) {
       console.error("Payment creation error:", error);
-      setPaymentError(
-        error.response?.data?.error ||
-          "Error al crear el pago. Por favor intenta de nuevo.",
-      );
+
+      // Handle specific error cases
+      if (error.response?.status === 409) {
+        // Slot conflict - show user-friendly message and go back to step 2
+        setPaymentError(
+          error.response?.data?.error ||
+            "Este horario ya no está disponible. Por favor selecciona otro horario.",
+        );
+
+        // Automatically redirect user back to date/time selection after 3 seconds
+        setTimeout(() => {
+          dispatch(setTime("")); // Clear the selected time
+          dispatch(previousStep()); // Go back to step 2 (date/time selection)
+          dispatch(previousStep()); // Go back to step 2 from step 3
+          setPaymentError(null);
+        }, 3000);
+      } else {
+        setPaymentError(
+          error.response?.data?.error ||
+            "Error al crear el pago. Por favor intenta de nuevo.",
+        );
+      }
     } finally {
       setIsCreatingPayment(false);
     }
@@ -353,7 +371,16 @@ export function AppointmentWizard() {
       }
     } catch (error: any) {
       console.error("Payment confirmation error:", error);
-      setPaymentError("Error al confirmar el pago");
+
+      if (error.response?.status === 409) {
+        // Slot was taken while user was completing payment
+        setPaymentError(
+          error.response?.data?.error ||
+            "Lo sentimos, este horario fue reservado por otro cliente. Tu pago será reembolsado automáticamente.",
+        );
+      } else {
+        setPaymentError("Error al confirmar el pago");
+      }
     }
   };
 
@@ -1481,19 +1508,29 @@ export function AppointmentWizard() {
                           <div className="p-6 rounded-2xl bg-red-50 border-2 border-red-300">
                             <div className="flex items-start gap-3">
                               <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                              <div>
-                                <p className="text-sm text-red-800 font-medium mb-2">
-                                  Error al preparar el pago
+                              <div className="flex-1">
+                                <p className="text-sm text-red-800 font-bold mb-2">
+                                  {paymentError.includes("horario")
+                                    ? "⚠️ Horario No Disponible"
+                                    : "Error al preparar el pago"}
                                 </p>
-                                <p className="text-sm text-red-700">
+                                <p className="text-sm text-red-700 leading-relaxed">
                                   {paymentError}
                                 </p>
-                                <button
-                                  onClick={createPaymentIntent}
-                                  className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
-                                >
-                                  Intentar de nuevo
-                                </button>
+                                {!paymentError.includes("horario") && (
+                                  <button
+                                    onClick={createPaymentIntent}
+                                    className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
+                                  >
+                                    Intentar de nuevo
+                                  </button>
+                                )}
+                                {paymentError.includes("horario") && (
+                                  <p className="mt-3 text-xs text-red-600 italic">
+                                    Serás redirigido a la selección de horario
+                                    en unos segundos...
+                                  </p>
+                                )}
                               </div>
                             </div>
                           </div>

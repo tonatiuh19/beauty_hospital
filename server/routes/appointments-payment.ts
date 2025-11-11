@@ -178,6 +178,49 @@ export const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
       const service = serviceRows[0];
       const appointmentDuration = duration_minutes || service.duration_minutes;
 
+      // **CRITICAL: Check if the time slot is already booked to prevent double-booking**
+      // This check happens within the transaction to ensure atomicity
+      const scheduledDate = new Date(scheduled_at);
+      const scheduledEndTime = new Date(
+        scheduledDate.getTime() + appointmentDuration * 60000,
+      );
+
+      // Check for overlapping appointments
+      const [overlappingAppointments] = await connection.query<any[]>(
+        `SELECT id, scheduled_at, duration_minutes, status
+         FROM appointments 
+         WHERE service_id = ?
+         AND status IN ('pending', 'confirmed', 'in_progress')
+         AND (
+           -- New appointment starts during existing appointment
+           (scheduled_at <= ? AND DATE_ADD(scheduled_at, INTERVAL duration_minutes MINUTE) > ?) OR
+           -- New appointment ends during existing appointment
+           (scheduled_at < ? AND DATE_ADD(scheduled_at, INTERVAL duration_minutes MINUTE) >= ?) OR
+           -- New appointment completely contains existing appointment
+           (scheduled_at >= ? AND DATE_ADD(scheduled_at, INTERVAL duration_minutes MINUTE) <= ?)
+         )`,
+        [
+          service_id,
+          scheduled_at,
+          scheduled_at,
+          scheduledEndTime.toISOString().slice(0, 19).replace("T", " "),
+          scheduledEndTime.toISOString().slice(0, 19).replace("T", " "),
+          scheduled_at,
+          scheduledEndTime.toISOString().slice(0, 19).replace("T", " "),
+        ],
+      );
+
+      if (overlappingAppointments.length > 0) {
+        await connection.rollback();
+        connection.release();
+        const response: ApiResponse = {
+          success: false,
+          error:
+            "Lo sentimos, este horario ya no está disponible. Por favor selecciona otro horario.",
+        };
+        return res.status(409).json(response);
+      }
+
       // Create Stripe Payment Intent
       const paymentIntent = await stripe.paymentIntents.create({
         amount: Math.round(payment_amount * 100), // Convert to cents
@@ -287,6 +330,62 @@ export const confirmAppointmentPayment: RequestHandler = async (req, res) => {
     await connection.beginTransaction();
 
     try {
+      // **CRITICAL: Re-check slot availability before creating appointment**
+      // This prevents race conditions where payment was initiated but slot was taken during checkout
+      const scheduledDate = new Date(scheduledAt);
+      const scheduledEndTime = new Date(
+        scheduledDate.getTime() + durationMinutes * 60000,
+      );
+
+      const [overlappingAppointments] = await connection.query<any[]>(
+        `SELECT id, scheduled_at, duration_minutes, status
+         FROM appointments 
+         WHERE service_id = ?
+         AND status IN ('pending', 'confirmed', 'in_progress')
+         AND (
+           -- New appointment starts during existing appointment
+           (scheduled_at <= ? AND DATE_ADD(scheduled_at, INTERVAL duration_minutes MINUTE) > ?) OR
+           -- New appointment ends during existing appointment
+           (scheduled_at < ? AND DATE_ADD(scheduled_at, INTERVAL duration_minutes MINUTE) >= ?) OR
+           -- New appointment completely contains existing appointment
+           (scheduled_at >= ? AND DATE_ADD(scheduled_at, INTERVAL duration_minutes MINUTE) <= ?)
+         )`,
+        [
+          serviceId,
+          scheduledAt,
+          scheduledAt,
+          scheduledEndTime.toISOString().slice(0, 19).replace("T", " "),
+          scheduledEndTime.toISOString().slice(0, 19).replace("T", " "),
+          scheduledAt,
+          scheduledEndTime.toISOString().slice(0, 19).replace("T", " "),
+        ],
+      );
+
+      if (overlappingAppointments.length > 0) {
+        await connection.rollback();
+        connection.release();
+
+        // Refund the payment since slot is no longer available
+        try {
+          await stripe.refunds.create({
+            payment_intent: payment_intent_id,
+            reason: "requested_by_customer",
+          });
+          console.log(
+            `💸 Refunded payment ${payment_intent_id} - slot no longer available`,
+          );
+        } catch (refundError) {
+          console.error("Error refunding payment:", refundError);
+        }
+
+        const response: ApiResponse = {
+          success: false,
+          error:
+            "Lo sentimos, este horario fue reservado por otro cliente mientras procesábamos tu pago. Tu pago será reembolsado automáticamente.",
+        };
+        return res.status(409).json(response);
+      }
+
       // Create appointment record with confirmed status
       const [appointmentResult] = await connection.query<ResultSetHeader>(
         `INSERT INTO appointments 
