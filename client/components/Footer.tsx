@@ -66,13 +66,14 @@ export function Footer() {
             viewport={{ once: true }}
           >
             <h4 className="font-bold text-foreground mb-4">Enlaces Rápidos</h4>
-            <ul className="space-y-2">
+            <ul className="space-y-3">
               <li>
                 <a
                   href="#features"
                   onClick={(e) => handleSectionClick(e, "#features")}
-                  className="text-gray-600 hover:text-primary transition-colors text-sm cursor-pointer"
+                  className="text-gray-600 hover:text-primary transition-colors text-sm cursor-pointer inline-flex items-center gap-2 group"
                 >
+                  <span className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-primary transition-colors"></span>
                   Características
                 </a>
               </li>
@@ -80,8 +81,9 @@ export function Footer() {
                 <a
                   href="#services"
                   onClick={(e) => handleSectionClick(e, "#services")}
-                  className="text-gray-600 hover:text-primary transition-colors text-sm cursor-pointer"
+                  className="text-gray-600 hover:text-primary transition-colors text-sm cursor-pointer inline-flex items-center gap-2 group"
                 >
+                  <span className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-primary transition-colors"></span>
                   Servicios
                 </a>
               </li>
@@ -89,8 +91,9 @@ export function Footer() {
                 <a
                   href="#testimonials"
                   onClick={(e) => handleSectionClick(e, "#testimonials")}
-                  className="text-gray-600 hover:text-primary transition-colors text-sm cursor-pointer"
+                  className="text-gray-600 hover:text-primary transition-colors text-sm cursor-pointer inline-flex items-center gap-2 group"
                 >
+                  <span className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-primary transition-colors"></span>
                   Testimonios
                 </a>
               </li>
@@ -98,9 +101,19 @@ export function Footer() {
                 <a
                   href="#contact"
                   onClick={(e) => handleSectionClick(e, "#contact")}
-                  className="text-gray-600 hover:text-primary transition-colors text-sm cursor-pointer"
+                  className="text-gray-600 hover:text-primary transition-colors text-sm cursor-pointer inline-flex items-center gap-2 group"
                 >
+                  <span className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-primary transition-colors"></span>
                   Contacto
+                </a>
+              </li>
+              <li>
+                <a
+                  href="/admin/login"
+                  className="text-gray-600 hover:text-primary transition-colors text-sm inline-flex items-center gap-2 group"
+                >
+                  <span className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-primary transition-colors"></span>
+                  Panel de Administración
                 </a>
               </li>
             </ul>
@@ -114,36 +127,40 @@ export function Footer() {
             viewport={{ once: true }}
           >
             <h4 className="font-bold text-foreground mb-4">Servicios</h4>
-            <ul className="space-y-2">
+            <ul className="space-y-3">
               <li>
                 <a
                   href="#"
-                  className="text-gray-600 hover:text-primary transition-colors text-sm"
+                  className="text-gray-600 hover:text-primary transition-colors text-sm inline-flex items-center gap-2 group"
                 >
+                  <span className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-primary transition-colors"></span>
                   Depilación Láser
                 </a>
               </li>
               <li>
                 <a
                   href="#"
-                  className="text-gray-600 hover:text-primary transition-colors text-sm"
+                  className="text-gray-600 hover:text-primary transition-colors text-sm inline-flex items-center gap-2 group"
                 >
+                  <span className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-primary transition-colors"></span>
                   Tratamientos Médicos
                 </a>
               </li>
               <li>
                 <a
                   href="#"
-                  className="text-gray-600 hover:text-primary transition-colors text-sm"
+                  className="text-gray-600 hover:text-primary transition-colors text-sm inline-flex items-center gap-2 group"
                 >
+                  <span className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-primary transition-colors"></span>
                   Cuidado de Piel
                 </a>
               </li>
               <li>
                 <a
                   href="#"
-                  className="text-gray-600 hover:text-primary transition-colors text-sm"
+                  className="text-gray-600 hover:text-primary transition-colors text-sm inline-flex items-center gap-2 group"
                 >
+                  <span className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-primary transition-colors"></span>
                   Tratamientos Especiales
                 </a>
               </li>
@@ -158,36 +175,40 @@ export function Footer() {
             viewport={{ once: true }}
           >
             <h4 className="font-bold text-foreground mb-4">Síguenos</h4>
-            <ul className="space-y-2">
+            <ul className="space-y-3">
               <li>
                 <a
                   href="#"
-                  className="text-gray-600 hover:text-primary transition-colors text-sm"
+                  className="text-gray-600 hover:text-primary transition-colors text-sm inline-flex items-center gap-2 group"
                 >
+                  <span className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-primary transition-colors"></span>
                   Instagram
                 </a>
               </li>
               <li>
                 <a
                   href="#"
-                  className="text-gray-600 hover:text-primary transition-colors text-sm"
+                  className="text-gray-600 hover:text-primary transition-colors text-sm inline-flex items-center gap-2 group"
                 >
+                  <span className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-primary transition-colors"></span>
                   Facebook
                 </a>
               </li>
               <li>
                 <a
                   href="#"
-                  className="text-gray-600 hover:text-primary transition-colors text-sm"
+                  className="text-gray-600 hover:text-primary transition-colors text-sm inline-flex items-center gap-2 group"
                 >
+                  <span className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-primary transition-colors"></span>
                   TikTok
                 </a>
               </li>
               <li>
                 <a
                   href="#"
-                  className="text-gray-600 hover:text-primary transition-colors text-sm"
+                  className="text-gray-600 hover:text-primary transition-colors text-sm inline-flex items-center gap-2 group"
                 >
+                  <span className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-primary transition-colors"></span>
                   YouTube
                 </a>
               </li>
@@ -196,28 +217,55 @@ export function Footer() {
         </div>
 
         {/* Divider */}
-        <div className="border-t border-gray-300 py-8">
+        <div className="border-t border-gray-300 pt-8">
           {/* Legal links */}
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
-            <div className="flex gap-6 text-sm text-gray-600">
-              <a href="#" className="hover:text-primary transition-colors">
-                Política de Privacidad
-              </a>
-              <a href="#" className="hover:text-primary transition-colors">
-                Términos de Servicio
-              </a>
-              <a href="#" className="hover:text-primary transition-colors">
-                Configuración de Cookies
-              </a>
-            </div>
+          <div className="flex flex-col sm:flex-row justify-center items-center gap-4 sm:gap-6 mb-6">
+            <a
+              href="#"
+              className="text-sm text-gray-600 hover:text-primary transition-colors"
+            >
+              Política de Privacidad
+            </a>
+            <span className="hidden sm:inline text-gray-400">•</span>
+            <a
+              href="#"
+              className="text-sm text-gray-600 hover:text-primary transition-colors"
+            >
+              Términos de Servicio
+            </a>
           </div>
 
           {/* Copyright */}
           <div className="text-center text-sm text-gray-600 flex items-center justify-center gap-2">
             <span>© {currentYear} Hospital de Depilación. Hecho con</span>
-            <Heart size={14} className="fill-primary text-primary" />
+            <Heart
+              size={14}
+              className="fill-primary text-primary animate-pulse"
+            />
             <span>para tu belleza.</span>
           </div>
+        </div>
+
+        {/* Developer credit - After all content, subtle but accessible */}
+        <div className="text-center pt-4 pb-2">
+          <a
+            href="https://disruptinglabs.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-gray-400 hover:text-primary transition-all duration-300 inline-flex items-center gap-1.5 opacity-30 hover:opacity-100 group"
+            aria-label="Website developed by DisruptingLabs.com"
+          >
+            <span>Developed by</span>
+            <span className="font-semibold group-hover:underline">
+              DisruptingLabs.com
+            </span>
+            <span>with</span>
+            <Heart
+              size={10}
+              className="fill-red-500 text-red-500 animate-pulse"
+            />
+            <span>in Mexico</span>
+          </a>
         </div>
       </div>
     </footer>

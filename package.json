@@ -36,6 +36,7 @@
     "mysql2": "^3.11.5",
     "nodemailer": "^6.9.16",
     "pdfkit": "^0.15.1",
+    "react-big-calendar": "^1.19.4",
     "react-helmet-async": "^2.0.5",
     "react-redux": "^9.2.0",
     "stripe": "^17.5.0",

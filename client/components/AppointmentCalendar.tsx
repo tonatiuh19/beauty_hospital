@@ -108,7 +108,7 @@ export function AppointmentCalendar({
         </div>
 
         {/* Show blocked dates info if any */}
-        {blockedDates.length > 0 && (
+        {/* {blockedDates.length > 0 && (
           <div className="mt-4 pt-4 border-t border-white/40">
             <p className="text-xs font-semibold text-gray-700 mb-2">
               Fechas/Horarios bloqueados próximos:
@@ -174,7 +174,7 @@ export function AppointmentCalendar({
               )}
             </div>
           </div>
-        )}
+        )} */}
       </motion.div>
     </div>
   );

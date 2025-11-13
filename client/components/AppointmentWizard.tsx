@@ -1022,7 +1022,7 @@ export function AppointmentWizard() {
                     </motion.div>
 
                     {/* Show blocked times info for selected date */}
-                    {appointment.date && (
+                    {/* {appointment.date && (
                       <>
                         {(() => {
                           const blockedTimes = getBlockedTimesForDate(
@@ -1070,7 +1070,7 @@ export function AppointmentWizard() {
                           return null;
                         })()}
                       </>
-                    )}
+                    )} */}
                   </div>
 
                   {appointment.service && (

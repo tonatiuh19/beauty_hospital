@@ -291,7 +291,7 @@ export function SimpleCalendar({
         </div>
 
         {/* Legend */}
-        <div className="mt-4 pt-4 border-t border-white/40 space-y-2">
+        {/* <div className="mt-4 pt-4 border-t border-white/40 space-y-2">
           <p className="text-xs font-semibold text-gray-700 mb-2">Leyenda:</p>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded bg-primary"></div>
@@ -313,10 +313,10 @@ export function SimpleCalendar({
             </div>
             <span className="text-xs text-gray-600">Horarios limitados</span>
           </div>
-        </div>
+        </div> */}
 
         {/* Show blocked dates info if any */}
-        {blockedDates.length > 0 && (
+        {/* {blockedDates.length > 0 && (
           <div className="mt-4 pt-4 border-t border-white/40">
             <p className="text-xs font-semibold text-gray-700 mb-2">
               Fechas/Horarios bloqueados próximos:
@@ -382,7 +382,7 @@ export function SimpleCalendar({
               )}
             </div>
           </div>
-        )}
+        )} */}
       </motion.div>
     </div>
   );

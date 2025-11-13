@@ -6,11 +6,14 @@
 // ==================== ENUMS ====================
 export enum UserRole {
   ADMIN = "admin",
-  POS = "pos",
-  DOCTOR = "doctor",
+  GENERAL_ADMIN = "general_admin",
   RECEPTIONIST = "receptionist",
+  DOCTOR = "doctor",
+  POS = "pos",
   PATIENT = "patient",
 }
+
+export type AdminRole = "admin" | "general_admin" | "receptionist" | "doctor";
 
 export enum AppointmentStatus {
   SCHEDULED = "scheduled",
@@ -19,6 +22,13 @@ export enum AppointmentStatus {
   COMPLETED = "completed",
   CANCELLED = "cancelled",
   NO_SHOW = "no_show",
+}
+
+export enum BookingSource {
+  ONLINE = "online",
+  RECEPTIONIST = "receptionist",
+  PHONE = "phone",
+  WALK_IN = "walk_in",
 }
 
 export enum PaymentStatus {
@@ -75,7 +85,11 @@ export interface User {
   first_name: string;
   last_name: string;
   phone?: string;
+  profile_picture_url?: string;
+  specialization?: string; // For doctors
+  employee_id?: string;
   is_active: boolean;
+  is_email_verified: boolean;
   created_at: Date;
   updated_at: Date;
   last_login?: Date;
@@ -162,6 +176,15 @@ export interface Appointment {
   notes?: string;
   booked_for_self: boolean; // true if appointment is for the logged-in user, false if for someone else
   created_by: number;
+  booking_source: BookingSource;
+  check_in_at?: Date;
+  check_in_by?: number;
+  contract_id?: number;
+  cancellation_reason?: string;
+  cancelled_at?: Date;
+  cancelled_by?: number;
+  rescheduled_from?: number;
+  reminder_sent_at?: Date;
   created_at: Date;
   updated_at: Date;
 }
@@ -183,6 +206,14 @@ export interface Payment {
   stripe_payment_id?: string;
   stripe_payment_intent_id?: string;
   transaction_id?: string;
+  refund_amount?: number;
+  refund_reason?: string;
+  refunded_at?: Date;
+  refunded_by?: number;
+  refund_approved_by?: number;
+  refund_approved_at?: Date;
+  coupon_id?: number;
+  discount_amount: number;
   notes?: string;
   processed_by: number;
   processed_at?: Date;
@@ -275,7 +306,107 @@ export interface AuditLog {
   entity_id: number;
   old_values?: string; // JSON string
   new_values?: string; // JSON string
+  metadata?: string; // JSON string - Additional context
   ip_address?: string;
   user_agent?: string;
+  created_at: Date;
+}
+
+// ==================== COUPON TYPES ====================
+export enum DiscountType {
+  PERCENTAGE = "percentage",
+  FIXED_AMOUNT = "fixed_amount",
+}
+
+export interface Coupon {
+  id: number;
+  code: string;
+  description?: string;
+  discount_type: DiscountType;
+  discount_value: number;
+  min_purchase_amount?: number;
+  max_discount_amount?: number;
+  usage_limit?: number;
+  usage_count: number;
+  per_user_limit?: number;
+  valid_from: Date;
+  valid_until?: Date;
+  is_active: boolean;
+  applicable_services?: number[]; // Array of service IDs or null for all
+  created_by: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CouponUsage {
+  id: number;
+  coupon_id: number;
+  patient_id: number;
+  appointment_id?: number;
+  payment_id?: number;
+  discount_amount: number;
+  used_at: Date;
+}
+
+// ==================== SETTINGS TYPES ====================
+export enum SettingType {
+  TEXT = "text",
+  NUMBER = "number",
+  BOOLEAN = "boolean",
+  JSON = "json",
+}
+
+export interface Setting {
+  id: number;
+  setting_key: string;
+  setting_value?: string;
+  setting_type: SettingType;
+  category: string;
+  description?: string;
+  is_public: boolean;
+  updated_by?: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+// ==================== CONTENT PAGES TYPES ====================
+export interface ContentPage {
+  id: number;
+  slug: string;
+  title: string;
+  content?: string;
+  meta_description?: string;
+  is_published: boolean;
+  created_by: number;
+  updated_by?: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+// ==================== DASHBOARD METRICS TYPES ====================
+export interface DashboardMetrics {
+  id: number;
+  metric_date: Date;
+  total_appointments: number;
+  completed_appointments: number;
+  cancelled_appointments: number;
+  no_show_appointments: number;
+  total_revenue: number;
+  total_refunds: number;
+  new_patients: number;
+  active_contracts: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+// ==================== APPOINTMENT REMINDER TYPES ====================
+export interface AppointmentReminder {
+  id: number;
+  appointment_id: number;
+  reminder_type: NotificationType;
+  scheduled_for: Date;
+  sent_at?: Date;
+  status: "pending" | "sent" | "failed";
+  error_message?: string;
   created_at: Date;
 }
