@@ -764,6 +764,379 @@ async function sendVerificationEmail(
 }
 
 /**
+ * Helper function to send appointment confirmation email
+ */
+async function sendAppointmentConfirmationEmail(
+  email: string,
+  patientName: string,
+  appointmentDetails: {
+    serviceName: string;
+    date: string;
+    time: string;
+    duration: number;
+    amount: number;
+  },
+): Promise<boolean> {
+  try {
+    console.log("🔍 Sending appointment confirmation email to:", email);
+
+    // Configure email transporter (same as verification email)
+    let transportConfig: any;
+
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      console.log(
+        "⚠️  No SMTP credentials found. Using Ethereal test account...",
+      );
+
+      const testAccount = await nodemailer.createTestAccount();
+
+      transportConfig = {
+        host: testAccount.smtp.host,
+        port: testAccount.smtp.port,
+        secure: testAccount.smtp.secure,
+        auth: {
+          user: testAccount.user,
+          pass: testAccount.pass,
+        },
+      };
+
+      console.log("📧 Ethereal test account created for confirmation email");
+    } else {
+      transportConfig = {
+        host: process.env.SMTP_HOST || "mail.garbrix.com",
+        port: parseInt(process.env.SMTP_PORT || "465"),
+        secure: process.env.SMTP_SECURE === "true",
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+      };
+
+      console.log("📧 Using configured SMTP for confirmation email");
+    }
+
+    const transporter = nodemailer.createTransport(transportConfig);
+
+    // Verify SMTP connection
+    await transporter.verify();
+    console.log("✅ SMTP connection verified for confirmation email");
+
+    // Format date and time for display
+    const appointmentDate = new Date(appointmentDetails.date);
+    const formattedDate = appointmentDate.toLocaleDateString("es-MX", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+
+    // Email template without emojis - using HTML/CSS for better compatibility
+    const emailBody = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          body { 
+            font-family: 'Arial', 'Helvetica', sans-serif; 
+            background-color: #f4f7fa; 
+            padding: 20px; 
+            line-height: 1.6;
+          }
+          .container { 
+            background-color: #ffffff; 
+            border-radius: 12px; 
+            padding: 40px; 
+            max-width: 600px; 
+            margin: 0 auto; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+          }
+          .header {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 30px;
+          }
+          .header h1 {
+            margin: 10px 0 0 0;
+            font-size: 28px;
+            font-weight: bold;
+          }
+          .success-icon {
+            width: 60px;
+            height: 60px;
+            background-color: #10b981;
+            border-radius: 50%;
+            margin: 0 auto 15px;
+            position: relative;
+          }
+          .success-icon::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 35px;
+            border: solid white;
+            border-width: 0 4px 4px 0;
+            transform: translate(-50%, -60%) rotate(45deg);
+          }
+          .header p {
+            margin: 10px 0 0 0;
+            font-size: 16px;
+            opacity: 0.95;
+          }
+          .greeting {
+            font-size: 16px;
+            color: #374151;
+            margin-bottom: 15px;
+          }
+          .message {
+            color: #374151;
+            margin-bottom: 25px;
+          }
+          .details {
+            background-color: #f9fafb;
+            border-left: 4px solid #6366f1;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+          }
+          .detail-row {
+            display: table;
+            width: 100%;
+            padding: 12px 0;
+            border-bottom: 1px solid #e5e7eb;
+          }
+          .detail-row:last-child {
+            border-bottom: none;
+          }
+          .detail-label {
+            display: table-cell;
+            font-weight: bold;
+            color: #374151;
+            width: 40%;
+          }
+          .detail-value {
+            display: table-cell;
+            color: #6366f1;
+            font-weight: 600;
+            text-align: right;
+          }
+          .icon-box {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            background-color: #6366f1;
+            border-radius: 3px;
+            margin-right: 8px;
+            vertical-align: middle;
+          }
+          .amount-section {
+            background-color: #ecfdf5;
+            border: 2px solid #10b981;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin: 25px 0;
+          }
+          .amount-label {
+            font-size: 14px;
+            color: #059669;
+            font-weight: 600;
+            margin-bottom: 5px;
+          }
+          .amount {
+            font-size: 32px;
+            color: #059669;
+            font-weight: bold;
+          }
+          .info-box {
+            background-color: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 25px 0;
+          }
+          .info-box h3 {
+            color: #1e40af;
+            margin: 0 0 15px 0;
+            font-size: 18px;
+          }
+          .info-box p {
+            color: #1e3a8a;
+            margin: 10px 0;
+          }
+          .info-icon {
+            display: inline-block;
+            width: 18px;
+            height: 18px;
+            background-color: #3b82f6;
+            border-radius: 50%;
+            margin-right: 8px;
+            vertical-align: middle;
+            position: relative;
+          }
+          .info-icon::after {
+            content: 'i';
+            position: absolute;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+          }
+          .contact-info {
+            background-color: #f9fafb;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 25px 0;
+          }
+          .contact-info h3 {
+            color: #374151;
+            text-align: center;
+            margin-bottom: 15px;
+            font-size: 18px;
+          }
+          .contact-item {
+            color: #374151;
+            margin: 10px 0;
+            text-align: center;
+          }
+          .contact-item strong {
+            color: #6366f1;
+          }
+          .footer { 
+            color: #6b7280; 
+            font-size: 14px; 
+            text-align: center; 
+            margin-top: 40px; 
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+          }
+          .footer p {
+            margin: 8px 0;
+          }
+          .footer-note {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-top: 15px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <div class="success-icon"></div>
+            <h1>Cita Confirmada</h1>
+            <p>Tu pago ha sido procesado exitosamente</p>
+          </div>
+          
+          <p class="greeting">Hola <strong>${patientName}</strong>,</p>
+          
+          <p class="message">
+            Nos complace confirmar que tu cita ha sido agendada exitosamente. Tu pago ha sido procesado y tu reserva está confirmada.
+          </p>
+
+          <div class="details">
+            <div class="detail-row">
+              <span class="detail-label"><span class="icon-box"></span> Servicio</span>
+              <span class="detail-value">${appointmentDetails.serviceName}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label"><span class="icon-box"></span> Fecha</span>
+              <span class="detail-value">${formattedDate}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label"><span class="icon-box"></span> Hora</span>
+              <span class="detail-value">${appointmentDetails.time}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label"><span class="icon-box"></span> Duracion</span>
+              <span class="detail-value">${appointmentDetails.duration} minutos</span>
+            </div>
+          </div>
+
+          <div class="amount-section">
+            <div class="amount-label">MONTO PAGADO</div>
+            <div class="amount">$${appointmentDetails.amount.toFixed(2)} MXN</div>
+          </div>
+
+          <div class="info-box">
+            <h3><span class="info-icon"></span> Informacion Importante</h3>
+            <p><strong>Por favor llega 10 minutos antes</strong> de tu cita para completar el registro.</p>
+            <p>Si necesitas cancelar o reprogramar tu cita, por favor contactanos con al menos 24 horas de anticipacion.</p>
+          </div>
+
+          <div class="contact-info">
+            <h3>Necesitas ayuda?</h3>
+            <div class="contact-item">Telefono: <strong>+52 1234567890</strong></div>
+            <div class="contact-item">Email: <strong>info@hospital.mx</strong></div>
+          </div>
+
+          <div class="footer">
+            <p><strong>Beauty Hospital</strong></p>
+            <p>Tu clinica de confianza para tratamientos de belleza y estetica</p>
+            <p class="footer-note">
+              Este es un correo automatico, por favor no respondas directamente a este mensaje.
+            </p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    console.log("Sending confirmation email to:", email);
+
+    const info = await transporter.sendMail({
+      from:
+        process.env.SMTP_FROM || `"Beauty Hospital" <${process.env.SMTP_USER}>`,
+      to: email,
+      subject: "Confirmacion de Cita - Beauty Hospital",
+      html: emailBody,
+    });
+
+    console.log("Confirmation email sent successfully!");
+    console.log("   Message ID:", info.messageId);
+    console.log("   Response:", JSON.stringify(info.response || "No response"));
+    console.log("   Accepted:", JSON.stringify(info.accepted || []));
+    console.log("   Rejected:", JSON.stringify(info.rejected || []));
+
+    // If using Ethereal (test mode), log the preview URL
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      const previewUrl = nodemailer.getTestMessageUrl(info as any);
+      console.log("Preview URL:", previewUrl);
+    } else {
+      // Production mode - log additional debug info
+      console.log("PRODUCTION CONFIRMATION EMAIL SENT:");
+      console.log("   Target email:", email);
+      console.log("   Patient name:", patientName);
+      console.log("   Service:", appointmentDetails.serviceName);
+      console.log("   Date:", appointmentDetails.date);
+      console.log("   Time:", appointmentDetails.time);
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Error sending confirmation email:", error);
+    if (error instanceof Error) {
+      console.error("   Error message:", error.message);
+    }
+    return false;
+  }
+}
+
+/**
  * Helper function to send admin verification email
  */
 async function sendAdminVerificationEmail(
@@ -4147,6 +4520,53 @@ const confirmPayment: RequestHandler = async (req, res) => {
     );
 
     console.log("💰 Payment record created for appointment:", appointmentId);
+
+    // Fetch appointment details for email
+    const [appointmentDetails] = await pool.query<any[]>(
+      `SELECT 
+        a.id,
+        a.scheduled_at,
+        a.duration_minutes,
+        s.name as service_name,
+        s.price as service_price,
+        p.first_name,
+        p.last_name,
+        p.email
+       FROM appointments a
+       JOIN services s ON a.service_id = s.id
+       JOIN patients p ON a.patient_id = p.id
+       WHERE a.id = ?`,
+      [appointmentId],
+    );
+
+    // Send confirmation email
+    if (appointmentDetails.length > 0) {
+      const appointment = appointmentDetails[0];
+      const patientName = `${appointment.first_name} ${appointment.last_name}`;
+      const scheduledDate = new Date(appointment.scheduled_at);
+      const appointmentDate = scheduledDate.toISOString().split("T")[0];
+      const appointmentTime = scheduledDate
+        .toTimeString()
+        .split(" ")[0]
+        .substring(0, 5);
+
+      try {
+        await sendAppointmentConfirmationEmail(appointment.email, patientName, {
+          serviceName: appointment.service_name,
+          date: appointmentDate,
+          time: appointmentTime,
+          duration: appointment.duration_minutes,
+          amount: parseFloat(appointment.service_price),
+        });
+        console.log("📧 Confirmation email sent to:", appointment.email);
+      } catch (emailError) {
+        console.error(
+          "⚠️ Failed to send confirmation email, but appointment was created:",
+          emailError,
+        );
+        // Don't fail the request if email fails - appointment is already confirmed
+      }
+    }
 
     res.json({
       success: true,
