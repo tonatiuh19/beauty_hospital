@@ -350,9 +350,38 @@ export default function SettingsManagement() {
   const handleCreateUser = async () => {
     try {
       const token = localStorage.getItem("adminAccessToken");
-      await axios.post("/admin/settings/users", userForm, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+
+      // Validate name is provided
+      if (!userForm.name.trim()) {
+        alert("Por favor ingrese el nombre completo");
+        return;
+      }
+
+      // Validate email is provided
+      if (!userForm.email.trim()) {
+        alert("Por favor ingrese el email");
+        return;
+      }
+
+      // Split name into first_name and last_name
+      const nameParts = userForm.name.trim().split(" ");
+      const first_name = nameParts[0] || "";
+      const last_name = nameParts.slice(1).join(" ") || "";
+
+      await axios.post(
+        "/admin/settings/users",
+        {
+          email: userForm.email,
+          role: userForm.role,
+          first_name,
+          last_name,
+          employee_id: userForm.employee_id,
+          specialization: userForm.specialization,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
       alert("Usuario creado exitosamente");
       fetchAdminUsers();
       setIsUserModalOpen(false);

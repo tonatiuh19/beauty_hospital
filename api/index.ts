@@ -3788,6 +3788,14 @@ const createAdminUser: RequestHandler = async (req, res) => {
       specialization,
     } = req.body;
 
+    // Validate required fields
+    if (!email || !first_name || !last_name) {
+      return res.status(400).json({
+        success: false,
+        message: "Email, first name, and last name are required",
+      });
+    }
+
     // Check if email already exists
     const [existingUsers] = await pool.query<any[]>(
       "SELECT id FROM users WHERE email = ?",
@@ -3800,9 +3808,10 @@ const createAdminUser: RequestHandler = async (req, res) => {
         .json({ success: false, message: "Email already exists" });
     }
 
+    // For admin users, we set an empty password_hash as they use code-based authentication
     const [result] = await pool.query<any>(
-      `INSERT INTO users (email, role, first_name, last_name, phone, employee_id, specialization, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())`,
+      `INSERT INTO users (email, password_hash, role, first_name, last_name, phone, employee_id, specialization, is_active, created_at, updated_at)
+       VALUES (?, '', ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())`,
       [email, role, first_name, last_name, phone, employee_id, specialization],
     );
 
@@ -3814,7 +3823,11 @@ const createAdminUser: RequestHandler = async (req, res) => {
     });
   } catch (error) {
     console.error("Error creating admin user:", error);
-    res.status(500).json({ success: false, message: "Internal server error" });
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
   }
 };
 
@@ -3865,10 +3878,16 @@ const updateAdminUser: RequestHandler = async (req, res) => {
     updates.push("updated_at = NOW()");
     values.push(id);
 
-    await pool.query(
+    const [result] = await pool.query<any>(
       `UPDATE users SET ${updates.join(", ")} WHERE id = ?`,
       values,
     );
+
+    if (result.affectedRows === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
 
     res.json({
       success: true,
@@ -3876,7 +3895,11 @@ const updateAdminUser: RequestHandler = async (req, res) => {
     });
   } catch (error) {
     console.error("Error updating admin user:", error);
-    res.status(500).json({ success: false, message: "Internal server error" });
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
   }
 };
 
@@ -3927,7 +3950,11 @@ const deleteAdminUser: RequestHandler = async (req, res) => {
     });
   } catch (error) {
     console.error("Error deleting admin user:", error);
-    res.status(500).json({ success: false, message: "Internal server error" });
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
   }
 };
 
