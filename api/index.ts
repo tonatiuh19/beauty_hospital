@@ -2378,6 +2378,307 @@ const getPaymentStats: RequestHandler = async (req, res) => {
 };
 
 /**
+ * GET /api/admin/invoices
+ * Get all invoice requests with filters
+ */
+const getAllInvoiceRequests: RequestHandler = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      search = "",
+      status,
+      startDate,
+      endDate,
+    } = req.query;
+    const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+
+    let whereClause = "1=1";
+    const queryParams: any[] = [];
+
+    if (search) {
+      whereClause += ` AND (
+        ir.invoice_number LIKE ? OR 
+        ir.rfc LIKE ? OR 
+        ir.business_name LIKE ? OR
+        p.first_name LIKE ? OR 
+        p.last_name LIKE ?
+      )`;
+      const searchPattern = `%${search}%`;
+      queryParams.push(
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+      );
+    }
+
+    if (status) {
+      whereClause += " AND ir.status = ?";
+      queryParams.push(status);
+    }
+
+    if (startDate) {
+      whereClause += " AND DATE(ir.created_at) >= ?";
+      queryParams.push(startDate);
+    }
+
+    if (endDate) {
+      whereClause += " AND DATE(ir.created_at) <= ?";
+      queryParams.push(endDate);
+    }
+
+    // Get total count
+    const [countResult] = await pool.query<any[]>(
+      `SELECT COUNT(*) as total 
+       FROM invoice_requests ir 
+       WHERE ${whereClause}`,
+      queryParams,
+    );
+
+    const total = countResult[0].total;
+
+    // Get invoice requests with related data
+    const [invoices] = await pool.query<any[]>(
+      `SELECT 
+        ir.*,
+        p.first_name as patient_first_name,
+        p.last_name as patient_last_name,
+        p.email as patient_email,
+        p.phone as patient_phone,
+        a.scheduled_at as appointment_date,
+        s.name as service_name,
+        pay.amount as payment_amount,
+        pay.payment_method,
+        u.first_name as processed_by_first_name,
+        u.last_name as processed_by_last_name
+       FROM invoice_requests ir
+       INNER JOIN patients p ON ir.patient_id = p.id
+       INNER JOIN appointments a ON ir.appointment_id = a.id
+       INNER JOIN services s ON a.service_id = s.id
+       INNER JOIN payments pay ON ir.payment_id = pay.id
+       LEFT JOIN users u ON ir.processed_by = u.id
+       WHERE ${whereClause}
+       ORDER BY ir.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [...queryParams, parseInt(limit as string), offset],
+    );
+
+    res.json({
+      success: true,
+      data: {
+        items: invoices.map((invoice) => ({
+          ...invoice,
+          payment_amount: parseFloat(invoice.payment_amount),
+          fiscal_address: JSON.parse(invoice.fiscal_address),
+        })),
+        pagination: {
+          page: parseInt(page as string),
+          limit: parseInt(limit as string),
+          total,
+          totalPages: Math.ceil(total / parseInt(limit as string)),
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching invoice requests:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * GET /api/admin/invoices/:id
+ * Get a specific invoice request by ID
+ */
+const getInvoiceRequestById: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [invoices] = await pool.query<any[]>(
+      `SELECT 
+        ir.*,
+        p.first_name as patient_first_name,
+        p.last_name as patient_last_name,
+        p.email as patient_email,
+        p.phone as patient_phone,
+        a.scheduled_at as appointment_date,
+        s.name as service_name,
+        s.description as service_description,
+        pay.amount as payment_amount,
+        pay.payment_method,
+        pay.stripe_payment_id,
+        pay.transaction_id,
+        pay.processed_at as payment_date,
+        u.first_name as processed_by_first_name,
+        u.last_name as processed_by_last_name
+       FROM invoice_requests ir
+       INNER JOIN patients p ON ir.patient_id = p.id
+       INNER JOIN appointments a ON ir.appointment_id = a.id
+       INNER JOIN services s ON a.service_id = s.id
+       INNER JOIN payments pay ON ir.payment_id = pay.id
+       LEFT JOIN users u ON ir.processed_by = u.id
+       WHERE ir.id = ?`,
+      [id],
+    );
+
+    if (invoices.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Invoice request not found",
+      });
+    }
+
+    const invoice = {
+      ...invoices[0],
+      payment_amount: parseFloat(invoices[0].payment_amount),
+      fiscal_address: JSON.parse(invoices[0].fiscal_address),
+    };
+
+    res.json({
+      success: true,
+      data: invoice,
+    });
+  } catch (error) {
+    console.error("Error fetching invoice request:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * PATCH /api/admin/invoices/:id
+ * Update invoice request status, PDFs, or notes
+ */
+const updateInvoiceRequest: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, pdf_url, xml_url, notes, processed_by } = req.body;
+
+    const updates: string[] = [];
+    const values: any[] = [];
+
+    if (status) {
+      updates.push("status = ?");
+      values.push(status);
+    }
+
+    if (pdf_url !== undefined) {
+      updates.push("pdf_url = ?");
+      values.push(pdf_url);
+    }
+
+    if (xml_url !== undefined) {
+      updates.push("xml_url = ?");
+      values.push(xml_url);
+    }
+
+    if (notes !== undefined) {
+      updates.push("notes = ?");
+      values.push(notes);
+    }
+
+    if (processed_by) {
+      updates.push("processed_by = ?");
+      values.push(processed_by);
+    }
+
+    // If marking as completed or processing, set processed_at
+    if (status === "completed" || status === "processing") {
+      updates.push("processed_at = NOW()");
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No updates provided",
+      });
+    }
+
+    values.push(id);
+
+    await pool.query(
+      `UPDATE invoice_requests 
+       SET ${updates.join(", ")}
+       WHERE id = ?`,
+      values,
+    );
+
+    // Fetch updated invoice
+    const [invoices] = await pool.query<any[]>(
+      `SELECT ir.*, 
+        p.first_name as patient_first_name,
+        p.last_name as patient_last_name,
+        p.email as patient_email
+       FROM invoice_requests ir
+       INNER JOIN patients p ON ir.patient_id = p.id
+       WHERE ir.id = ?`,
+      [id],
+    );
+
+    res.json({
+      success: true,
+      message: "Invoice request updated successfully",
+      data: {
+        ...invoices[0],
+        fiscal_address: JSON.parse(invoices[0].fiscal_address),
+      },
+    });
+  } catch (error) {
+    console.error("Error updating invoice request:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * GET /api/admin/invoices/stats
+ * Get invoice statistics
+ */
+const getInvoiceStats: RequestHandler = async (req, res) => {
+  try {
+    const [stats] = await pool.query<any[]>(
+      `SELECT 
+        COUNT(*) as total_requests,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count,
+        SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing_count,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_count,
+        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_count
+       FROM invoice_requests`,
+    );
+
+    // Get recent requests
+    const [recentRequests] = await pool.query<any[]>(
+      `SELECT 
+        ir.id,
+        ir.invoice_number,
+        ir.status,
+        ir.created_at,
+        p.first_name,
+        p.last_name,
+        pay.amount
+       FROM invoice_requests ir
+       INNER JOIN patients p ON ir.patient_id = p.id
+       INNER JOIN payments pay ON ir.payment_id = pay.id
+       ORDER BY ir.created_at DESC
+       LIMIT 5`,
+    );
+
+    res.json({
+      success: true,
+      data: {
+        ...stats[0],
+        recent_requests: recentRequests.map((req) => ({
+          ...req,
+          amount: parseFloat(req.amount),
+        })),
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching invoice stats:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
  * GET /api/admin/settings/coupons
  * Get all coupons
  */
@@ -4440,6 +4741,721 @@ const createUser: RequestHandler = async (req, res) => {
   }
 };
 
+/**
+ * Helper function to verify patient session
+ */
+async function verifyPatientSession(patientId: number): Promise<boolean> {
+  try {
+    const [sessions] = await pool.query<any[]>(
+      `SELECT id FROM users_sessions 
+       WHERE patient_id = ? 
+       AND user_session = 1 
+       AND user_session_date_start > DATE_SUB(NOW(), INTERVAL 24 HOUR)`,
+      [patientId],
+    );
+    return sessions.length > 0;
+  } catch (error) {
+    console.error("Error verifying session:", error);
+    return false;
+  }
+}
+
+/**
+ * GET /api/patient/appointments
+ * Get all appointments for the logged-in patient
+ */
+const getPatientAppointments: RequestHandler = async (req, res) => {
+  try {
+    const { patient_id } = req.query;
+
+    if (!patient_id) {
+      return res.status(400).json({
+        success: false,
+        message: "Patient ID is required",
+      });
+    }
+
+    // Verify patient session
+    const isAuthenticated = await verifyPatientSession(Number(patient_id));
+    if (!isAuthenticated) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized - please login again",
+      });
+    }
+
+    // Get all appointments for this patient (both as patient and created_by)
+    const [appointments] = await pool.query<any[]>(
+      `SELECT 
+        a.id,
+        a.patient_id,
+        a.service_id,
+        a.status,
+        a.scheduled_at,
+        a.duration_minutes,
+        a.notes,
+        a.created_by,
+        a.booked_for_self,
+        a.created_at,
+        a.updated_at,
+        s.name as service_name,
+        s.description as service_description,
+        s.price as service_price,
+        s.category as service_category,
+        p.first_name,
+        p.last_name,
+        p.email,
+        p.phone,
+        py.id as payment_id,
+        py.amount as payment_amount,
+        py.payment_status,
+        py.payment_method
+      FROM appointments a
+      LEFT JOIN services s ON a.service_id = s.id
+      LEFT JOIN patients p ON a.patient_id = p.id
+      LEFT JOIN payments py ON py.appointment_id = a.id
+      WHERE a.created_by = ? OR a.patient_id = ?
+      ORDER BY a.scheduled_at DESC`,
+      [patient_id, patient_id],
+    );
+
+    // Format appointments with categorization
+    const now = new Date();
+    const formattedAppointments = appointments.map((apt) => {
+      const scheduledDate = new Date(apt.scheduled_at);
+      const isPast = scheduledDate < now;
+      const isUpcoming =
+        scheduledDate >= now &&
+        apt.status !== "cancelled" &&
+        apt.status !== "completed";
+
+      return {
+        id: apt.id,
+        patient_id: apt.patient_id,
+        service: {
+          id: apt.service_id,
+          name: apt.service_name,
+          description: apt.service_description,
+          price: parseFloat(apt.service_price),
+          category: apt.service_category,
+        },
+        status: apt.status,
+        scheduled_at: apt.scheduled_at,
+        duration_minutes: apt.duration_minutes,
+        notes: apt.notes,
+        booked_for_self: Boolean(apt.booked_for_self),
+        patient: {
+          first_name: apt.first_name,
+          last_name: apt.last_name,
+          email: apt.email,
+          phone: apt.phone,
+        },
+        payment: apt.payment_id
+          ? {
+              id: apt.payment_id,
+              amount: parseFloat(apt.payment_amount),
+              status: apt.payment_status,
+              method: apt.payment_method,
+            }
+          : null,
+        is_past: isPast,
+        is_upcoming: isUpcoming,
+        can_cancel: isUpcoming,
+        can_edit: isUpcoming && apt.status === "scheduled",
+        created_at: apt.created_at,
+        updated_at: apt.updated_at,
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        appointments: formattedAppointments,
+        upcoming: formattedAppointments.filter((a) => a.is_upcoming),
+        past: formattedAppointments.filter((a) => a.is_past),
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching patient appointments:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch appointments",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+/**
+ * PATCH /api/patient/appointments/:id/cancel
+ * Cancel an appointment with refund penalization logic
+ */
+const cancelPatientAppointment: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { patient_id, cancellation_reason } = req.body;
+
+    if (!patient_id) {
+      return res.status(400).json({
+        success: false,
+        message: "Patient ID is required",
+      });
+    }
+
+    // Verify patient session
+    const isAuthenticated = await verifyPatientSession(Number(patient_id));
+    if (!isAuthenticated) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized - please login again",
+      });
+    }
+
+    // Get appointment details
+    const [appointments] = await pool.query<any[]>(
+      `SELECT a.*, p.amount, p.payment_status, p.id as payment_id
+       FROM appointments a
+       LEFT JOIN payments p ON p.appointment_id = a.id
+       WHERE a.id = ? AND a.created_by = ?`,
+      [id, patient_id],
+    );
+
+    if (appointments.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Appointment not found or you don't have permission to cancel it",
+      });
+    }
+
+    const appointment = appointments[0];
+
+    // Check if already cancelled
+    if (appointment.status === "cancelled") {
+      return res.status(400).json({
+        success: false,
+        message: "Appointment is already cancelled",
+      });
+    }
+
+    // Check if appointment is in the past
+    const scheduledDate = new Date(appointment.scheduled_at);
+    const now = new Date();
+    if (scheduledDate < now) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot cancel past appointments",
+      });
+    }
+
+    // Calculate time difference (in hours)
+    const hoursUntilAppointment =
+      (scheduledDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+    // Determine refund eligibility (>24 hours = full refund, <24 hours = no refund)
+    const refundEligible = hoursUntilAppointment > 24;
+    const refundAmount =
+      refundEligible && appointment.amount ? parseFloat(appointment.amount) : 0;
+
+    // Update appointment status
+    await pool.query(
+      `UPDATE appointments 
+       SET status = 'cancelled', 
+           notes = CONCAT(COALESCE(notes, ''), '\nCancelled by patient: ', COALESCE(?, 'No reason provided'), '\nCancellation time: ', NOW())
+       WHERE id = ?`,
+      [cancellation_reason, id],
+    );
+
+    // Handle refund if applicable
+    let refundProcessed = false;
+    if (
+      refundEligible &&
+      appointment.payment_id &&
+      appointment.payment_status === "completed"
+    ) {
+      try {
+        // Update payment status to refunded
+        await pool.query(
+          `UPDATE payments 
+           SET payment_status = 'refunded', 
+               notes = CONCAT(COALESCE(notes, ''), '\nRefund issued: Full refund due to cancellation >24hrs before appointment')
+           WHERE id = ?`,
+          [appointment.payment_id],
+        );
+        refundProcessed = true;
+      } catch (refundError) {
+        console.error("Error processing refund:", refundError);
+        // Continue even if refund fails - appointment is still cancelled
+      }
+    }
+
+    res.json({
+      success: true,
+      message: "Appointment cancelled successfully",
+      data: {
+        appointment_id: id,
+        cancelled_at: new Date().toISOString(),
+        refund_eligible: refundEligible,
+        refund_amount: refundAmount,
+        refund_processed: refundProcessed,
+        hours_notice: Math.floor(hoursUntilAppointment),
+        penalization_applied: !refundEligible,
+        penalization_message: !refundEligible
+          ? "No refund available - cancellation made less than 24 hours before appointment"
+          : null,
+      },
+    });
+  } catch (error) {
+    console.error("Error cancelling appointment:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to cancel appointment",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+/**
+ * PATCH /api/patient/appointments/:id/reschedule
+ * Reschedule an appointment to a new date/time
+ */
+const reschedulePatientAppointment: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { patient_id, new_date, new_time } = req.body;
+
+    if (!patient_id || !new_date || !new_time) {
+      return res.status(400).json({
+        success: false,
+        message: "Patient ID, new date, and new time are required",
+      });
+    }
+
+    // Verify patient session
+    const isAuthenticated = await verifyPatientSession(Number(patient_id));
+    if (!isAuthenticated) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized - please login again",
+      });
+    }
+
+    // Get appointment details
+    const [appointments] = await pool.query<any[]>(
+      `SELECT * FROM appointments 
+       WHERE id = ? AND created_by = ?`,
+      [id, patient_id],
+    );
+
+    if (appointments.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Appointment not found or you don't have permission to reschedule it",
+      });
+    }
+
+    const appointment = appointments[0];
+
+    // Check if can be rescheduled
+    if (
+      appointment.status === "cancelled" ||
+      appointment.status === "completed"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot reschedule ${appointment.status} appointments`,
+      });
+    }
+
+    // Validate new date/time is in the future
+    const newScheduledAt = `${new_date} ${new_time}:00`;
+    const newDateTime = new Date(newScheduledAt);
+    const now = new Date();
+
+    if (newDateTime <= now) {
+      return res.status(400).json({
+        success: false,
+        message: "New appointment time must be in the future",
+      });
+    }
+
+    // Check if new time slot is available
+    const [conflicts] = await pool.query<any[]>(
+      `SELECT id FROM appointments 
+       WHERE scheduled_at = ? 
+       AND status IN ('scheduled', 'confirmed') 
+       AND id != ?`,
+      [newScheduledAt, id],
+    );
+
+    if (conflicts.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: "The selected time slot is not available",
+      });
+    }
+
+    // Check if date/time is blocked
+    const [blockedDates] = await pool.query<any[]>(
+      `SELECT reason FROM blocked_dates
+       WHERE ? BETWEEN start_date AND end_date
+       AND (
+         all_day = 1
+         OR (
+           all_day = 0
+           AND ? >= start_time
+           AND ? < end_time
+         )
+       )`,
+      [new_date, new_time, new_time],
+    );
+
+    if (blockedDates.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `The selected time is not available. Reason: ${blockedDates[0].reason}`,
+      });
+    }
+
+    // Update appointment
+    const oldScheduledAt = appointment.scheduled_at;
+    await pool.query(
+      `UPDATE appointments 
+       SET scheduled_at = ?, 
+           notes = CONCAT(COALESCE(notes, ''), '\nRescheduled from ', ?, ' to ', ?, ' at ', NOW())
+       WHERE id = ?`,
+      [newScheduledAt, oldScheduledAt, newScheduledAt, id],
+    );
+
+    res.json({
+      success: true,
+      message: "Appointment rescheduled successfully",
+      data: {
+        appointment_id: id,
+        old_scheduled_at: oldScheduledAt,
+        new_scheduled_at: newScheduledAt,
+        rescheduled_at: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error("Error rescheduling appointment:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to reschedule appointment",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+/**
+ * POST /api/patient/appointments/:id/request-invoice
+ * Request invoice generation for an appointment
+ */
+const requestInvoice: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { patient_id, invoice_info } = req.body;
+
+    if (!patient_id || !invoice_info) {
+      return res.status(400).json({
+        success: false,
+        message: "Patient ID and invoice information are required",
+      });
+    }
+
+    // Verify patient session
+    const isAuthenticated = await verifyPatientSession(Number(patient_id));
+    if (!isAuthenticated) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized - please login again",
+      });
+    }
+
+    // Get appointment and payment details
+    const [appointments] = await pool.query<any[]>(
+      `SELECT 
+        a.*, 
+        s.name as service_name, 
+        s.price as service_price,
+        p.id as payment_id,
+        p.amount,
+        p.payment_status,
+        p.payment_method,
+        p.transaction_id,
+        pat.first_name,
+        pat.last_name,
+        pat.email,
+        pat.phone
+       FROM appointments a
+       LEFT JOIN services s ON a.service_id = s.id
+       LEFT JOIN payments p ON p.appointment_id = a.id
+       LEFT JOIN patients pat ON a.patient_id = pat.id
+       WHERE a.id = ? AND a.created_by = ?`,
+      [id, patient_id],
+    );
+
+    if (appointments.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Appointment not found or you don't have permission to request invoice",
+      });
+    }
+
+    const appointment = appointments[0];
+
+    // Check if payment exists and is completed
+    if (!appointment.payment_id || appointment.payment_status !== "completed") {
+      return res.status(400).json({
+        success: false,
+        message: "Invoice can only be generated for completed payments",
+      });
+    }
+
+    // Generate unique invoice number
+    const invoiceNumber = `INV-${Date.now()}-${id}`;
+
+    // Insert invoice request into database
+    const [result] = await pool.query(
+      `INSERT INTO invoice_requests (
+        appointment_id,
+        patient_id,
+        payment_id,
+        invoice_number,
+        rfc,
+        business_name,
+        cfdi_use,
+        payment_method,
+        payment_type,
+        fiscal_address,
+        status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+      [
+        id,
+        patient_id,
+        appointment.payment_id,
+        invoiceNumber,
+        invoice_info.rfc,
+        invoice_info.businessName,
+        invoice_info.cfdiUse,
+        invoice_info.paymentMethod,
+        invoice_info.paymentType,
+        JSON.stringify(invoice_info.fiscalAddress),
+      ],
+    );
+
+    res.json({
+      success: true,
+      message: "Invoice request received successfully",
+      data: {
+        invoice_request_id: (result as any).insertId,
+        invoice_number: invoiceNumber,
+        appointment_id: id,
+        payment_id: appointment.payment_id,
+        amount: parseFloat(appointment.amount),
+        service_name: appointment.service_name,
+        invoice_info: invoice_info,
+        requested_at: new Date().toISOString(),
+        status: "pending",
+        // In production, this would be the PDF URL
+        pdf_url: null,
+        note: "Invoice generation is being processed. You will receive it via email shortly.",
+      },
+    });
+  } catch (error) {
+    console.error("Error requesting invoice:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to request invoice",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+/**
+ * PUT /api/patient/profile
+ * Update patient profile information
+ */
+const updatePatientProfile: RequestHandler = async (req, res) => {
+  try {
+    const {
+      patient_id,
+      first_name,
+      last_name,
+      phone,
+      date_of_birth,
+      gender,
+      address,
+      city,
+      state,
+      zip_code,
+      emergency_contact_name,
+      emergency_contact_phone,
+    } = req.body;
+
+    if (!patient_id) {
+      return res.status(400).json({
+        success: false,
+        message: "Patient ID is required",
+      });
+    }
+
+    // Verify patient session
+    const isAuthenticated = await verifyPatientSession(Number(patient_id));
+    if (!isAuthenticated) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized - please login again",
+      });
+    }
+
+    // Build update query dynamically
+    const updates: string[] = [];
+    const values: any[] = [];
+
+    if (first_name !== undefined) {
+      updates.push("first_name = ?");
+      values.push(first_name);
+    }
+    if (last_name !== undefined) {
+      updates.push("last_name = ?");
+      values.push(last_name);
+    }
+    if (phone !== undefined) {
+      updates.push("phone = ?");
+      values.push(phone);
+    }
+    if (date_of_birth !== undefined) {
+      updates.push("date_of_birth = ?");
+      values.push(date_of_birth);
+    }
+    if (gender !== undefined) {
+      updates.push("gender = ?");
+      values.push(gender);
+    }
+    if (address !== undefined) {
+      updates.push("address = ?");
+      values.push(address);
+    }
+    if (city !== undefined) {
+      updates.push("city = ?");
+      values.push(city);
+    }
+    if (state !== undefined) {
+      updates.push("state = ?");
+      values.push(state);
+    }
+    if (zip_code !== undefined) {
+      updates.push("zip_code = ?");
+      values.push(zip_code);
+    }
+    if (emergency_contact_name !== undefined) {
+      updates.push("emergency_contact_name = ?");
+      values.push(emergency_contact_name);
+    }
+    if (emergency_contact_phone !== undefined) {
+      updates.push("emergency_contact_phone = ?");
+      values.push(emergency_contact_phone);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No fields to update",
+      });
+    }
+
+    // Add updated_at
+    updates.push("updated_at = NOW()");
+    values.push(patient_id);
+
+    // Execute update
+    await pool.query(
+      `UPDATE patients SET ${updates.join(", ")} WHERE id = ?`,
+      values,
+    );
+
+    // Get updated patient data
+    const [patients] = await pool.query<any[]>(
+      `SELECT 
+        id, first_name, last_name, email, phone, date_of_birth, gender,
+        address, city, state, zip_code, emergency_contact_name, emergency_contact_phone,
+        is_active, created_at, updated_at
+       FROM patients WHERE id = ?`,
+      [patient_id],
+    );
+
+    res.json({
+      success: true,
+      message: "Profile updated successfully",
+      data: patients[0],
+    });
+  } catch (error) {
+    console.error("Error updating patient profile:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update profile",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+/**
+ * GET /api/patient/profile
+ * Get patient profile information
+ */
+const getPatientProfile: RequestHandler = async (req, res) => {
+  try {
+    const { patient_id } = req.query;
+
+    if (!patient_id) {
+      return res.status(400).json({
+        success: false,
+        message: "Patient ID is required",
+      });
+    }
+
+    // Verify patient session
+    const isAuthenticated = await verifyPatientSession(Number(patient_id));
+    if (!isAuthenticated) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized - please login again",
+      });
+    }
+
+    // Get patient data
+    const [patients] = await pool.query<any[]>(
+      `SELECT 
+        id, first_name, last_name, email, phone, date_of_birth, gender,
+        address, city, state, zip_code, emergency_contact_name, emergency_contact_phone,
+        is_active, is_email_verified, last_login, created_at, updated_at
+       FROM patients WHERE id = ?`,
+      [patient_id],
+    );
+
+    if (patients.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Patient not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: patients[0],
+    });
+  } catch (error) {
+    console.error("Error fetching patient profile:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch profile",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
 // Create the Express app once (reused across invocations)
 let app: express.Application | null = null;
 
@@ -4522,6 +5538,26 @@ function createServer() {
   expressApp.get("/api/blocked-dates", getBlockedDates);
   expressApp.get("/api/blocked-dates/check", checkDateBlocked);
 
+  // ==================== PATIENT ROUTES ====================
+  // Patient Appointments
+  expressApp.get("/api/patient/appointments", getPatientAppointments);
+  expressApp.patch(
+    "/api/patient/appointments/:id/cancel",
+    cancelPatientAppointment,
+  );
+  expressApp.patch(
+    "/api/patient/appointments/:id/reschedule",
+    reschedulePatientAppointment,
+  );
+  expressApp.post(
+    "/api/patient/appointments/:id/request-invoice",
+    requestInvoice,
+  );
+
+  // Patient Profile
+  expressApp.get("/api/patient/profile", getPatientProfile);
+  expressApp.put("/api/patient/profile", updatePatientProfile);
+
   // ==================== ADMIN ROUTES ====================
   // Admin Auth
   expressApp.post("/api/admin/auth/check-user", checkAdminUser);
@@ -4565,6 +5601,12 @@ function createServer() {
   expressApp.get("/api/admin/payments/:id", getAdminPaymentById);
   expressApp.post("/api/admin/payments", createPayment);
   expressApp.patch("/api/admin/payments/:id/status", updatePaymentStatus);
+
+  // Admin Invoice Management
+  expressApp.get("/api/admin/invoices/stats", getInvoiceStats);
+  expressApp.get("/api/admin/invoices", getAllInvoiceRequests);
+  expressApp.get("/api/admin/invoices/:id", getInvoiceRequestById);
+  expressApp.patch("/api/admin/invoices/:id", updateInvoiceRequest);
 
   // Admin Settings Management
   expressApp.get("/api/admin/settings/coupons", getAllCoupons);

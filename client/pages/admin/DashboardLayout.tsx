@@ -81,6 +81,12 @@ const navigation: NavItem[] = [
     roles: ["admin", "general_admin", "receptionist"],
   },
   {
+    title: "Facturas",
+    icon: FileText,
+    href: "/admin/invoices",
+    roles: ["admin", "general_admin", "receptionist"],
+  },
+  {
     title: "Servicios",
     icon: Package,
     href: "/admin/services",

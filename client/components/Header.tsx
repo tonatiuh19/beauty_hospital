@@ -177,7 +177,9 @@ export function Header() {
                       </div>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => navigate("/appointment")}>
+                    <DropdownMenuItem
+                      onClick={() => navigate("/my-appointments")}
+                    >
                       <User className="mr-2 h-4 w-4" />
                       <span>Mis Citas</span>
                     </DropdownMenuItem>
@@ -278,7 +280,7 @@ export function Header() {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    navigate("/appointment");
+                    navigate("/my-appointments");
                     setIsOpen(false);
                   }}
                   className="w-full justify-start"

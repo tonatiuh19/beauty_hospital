@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Nov 10, 2025 at 11:15 PM
+-- Generation Time: Nov 18, 2025 at 09:20 PM
 -- Server version: 5.7.23-23
 -- PHP Version: 8.1.33
 
@@ -24,6 +24,38 @@ SET time_zone = "+00:00";
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `admin_sessions`
+--
+
+CREATE TABLE `admin_sessions` (
+  `id` int(11) NOT NULL,
+  `user_id` int(11) NOT NULL,
+  `session_code` int(6) NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `expires_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `admin_sessions`
+--
+
+INSERT INTO `admin_sessions` (`id`, `user_id`, `session_code`, `is_active`, `expires_at`, `created_at`) VALUES
+(9, 12, 283895, 0, '2025-11-13 00:38:35', '2025-11-13 00:38:19'),
+(10, 12, 890520, 0, '2025-11-15 05:06:18', '2025-11-15 04:02:56'),
+(11, 12, 865959, 0, '2025-11-15 05:06:18', '2025-11-15 04:15:09'),
+(12, 12, 270634, 0, '2025-11-15 05:06:18', '2025-11-15 04:22:59'),
+(13, 12, 110836, 0, '2025-11-15 05:06:18', '2025-11-15 04:29:28'),
+(14, 12, 477610, 0, '2025-11-15 05:06:18', '2025-11-15 04:51:25'),
+(15, 12, 110511, 0, '2025-11-15 05:06:18', '2025-11-15 04:56:03'),
+(16, 12, 807442, 0, '2025-11-15 05:06:18', '2025-11-15 05:01:01'),
+(17, 12, 397245, 0, '2025-11-15 05:06:18', '2025-11-15 05:06:04'),
+(18, 12, 825751, 0, '2025-11-19 00:56:42', '2025-11-19 00:56:27'),
+(19, 12, 304404, 0, '2025-11-19 03:18:40', '2025-11-19 03:18:23');
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `appointments`
 --
 
@@ -38,20 +70,43 @@ CREATE TABLE `appointments` (
   `notes` text COLLATE utf8mb4_unicode_ci,
   `created_by` int(11) NOT NULL COMMENT 'Patient ID who created the appointment (logged-in user)',
   `booked_for_self` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Whether appointment is for the logged-in user (1) or someone else (0)',
+  `booking_source` enum('online','receptionist','phone','walk_in') COLLATE utf8mb4_unicode_ci DEFAULT 'online',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `check_in_at` timestamp NULL DEFAULT NULL COMMENT 'When patient checked in',
+  `check_in_by` int(11) DEFAULT NULL COMMENT 'Admin who checked in the patient',
+  `contract_id` int(11) DEFAULT NULL COMMENT 'Associated contract if required',
+  `cancellation_reason` text COLLATE utf8mb4_unicode_ci,
+  `cancelled_at` timestamp NULL DEFAULT NULL,
+  `cancelled_by` int(11) DEFAULT NULL,
+  `rescheduled_from` int(11) DEFAULT NULL COMMENT 'Original appointment ID if rescheduled',
+  `reminder_sent_at` timestamp NULL DEFAULT NULL COMMENT 'When reminder was sent'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `appointments`
 --
 
-INSERT INTO `appointments` (`id`, `patient_id`, `doctor_id`, `service_id`, `status`, `scheduled_at`, `duration_minutes`, `notes`, `created_by`, `booked_for_self`, `created_at`, `updated_at`) VALUES
-(8, 9, NULL, 1, 'confirmed', '2025-11-14 18:30:00', 30, NULL, 9, 1, '2025-11-11 04:26:46', '2025-11-11 04:26:46'),
-(9, 9, NULL, 2, 'confirmed', '2025-11-21 17:15:00', 45, NULL, 9, 0, '2025-11-11 04:33:59', '2025-11-11 04:33:59'),
-(10, 10, NULL, 1, 'confirmed', '2025-11-14 16:30:00', 30, NULL, 9, 0, '2025-11-11 04:37:46', '2025-11-11 04:37:46'),
-(11, 9, NULL, 5, 'confirmed', '2025-11-28 22:30:00', 90, NULL, 9, 1, '2025-11-11 04:39:42', '2025-11-11 04:39:42'),
-(13, 11, NULL, 6, 'confirmed', '2025-11-13 15:00:00', 30, NULL, 9, 0, '2025-11-11 05:14:13', '2025-11-11 05:14:13');
+INSERT INTO `appointments` (`id`, `patient_id`, `doctor_id`, `service_id`, `status`, `scheduled_at`, `duration_minutes`, `notes`, `created_by`, `booked_for_self`, `booking_source`, `created_at`, `updated_at`, `check_in_at`, `check_in_by`, `contract_id`, `cancellation_reason`, `cancelled_at`, `cancelled_by`, `rescheduled_from`, `reminder_sent_at`) VALUES
+(21, 9, NULL, 3, 'confirmed', '2025-11-21 22:30:00', 90, NULL, 9, 1, 'online', '2025-11-19 01:40:18', '2025-11-19 01:40:18', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+(22, 9, NULL, 3, 'confirmed', '2025-11-21 21:00:00', 90, NULL, 9, 1, 'online', '2025-11-19 02:07:54', '2025-11-19 02:07:54', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `appointment_reminders`
+--
+
+CREATE TABLE `appointment_reminders` (
+  `id` int(11) NOT NULL,
+  `appointment_id` int(11) NOT NULL,
+  `reminder_type` enum('email','whatsapp','sms') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `scheduled_for` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `sent_at` timestamp NULL DEFAULT NULL,
+  `status` enum('pending','sent','failed') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `error_message` text COLLATE utf8mb4_unicode_ci,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -68,10 +123,25 @@ CREATE TABLE `audit_logs` (
   `entity_id` int(11) NOT NULL,
   `old_values` json DEFAULT NULL,
   `new_values` json DEFAULT NULL,
+  `metadata` json DEFAULT NULL COMMENT 'Additional context about the action',
   `ip_address` varchar(45) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `user_agent` text COLLATE utf8mb4_unicode_ci,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `audit_logs`
+--
+
+INSERT INTO `audit_logs` (`id`, `user_id`, `patient_id`, `action`, `entity_type`, `entity_id`, `old_values`, `new_values`, `metadata`, `ip_address`, `user_agent`, `created_at`) VALUES
+(1, 12, NULL, 'admin_login', 'user', 12, NULL, NULL, NULL, '::1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', '2025-11-12 05:08:45'),
+(2, 12, NULL, 'admin_login', 'user', 12, NULL, NULL, NULL, '::1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', '2025-11-12 05:11:56'),
+(3, 12, NULL, 'admin_login', 'user', 12, NULL, NULL, NULL, '::1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', '2025-11-12 05:27:21'),
+(4, 12, NULL, 'admin_login', 'user', 12, NULL, NULL, NULL, '::1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', '2025-11-12 05:47:50'),
+(5, 12, NULL, 'admin_login', 'user', 12, NULL, NULL, NULL, '::1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', '2025-11-12 06:47:00'),
+(6, 12, NULL, 'admin_login', 'user', 12, NULL, NULL, NULL, '::1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', '2025-11-12 06:57:31'),
+(7, 12, NULL, 'admin_login', 'user', 12, NULL, NULL, NULL, '::1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', '2025-11-12 06:59:30'),
+(8, 12, NULL, 'admin_login', 'user', 12, NULL, NULL, NULL, '::1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', '2025-11-13 00:38:35');
 
 -- --------------------------------------------------------
 
@@ -151,6 +221,33 @@ INSERT INTO `business_hours` (`id`, `day_of_week`, `is_open`, `open_time`, `clos
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `content_pages`
+--
+
+CREATE TABLE `content_pages` (
+  `id` int(11) NOT NULL,
+  `slug` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `title` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `content` longtext COLLATE utf8mb4_unicode_ci,
+  `meta_description` text COLLATE utf8mb4_unicode_ci,
+  `is_published` tinyint(1) DEFAULT '0',
+  `created_by` int(11) NOT NULL,
+  `updated_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `content_pages`
+--
+
+INSERT INTO `content_pages` (`id`, `slug`, `title`, `content`, `meta_description`, `is_published`, `created_by`, `updated_by`, `created_at`, `updated_at`) VALUES
+(1, 'terms-and-conditions', 'Terms and Conditions', '<h1>Terms and Conditions</h1><p>Coming soon...</p>', NULL, 1, 1, NULL, '2025-11-12 04:42:12', '2025-11-12 04:42:12'),
+(2, 'privacy-policy', 'Privacy Policy', '<h1>Privacy Policy</h1><p>Coming soon...</p>', NULL, 1, 1, NULL, '2025-11-12 04:42:12', '2025-11-12 04:42:12');
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `contracts`
 --
 
@@ -170,6 +267,97 @@ CREATE TABLE `contracts` (
   `signed_by` int(11) DEFAULT NULL,
   `created_by` int(11) NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `coupons`
+--
+
+CREATE TABLE `coupons` (
+  `id` int(11) NOT NULL,
+  `code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `description` text COLLATE utf8mb4_unicode_ci,
+  `discount_type` enum('percentage','fixed_amount') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `discount_value` decimal(10,2) NOT NULL,
+  `min_purchase_amount` decimal(10,2) DEFAULT NULL,
+  `max_discount_amount` decimal(10,2) DEFAULT NULL COMMENT 'Max discount for percentage type',
+  `usage_limit` int(11) DEFAULT NULL COMMENT 'Total times this coupon can be used',
+  `usage_count` int(11) DEFAULT '0' COMMENT 'Times this coupon has been used',
+  `per_user_limit` int(11) DEFAULT NULL COMMENT 'Max uses per user',
+  `valid_from` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `valid_until` timestamp NULL DEFAULT NULL,
+  `is_active` tinyint(1) DEFAULT '1',
+  `applicable_services` json DEFAULT NULL COMMENT 'Array of service IDs or null for all',
+  `created_by` int(11) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `coupon_usage`
+--
+
+CREATE TABLE `coupon_usage` (
+  `id` int(11) NOT NULL,
+  `coupon_id` int(11) NOT NULL,
+  `patient_id` int(11) NOT NULL,
+  `appointment_id` int(11) DEFAULT NULL,
+  `payment_id` int(11) DEFAULT NULL,
+  `discount_amount` decimal(10,2) NOT NULL,
+  `used_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `dashboard_metrics`
+--
+
+CREATE TABLE `dashboard_metrics` (
+  `id` int(11) NOT NULL,
+  `metric_date` date NOT NULL,
+  `total_appointments` int(11) DEFAULT '0',
+  `completed_appointments` int(11) DEFAULT '0',
+  `cancelled_appointments` int(11) DEFAULT '0',
+  `no_show_appointments` int(11) DEFAULT '0',
+  `total_revenue` decimal(10,2) DEFAULT '0.00',
+  `total_refunds` decimal(10,2) DEFAULT '0.00',
+  `new_patients` int(11) DEFAULT '0',
+  `active_contracts` int(11) DEFAULT '0',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `invoice_requests`
+--
+
+CREATE TABLE `invoice_requests` (
+  `id` int(11) NOT NULL,
+  `appointment_id` int(11) NOT NULL,
+  `patient_id` int(11) NOT NULL,
+  `payment_id` int(11) NOT NULL,
+  `invoice_number` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rfc` varchar(13) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'RFC (Registro Federal de Contribuyentes)',
+  `business_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Razón Social',
+  `cfdi_use` varchar(10) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Uso de CFDI: G01, G03, D01, etc.',
+  `payment_method` varchar(10) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Forma de pago: PUE, PPD',
+  `payment_type` varchar(10) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Método de pago: 01, 02, 03, 04, 28',
+  `fiscal_address` text COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'JSON with address details',
+  `status` enum('pending','processing','completed','failed') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `pdf_url` text COLLATE utf8mb4_unicode_ci COMMENT 'URL to generated PDF invoice',
+  `xml_url` text COLLATE utf8mb4_unicode_ci COMMENT 'URL to generated XML invoice',
+  `notes` text COLLATE utf8mb4_unicode_ci,
+  `processed_by` int(11) DEFAULT NULL COMMENT 'Admin user who processed the invoice',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `processed_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -267,9 +455,10 @@ CREATE TABLE `patients` (
 --
 
 INSERT INTO `patients` (`id`, `first_name`, `last_name`, `email`, `password_hash`, `role`, `is_email_verified`, `last_login`, `phone`, `date_of_birth`, `gender`, `address`, `city`, `state`, `zip_code`, `emergency_contact_name`, `emergency_contact_phone`, `notes`, `is_active`, `created_at`, `updated_at`) VALUES
-(9, 'Alex', 'Gomez', 'axgoomez@gmail.com', NULL, 'patient', 1, '2025-11-11 05:06:00', '4741400363', '1999-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 04:25:54', '2025-11-11 05:06:00'),
-(10, 'Felix', 'Gomez', 'tonatiuh.gom@gmail.com', NULL, 'patient', 0, NULL, '4741400363', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 04:37:34', '2025-11-11 04:37:34'),
-(11, 'Felix', 'Gomez', 'test@gmail.com', NULL, 'patient', 0, NULL, '1234567890', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 05:13:59', '2025-11-11 05:13:59');
+(9, 'Alex', 'Gomez', 'axgoomez@gmail.com', NULL, 'patient', 1, '2025-11-19 01:38:17', '4741400364', '1999-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 04:25:54', '2025-11-19 03:06:02'),
+(10, 'Felix', 'Gomez', 'tonatiuh.gom@gmail.com', NULL, 'patient', 1, '2025-11-12 05:46:39', '4741400363', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 04:37:34', '2025-11-12 05:46:39'),
+(11, 'Felix', 'Gomez', 'test@gmail.com', NULL, 'patient', 0, NULL, '1234567890', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 05:13:59', '2025-11-11 05:13:59'),
+(12, 'Machaca', 'Gomez', 'machaca@gmail.com', NULL, 'patient', 0, NULL, '+52 474 140 0363', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 05:21:46', '2025-11-11 05:21:46');
 
 -- --------------------------------------------------------
 
@@ -283,10 +472,19 @@ CREATE TABLE `payments` (
   `patient_id` int(11) NOT NULL,
   `amount` decimal(10,2) NOT NULL,
   `payment_method` enum('cash','credit_card','debit_card','transfer','stripe') COLLATE utf8mb4_unicode_ci NOT NULL,
-  `payment_status` enum('pending','processing','completed','failed','refunded') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `payment_status` enum('pending','processing','completed','failed','refunded','partially_refunded') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
   `stripe_payment_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `stripe_payment_intent_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `transaction_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `refund_amount` decimal(10,2) DEFAULT NULL,
+  `refund_reason` text COLLATE utf8mb4_unicode_ci,
+  `refunded_at` timestamp NULL DEFAULT NULL,
+  `refunded_by` int(11) DEFAULT NULL,
+  `refund_approved_by` int(11) DEFAULT NULL COMMENT 'General admin who approved refund',
+  `refund_approved_at` timestamp NULL DEFAULT NULL,
+  `refund_status` enum('pending','approved','rejected') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `coupon_id` int(11) DEFAULT NULL COMMENT 'Coupon used for this payment',
+  `discount_amount` decimal(10,2) DEFAULT '0.00' COMMENT 'Discount applied from coupon',
   `notes` text COLLATE utf8mb4_unicode_ci,
   `processed_by` int(11) NOT NULL,
   `processed_at` timestamp NULL DEFAULT NULL,
@@ -298,13 +496,9 @@ CREATE TABLE `payments` (
 -- Dumping data for table `payments`
 --
 
-INSERT INTO `payments` (`id`, `appointment_id`, `patient_id`, `amount`, `payment_method`, `payment_status`, `stripe_payment_id`, `stripe_payment_intent_id`, `transaction_id`, `notes`, `processed_by`, `processed_at`, `created_at`, `updated_at`) VALUES
-(7, 8, 9, 500.00, 'stripe', 'completed', 'pi_3SS9A4AxpuzS9HfB1rvSYVga', 'pi_3SS9A4AxpuzS9HfB1rvSYVga', NULL, NULL, 9, '2025-11-11 04:26:46', '2025-11-11 04:26:33', '2025-11-11 04:26:46'),
-(8, 9, 9, 800.00, 'stripe', 'completed', 'pi_3SS9H4AxpuzS9HfB3YBou4A5', 'pi_3SS9H4AxpuzS9HfB3YBou4A5', NULL, NULL, 9, '2025-11-11 04:33:59', '2025-11-11 04:33:46', '2025-11-11 04:33:59'),
-(9, 10, 10, 500.00, 'stripe', 'completed', 'pi_3SS9KlAxpuzS9HfB0CYibD1N', 'pi_3SS9KlAxpuzS9HfB0CYibD1N', NULL, NULL, 9, '2025-11-11 04:37:47', '2025-11-11 04:37:35', '2025-11-11 04:37:47'),
-(10, 11, 9, 2000.00, 'stripe', 'completed', 'pi_3SS9MXAxpuzS9HfB1ciIwitO', 'pi_3SS9MXAxpuzS9HfB1ciIwitO', NULL, NULL, 9, '2025-11-11 04:39:42', '2025-11-11 04:39:25', '2025-11-11 04:39:42'),
-(11, NULL, 9, 500.00, 'stripe', 'pending', NULL, 'pi_3SS9mOAxpuzS9HfB2PnTFuKc', NULL, NULL, 9, NULL, '2025-11-11 05:06:08', '2025-11-11 05:06:08'),
-(12, 13, 11, 300.00, 'stripe', 'completed', 'pi_3SS9u0AxpuzS9HfB4aQVNolm', 'pi_3SS9u0AxpuzS9HfB4aQVNolm', NULL, NULL, 9, '2025-11-11 05:14:13', '2025-11-11 05:14:01', '2025-11-11 05:14:13');
+INSERT INTO `payments` (`id`, `appointment_id`, `patient_id`, `amount`, `payment_method`, `payment_status`, `stripe_payment_id`, `stripe_payment_intent_id`, `transaction_id`, `refund_amount`, `refund_reason`, `refunded_at`, `refunded_by`, `refund_approved_by`, `refund_approved_at`, `refund_status`, `coupon_id`, `discount_amount`, `notes`, `processed_by`, `processed_at`, `created_at`, `updated_at`) VALUES
+(19, 21, 9, 1500.00, 'stripe', 'completed', 'pi_3SV0NPAxpuzS9HfB3gU0eOQj', 'pi_3SV0NPAxpuzS9HfB3gU0eOQj', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0.00, NULL, 9, '2025-11-19 01:40:18', '2025-11-19 01:40:18', '2025-11-19 01:40:18'),
+(20, 22, 9, 1500.00, 'stripe', 'completed', 'pi_3SV0o1AxpuzS9HfB3QyhXkPs', 'pi_3SV0o1AxpuzS9HfB3QyhXkPs', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0.00, NULL, 9, '2025-11-19 02:07:54', '2025-11-19 02:07:54', '2025-11-19 02:07:54');
 
 -- --------------------------------------------------------
 
@@ -327,7 +521,18 @@ CREATE TABLE `refresh_tokens` (
 
 INSERT INTO `refresh_tokens` (`id`, `user_id`, `patient_id`, `token`, `expires_at`, `created_at`) VALUES
 (1, NULL, 9, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6OSwiZW1haWwiOiJheGdvb21lekBnbWFpbC5jb20iLCJyb2xlIjoicGF0aWVudCIsImlhdCI6MTc2MjgzNTE2NywiZXhwIjoxNzYzNDM5OTY3fQ.p_YninY4EOtkXRhlZsxfkdkp2kBRyFPsdAoCDXNGdpA', '2025-11-18 04:26:07', '2025-11-11 04:26:07'),
-(2, NULL, 9, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6OSwiZW1haWwiOiJheGdvb21lekBnbWFpbC5jb20iLCJyb2xlIjoicGF0aWVudCIsImlhdCI6MTc2MjgzNzU2MCwiZXhwIjoxNzYzNDQyMzYwfQ.oG_0c2iOf8lgSizQa9legZy5s9J4PAjskOOvBumisko', '2025-11-18 05:06:01', '2025-11-11 05:06:00');
+(2, NULL, 9, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6OSwiZW1haWwiOiJheGdvb21lekBnbWFpbC5jb20iLCJyb2xlIjoicGF0aWVudCIsImlhdCI6MTc2MjgzNzU2MCwiZXhwIjoxNzYzNDQyMzYwfQ.oG_0c2iOf8lgSizQa9legZy5s9J4PAjskOOvBumisko', '2025-11-18 05:06:01', '2025-11-11 05:06:00'),
+(3, NULL, 9, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6OSwiZW1haWwiOiJheGdvb21lekBnbWFpbC5jb20iLCJyb2xlIjoicGF0aWVudCIsImlhdCI6MTc2MjgzODQ4NCwiZXhwIjoxNzYzNDQzMjg0fQ.3z9tMfqjwINqEa9ar1KCgl-rWGh-dIzvUTVneTQKifM', '2025-11-18 05:21:24', '2025-11-11 05:21:24'),
+(4, 12, NULL, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTIsImVtYWlsIjoiYXhnb29tZXpAZ21haWwuY29tIiwicm9sZSI6ImdlbmVyYWxfYWRtaW4iLCJpYXQiOjE3NjI5MjQxMjUsImV4cCI6MTc2MzUyODkyNX0.WR1J4y_PW4l-rNP6RIhRsOvYad4HEIugldWzWUK_L7M', '2025-11-19 05:08:45', '2025-11-12 05:08:45'),
+(5, 12, NULL, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTIsImVtYWlsIjoiYXhnb29tZXpAZ21haWwuY29tIiwicm9sZSI6ImdlbmVyYWxfYWRtaW4iLCJpYXQiOjE3NjI5MjQzMTYsImV4cCI6MTc2MzUyOTExNn0.7U6XLsf0qdXZXVuKVIe3dvOFkRJx77gDyK_d_kOgdsU', '2025-11-19 05:11:56', '2025-11-12 05:11:56'),
+(6, 12, NULL, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTIsImVtYWlsIjoiYXhnb29tZXpAZ21haWwuY29tIiwicm9sZSI6ImdlbmVyYWxfYWRtaW4iLCJpYXQiOjE3NjI5MjUyNDEsImV4cCI6MTc2MzUzMDA0MX0.G7VM-or7msf858Mnm5BLSmDIIqYoeAvY1Gi1muxLCl4', '2025-11-19 05:27:22', '2025-11-12 05:27:21'),
+(7, NULL, 10, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTAsImVtYWlsIjoidG9uYXRpdWguZ29tQGdtYWlsLmNvbSIsInJvbGUiOiJwYXRpZW50IiwiaWF0IjoxNzYyOTI2Mzk4LCJleHAiOjE3NjM1MzExOTh9.M4o4GeiOfjnOS-caYoVNona4UDzyJkYYWeB1mYtPl74', '2025-11-19 05:46:39', '2025-11-12 05:46:39'),
+(8, 12, NULL, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTIsImVtYWlsIjoiYXhnb29tZXpAZ21haWwuY29tIiwicm9sZSI6ImdlbmVyYWxfYWRtaW4iLCJpYXQiOjE3NjI5MjY0NzAsImV4cCI6MTc2MzUzMTI3MH0.HHm9IuZGpl5E5LICFouBmpCDZBCxhaFor-OWbw7YRvo', '2025-11-19 05:47:50', '2025-11-12 05:47:50'),
+(9, 12, NULL, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTIsImVtYWlsIjoiYXhnb29tZXpAZ21haWwuY29tIiwicm9sZSI6ImdlbmVyYWxfYWRtaW4iLCJpYXQiOjE3NjI5MzAwMTksImV4cCI6MTc2MzUzNDgxOX0.a2EeY_DBPWfHKp82_Et5CO5_Tingk2aQJPq0I9ZqRfg', '2025-11-19 06:47:00', '2025-11-12 06:47:00'),
+(10, 12, NULL, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTIsImVtYWlsIjoiYXhnb29tZXpAZ21haWwuY29tIiwicm9sZSI6ImdlbmVyYWxfYWRtaW4iLCJpYXQiOjE3NjI5MzA2NTAsImV4cCI6MTc2MzUzNTQ1MH0.PSygW1F8Gdblj_lSHMv_DlDjS6BsGoU68PXkw2JhX1o', '2025-11-19 06:57:31', '2025-11-12 06:57:31'),
+(11, 12, NULL, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTIsImVtYWlsIjoiYXhnb29tZXpAZ21haWwuY29tIiwicm9sZSI6ImdlbmVyYWxfYWRtaW4iLCJpYXQiOjE3NjI5MzA3NzAsImV4cCI6MTc2MzUzNTU3MH0.RGQH3CpyVS-6IpNhXkc8y6F73OSMGYtsA0AJt9Uf1AM', '2025-11-19 06:59:31', '2025-11-12 06:59:30'),
+(12, NULL, 9, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6OSwiZW1haWwiOiJheGdvb21lekBnbWFpbC5jb20iLCJyb2xlIjoicGF0aWVudCIsImlhdCI6MTc2Mjk5NDE4MSwiZXhwIjoxNzYzNTk4OTgxfQ.9QTsfVfEedv_lkvBobZYkWeuO_CQdbddzSgKmMkHFEI', '2025-11-20 00:36:21', '2025-11-13 00:36:21'),
+(13, 12, NULL, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTIsImVtYWlsIjoiYXhnb29tZXpAZ21haWwuY29tIiwicm9sZSI6ImdlbmVyYWxfYWRtaW4iLCJpYXQiOjE3NjI5OTQzMTUsImV4cCI6MTc2MzU5OTExNX0.Jj5b8UJYfnb6GFSnvFMtmU3fNXi_WIislsZivw9_9Uw', '2025-11-20 00:38:35', '2025-11-13 00:38:35');
 
 -- --------------------------------------------------------
 
@@ -362,6 +567,43 @@ INSERT INTO `services` (`id`, `name`, `description`, `category`, `price`, `durat
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `settings`
+--
+
+CREATE TABLE `settings` (
+  `id` int(11) NOT NULL,
+  `setting_key` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `setting_value` text COLLATE utf8mb4_unicode_ci,
+  `setting_type` enum('text','number','boolean','json') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'text',
+  `category` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'general' COMMENT 'general, notifications, payments, etc',
+  `description` text COLLATE utf8mb4_unicode_ci,
+  `is_public` tinyint(1) DEFAULT '0' COMMENT 'Whether setting is visible to non-admin users',
+  `updated_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `settings`
+--
+
+INSERT INTO `settings` (`id`, `setting_key`, `setting_value`, `setting_type`, `category`, `description`, `is_public`, `updated_by`, `created_at`, `updated_at`) VALUES
+(1, 'site_name', 'Beauty Hospital', 'text', 'general', 'Name of the clinic', 1, NULL, '2025-11-12 04:42:12', '2025-11-12 04:42:12'),
+(2, 'site_description', 'Your trusted medical aesthetic center', 'text', 'general', 'Site description', 1, NULL, '2025-11-12 04:42:12', '2025-11-12 04:42:12'),
+(3, 'contact_email', 'info@beautyhospital.com', 'text', 'general', 'Contact email', 1, NULL, '2025-11-12 04:42:12', '2025-11-12 04:42:12'),
+(4, 'contact_phone', '+1234567890', 'text', 'general', 'Contact phone number', 1, NULL, '2025-11-12 04:42:12', '2025-11-12 04:42:12'),
+(5, 'address', '123 Beauty Street, Medical District', 'text', 'general', 'Physical address', 1, NULL, '2025-11-12 04:42:12', '2025-11-12 04:42:12'),
+(6, 'whatsapp_enabled', 'true', 'boolean', 'notifications', 'Enable WhatsApp notifications', 0, NULL, '2025-11-12 04:42:12', '2025-11-12 04:42:12'),
+(7, 'email_enabled', 'true', 'boolean', 'notifications', 'Enable email notifications', 0, NULL, '2025-11-12 04:42:12', '2025-11-12 04:42:12'),
+(8, 'reminder_hours_before', '24', 'number', 'notifications', 'Hours before appointment to send reminder', 0, NULL, '2025-11-12 04:42:12', '2025-11-12 04:42:12'),
+(9, 'auto_refund_enabled', 'false', 'boolean', 'payments', 'Enable automatic refunds without approval', 0, NULL, '2025-11-12 04:42:12', '2025-11-12 04:42:12'),
+(10, 'cancellation_deadline_hours', '24', 'number', 'appointments', 'Hours before appointment when cancellation is allowed', 0, NULL, '2025-11-12 04:42:12', '2025-11-12 04:42:12'),
+(11, 'terms_and_conditions', '', 'text', 'legal', 'Terms and conditions text', 1, NULL, '2025-11-12 04:42:12', '2025-11-12 04:42:12'),
+(12, 'privacy_policy', '', 'text', 'legal', 'Privacy policy text', 1, NULL, '2025-11-12 04:42:12', '2025-11-12 04:42:12');
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `users`
 --
 
@@ -369,11 +611,15 @@ CREATE TABLE `users` (
   `id` int(11) NOT NULL,
   `email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `password_hash` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `role` enum('admin','pos','doctor','receptionist','patient') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'patient',
+  `role` enum('admin','general_admin','receptionist','doctor','pos','patient') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'patient',
   `first_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `last_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `phone` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `profile_picture_url` text COLLATE utf8mb4_unicode_ci,
+  `specialization` varchar(200) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'For doctors',
+  `employee_id` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Employee identification number',
   `is_active` tinyint(1) DEFAULT '1',
+  `is_email_verified` tinyint(1) DEFAULT '0',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `last_login` timestamp NULL DEFAULT NULL
@@ -383,9 +629,12 @@ CREATE TABLE `users` (
 -- Dumping data for table `users`
 --
 
-INSERT INTO `users` (`id`, `email`, `password_hash`, `role`, `first_name`, `last_name`, `phone`, `is_active`, `created_at`, `updated_at`, `last_login`) VALUES
-(1, 'admin@beautyhospital.com', '$2b$10$TBsX8oVXgbglL8nZqEpygO0PliVXZRqbQHPOEaUxKwhdfHr27ir5a', 'admin', 'Admin', 'User', '+1234567890', 1, '2025-11-03 01:54:22', '2025-11-03 01:54:22', NULL),
-(9, 'axgoomez@gmail.com', '', 'patient', 'Alex', 'Gomez', '4741400363', 1, '2025-11-10 17:33:24', '2025-11-11 03:04:36', '2025-11-11 03:04:36');
+INSERT INTO `users` (`id`, `email`, `password_hash`, `role`, `first_name`, `last_name`, `phone`, `profile_picture_url`, `specialization`, `employee_id`, `is_active`, `is_email_verified`, `created_at`, `updated_at`, `last_login`) VALUES
+(1, 'admin@beautyhospital.com', '$2b$10$TBsX8oVXgbglL8nZqEpygO0PliVXZRqbQHPOEaUxKwhdfHr27ir5a', 'admin', 'Admin', 'User', '+1234567890', NULL, NULL, NULL, 1, 0, '2025-11-03 01:54:22', '2025-11-03 01:54:22', NULL),
+(9, 'axgoomezzzz@gmail.com', '', 'patient', 'Alex', 'Gomez', '4741400363', NULL, NULL, NULL, 1, 0, '2025-11-10 17:33:24', '2025-11-12 04:43:04', '2025-11-11 03:04:36'),
+(10, 'receptionist@beautyhospital.com', '', 'receptionist', 'Maria', 'Garcia', '+1234567891', NULL, NULL, 'EMP001', 1, 0, '2025-11-12 04:42:13', '2025-11-12 04:42:13', NULL),
+(11, 'doctor@beautyhospital.com', '', 'doctor', 'Dr. Juan', 'Martinez', '+1234567892', NULL, NULL, 'DOC001', 1, 0, '2025-11-12 04:42:13', '2025-11-12 04:42:13', NULL),
+(12, 'axgoomez@gmail.com', '', 'general_admin', 'Alex', 'Gomez', '+1234567893', NULL, NULL, 'ADM001', 1, 1, '2025-11-12 04:42:13', '2025-11-19 03:18:40', '2025-11-19 03:18:40');
 
 -- --------------------------------------------------------
 
@@ -407,11 +656,22 @@ CREATE TABLE `users_sessions` (
 --
 
 INSERT INTO `users_sessions` (`id`, `user_id`, `patient_id`, `session_code`, `user_session`, `user_session_date_start`) VALUES
-(14, NULL, 9, 299961, 1, '2025-11-10 23:05:48');
+(16, NULL, 10, 672509, 1, '2025-11-11 23:46:26'),
+(24, NULL, 9, 669759, 1, '2025-11-18 19:37:54');
 
 --
 -- Indexes for dumped tables
 --
+
+--
+-- Indexes for table `admin_sessions`
+--
+ALTER TABLE `admin_sessions`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_user_id` (`user_id`),
+  ADD KEY `idx_session_code` (`session_code`),
+  ADD KEY `idx_is_active` (`is_active`),
+  ADD KEY `idx_expires_at` (`expires_at`);
 
 --
 -- Indexes for table `appointments`
@@ -423,7 +683,22 @@ ALTER TABLE `appointments`
   ADD KEY `idx_service_id` (`service_id`),
   ADD KEY `idx_scheduled_at` (`scheduled_at`),
   ADD KEY `idx_booked_for_self` (`booked_for_self`),
-  ADD KEY `idx_created_by` (`created_by`);
+  ADD KEY `idx_created_by` (`created_by`),
+  ADD KEY `idx_check_in_at` (`check_in_at`),
+  ADD KEY `idx_check_in_by` (`check_in_by`),
+  ADD KEY `idx_contract_id` (`contract_id`),
+  ADD KEY `idx_cancelled_by` (`cancelled_by`),
+  ADD KEY `idx_rescheduled_from` (`rescheduled_from`),
+  ADD KEY `idx_booking_source` (`booking_source`);
+
+--
+-- Indexes for table `appointment_reminders`
+--
+ALTER TABLE `appointment_reminders`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_appointment_id` (`appointment_id`),
+  ADD KEY `idx_scheduled_for` (`scheduled_for`),
+  ADD KEY `idx_status` (`status`);
 
 --
 -- Indexes for table `audit_logs`
@@ -446,7 +721,8 @@ ALTER TABLE `blocked_dates`
   ADD KEY `idx_date_range` (`start_date`,`end_date`),
   ADD KEY `created_by` (`created_by`),
   ADD KEY `idx_active_blocks` (`start_date`,`end_date`),
-  ADD KEY `idx_time_range` (`start_time`,`end_time`);
+  ADD KEY `idx_time_range` (`start_time`,`end_time`),
+  ADD KEY `idx_created_by` (`created_by`);
 
 --
 -- Indexes for table `business_hours`
@@ -454,6 +730,17 @@ ALTER TABLE `blocked_dates`
 ALTER TABLE `business_hours`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `unique_day` (`day_of_week`);
+
+--
+-- Indexes for table `content_pages`
+--
+ALTER TABLE `content_pages`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_slug` (`slug`),
+  ADD KEY `idx_slug` (`slug`),
+  ADD KEY `idx_is_published` (`is_published`),
+  ADD KEY `created_by` (`created_by`),
+  ADD KEY `updated_by` (`updated_by`);
 
 --
 -- Indexes for table `contracts`
@@ -467,6 +754,49 @@ ALTER TABLE `contracts`
   ADD KEY `idx_patient_id` (`patient_id`),
   ADD KEY `idx_contract_number` (`contract_number`),
   ADD KEY `idx_status` (`status`);
+
+--
+-- Indexes for table `coupons`
+--
+ALTER TABLE `coupons`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_code` (`code`),
+  ADD KEY `idx_code` (`code`),
+  ADD KEY `idx_is_active` (`is_active`),
+  ADD KEY `idx_valid_dates` (`valid_from`,`valid_until`),
+  ADD KEY `created_by` (`created_by`);
+
+--
+-- Indexes for table `coupon_usage`
+--
+ALTER TABLE `coupon_usage`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_coupon_id` (`coupon_id`),
+  ADD KEY `idx_patient_id` (`patient_id`),
+  ADD KEY `idx_appointment_id` (`appointment_id`),
+  ADD KEY `idx_payment_id` (`payment_id`);
+
+--
+-- Indexes for table `dashboard_metrics`
+--
+ALTER TABLE `dashboard_metrics`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_metric_date` (`metric_date`),
+  ADD KEY `idx_metric_date` (`metric_date`);
+
+--
+-- Indexes for table `invoice_requests`
+--
+ALTER TABLE `invoice_requests`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_invoice_number` (`invoice_number`),
+  ADD KEY `idx_appointment_id` (`appointment_id`),
+  ADD KEY `idx_patient_id` (`patient_id`),
+  ADD KEY `idx_payment_id` (`payment_id`),
+  ADD KEY `idx_status` (`status`),
+  ADD KEY `idx_created_at` (`created_at`),
+  ADD KEY `invoice_requests_ibfk_4` (`processed_by`),
+  ADD KEY `idx_status_created` (`status`,`created_at`);
 
 --
 -- Indexes for table `medical_media`
@@ -515,7 +845,11 @@ ALTER TABLE `payments`
   ADD KEY `idx_patient_id` (`patient_id`),
   ADD KEY `idx_payment_status` (`payment_status`),
   ADD KEY `idx_stripe_payment_id` (`stripe_payment_id`),
-  ADD KEY `idx_processed_at` (`processed_at`);
+  ADD KEY `idx_processed_at` (`processed_at`),
+  ADD KEY `idx_refunded_by` (`refunded_by`),
+  ADD KEY `idx_refund_approved_by` (`refund_approved_by`),
+  ADD KEY `idx_coupon_id` (`coupon_id`),
+  ADD KEY `idx_refund_status` (`refund_status`);
 
 --
 -- Indexes for table `refresh_tokens`
@@ -534,6 +868,15 @@ ALTER TABLE `services`
   ADD PRIMARY KEY (`id`),
   ADD KEY `idx_category` (`category`),
   ADD KEY `idx_is_active` (`is_active`);
+
+--
+-- Indexes for table `settings`
+--
+ALTER TABLE `settings`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_setting_key` (`setting_key`),
+  ADD KEY `idx_category` (`category`),
+  ADD KEY `updated_by` (`updated_by`);
 
 --
 -- Indexes for table `users`
@@ -558,16 +901,28 @@ ALTER TABLE `users_sessions`
 --
 
 --
+-- AUTO_INCREMENT for table `admin_sessions`
+--
+ALTER TABLE `admin_sessions`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=20;
+
+--
 -- AUTO_INCREMENT for table `appointments`
 --
 ALTER TABLE `appointments`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=23;
+
+--
+-- AUTO_INCREMENT for table `appointment_reminders`
+--
+ALTER TABLE `appointment_reminders`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `audit_logs`
 --
 ALTER TABLE `audit_logs`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
 
 --
 -- AUTO_INCREMENT for table `blocked_dates`
@@ -582,9 +937,39 @@ ALTER TABLE `business_hours`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
 
 --
+-- AUTO_INCREMENT for table `content_pages`
+--
+ALTER TABLE `content_pages`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
 -- AUTO_INCREMENT for table `contracts`
 --
 ALTER TABLE `contracts`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `coupons`
+--
+ALTER TABLE `coupons`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `coupon_usage`
+--
+ALTER TABLE `coupon_usage`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `dashboard_metrics`
+--
+ALTER TABLE `dashboard_metrics`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `invoice_requests`
+--
+ALTER TABLE `invoice_requests`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
@@ -609,19 +994,19 @@ ALTER TABLE `notifications`
 -- AUTO_INCREMENT for table `patients`
 --
 ALTER TABLE `patients`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
 
 --
 -- AUTO_INCREMENT for table `payments`
 --
 ALTER TABLE `payments`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=21;
 
 --
 -- AUTO_INCREMENT for table `refresh_tokens`
 --
 ALTER TABLE `refresh_tokens`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
 
 --
 -- AUTO_INCREMENT for table `services`
@@ -630,20 +1015,32 @@ ALTER TABLE `services`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
+-- AUTO_INCREMENT for table `settings`
+--
+ALTER TABLE `settings`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
+
+--
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
 
 --
 -- AUTO_INCREMENT for table `users_sessions`
 --
 ALTER TABLE `users_sessions`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=15;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=25;
 
 --
 -- Constraints for dumped tables
 --
+
+--
+-- Constraints for table `admin_sessions`
+--
+ALTER TABLE `admin_sessions`
+  ADD CONSTRAINT `admin_sessions_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `appointments`
@@ -652,7 +1049,17 @@ ALTER TABLE `appointments`
   ADD CONSTRAINT `appointments_ibfk_1` FOREIGN KEY (`patient_id`) REFERENCES `patients` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `appointments_ibfk_2` FOREIGN KEY (`doctor_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   ADD CONSTRAINT `appointments_ibfk_3` FOREIGN KEY (`service_id`) REFERENCES `services` (`id`),
-  ADD CONSTRAINT `appointments_ibfk_4` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`);
+  ADD CONSTRAINT `appointments_ibfk_4` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`),
+  ADD CONSTRAINT `appointments_ibfk_5` FOREIGN KEY (`check_in_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `appointments_ibfk_6` FOREIGN KEY (`contract_id`) REFERENCES `contracts` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `appointments_ibfk_7` FOREIGN KEY (`cancelled_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `appointments_ibfk_8` FOREIGN KEY (`rescheduled_from`) REFERENCES `appointments` (`id`) ON DELETE SET NULL;
+
+--
+-- Constraints for table `appointment_reminders`
+--
+ALTER TABLE `appointment_reminders`
+  ADD CONSTRAINT `appointment_reminders_ibfk_1` FOREIGN KEY (`appointment_id`) REFERENCES `appointments` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `audit_logs`
@@ -669,6 +1076,13 @@ ALTER TABLE `blocked_dates`
   ADD CONSTRAINT `blocked_dates_ibfk_1` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`);
 
 --
+-- Constraints for table `content_pages`
+--
+ALTER TABLE `content_pages`
+  ADD CONSTRAINT `content_pages_ibfk_1` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`),
+  ADD CONSTRAINT `content_pages_ibfk_2` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL;
+
+--
 -- Constraints for table `contracts`
 --
 ALTER TABLE `contracts`
@@ -676,6 +1090,30 @@ ALTER TABLE `contracts`
   ADD CONSTRAINT `contracts_ibfk_2` FOREIGN KEY (`service_id`) REFERENCES `services` (`id`),
   ADD CONSTRAINT `contracts_ibfk_3` FOREIGN KEY (`signed_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   ADD CONSTRAINT `contracts_ibfk_4` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`);
+
+--
+-- Constraints for table `coupons`
+--
+ALTER TABLE `coupons`
+  ADD CONSTRAINT `coupons_ibfk_1` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`);
+
+--
+-- Constraints for table `coupon_usage`
+--
+ALTER TABLE `coupon_usage`
+  ADD CONSTRAINT `coupon_usage_ibfk_1` FOREIGN KEY (`coupon_id`) REFERENCES `coupons` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `coupon_usage_ibfk_2` FOREIGN KEY (`patient_id`) REFERENCES `patients` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `coupon_usage_ibfk_3` FOREIGN KEY (`appointment_id`) REFERENCES `appointments` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `coupon_usage_ibfk_4` FOREIGN KEY (`payment_id`) REFERENCES `payments` (`id`) ON DELETE SET NULL;
+
+--
+-- Constraints for table `invoice_requests`
+--
+ALTER TABLE `invoice_requests`
+  ADD CONSTRAINT `invoice_requests_ibfk_1` FOREIGN KEY (`appointment_id`) REFERENCES `appointments` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `invoice_requests_ibfk_2` FOREIGN KEY (`patient_id`) REFERENCES `patients` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `invoice_requests_ibfk_3` FOREIGN KEY (`payment_id`) REFERENCES `payments` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `invoice_requests_ibfk_4` FOREIGN KEY (`processed_by`) REFERENCES `users` (`id`) ON DELETE SET NULL;
 
 --
 -- Constraints for table `medical_media`
@@ -704,7 +1142,10 @@ ALTER TABLE `notifications`
 ALTER TABLE `payments`
   ADD CONSTRAINT `payments_ibfk_1` FOREIGN KEY (`appointment_id`) REFERENCES `appointments` (`id`) ON DELETE SET NULL,
   ADD CONSTRAINT `payments_ibfk_2` FOREIGN KEY (`patient_id`) REFERENCES `patients` (`id`),
-  ADD CONSTRAINT `payments_ibfk_3` FOREIGN KEY (`processed_by`) REFERENCES `users` (`id`);
+  ADD CONSTRAINT `payments_ibfk_3` FOREIGN KEY (`processed_by`) REFERENCES `users` (`id`),
+  ADD CONSTRAINT `payments_ibfk_4` FOREIGN KEY (`refunded_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `payments_ibfk_5` FOREIGN KEY (`refund_approved_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `payments_ibfk_6` FOREIGN KEY (`coupon_id`) REFERENCES `coupons` (`id`) ON DELETE SET NULL;
 
 --
 -- Constraints for table `refresh_tokens`
@@ -713,6 +1154,12 @@ ALTER TABLE `refresh_tokens`
   ADD CONSTRAINT `refresh_tokens_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `refresh_tokens_ibfk_2` FOREIGN KEY (`patient_id`) REFERENCES `patients` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `refresh_tokens_ibfk_3` FOREIGN KEY (`patient_id`) REFERENCES `patients` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `settings`
+--
+ALTER TABLE `settings`
+  ADD CONSTRAINT `settings_ibfk_1` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL;
 
 --
 -- Constraints for table `users_sessions`
