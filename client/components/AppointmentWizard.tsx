@@ -55,6 +55,9 @@ import type { ApiResponse, StripePaymentResponse } from "@shared/api";
 const stripePromise = loadStripe(
   import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ||
     "pk_test_your_stripe_publishable_key",
+  {
+    locale: "es", // Force Spanish locale
+  },
 );
 
 const BODY_AREAS = [
@@ -1687,6 +1690,7 @@ export function AppointmentWizard() {
                             stripe={stripePromise}
                             options={{
                               clientSecret,
+                              locale: "es", // Force Spanish locale for payment form
                               appearance: {
                                 theme: "stripe",
                                 variables: {
