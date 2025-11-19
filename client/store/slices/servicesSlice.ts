@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import axios from "@/lib/axios";
 import { Service } from "@shared/database";
 import { GetServicesResponse } from "@shared/api";
+import { withRetry, getUserFriendlyErrorMessage } from "@/lib/axios-retry";
 
 // Define the state interface
 interface ServicesState {
@@ -24,17 +25,17 @@ export const fetchServices = createAsyncThunk(
   "services/fetchServices",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await axios.get<GetServicesResponse>("/services");
+      const response = await withRetry(
+        () => axios.get<GetServicesResponse>("/services"),
+        { maxRetries: 3, initialDelay: 1000 },
+      );
+
       if (response.data.success && response.data.data) {
         return response.data.data;
       }
       throw new Error("Failed to fetch services");
     } catch (error: any) {
-      return rejectWithValue(
-        error.response?.data?.message ||
-          error.message ||
-          "Failed to fetch services",
-      );
+      return rejectWithValue(getUserFriendlyErrorMessage(error));
     }
   },
 );

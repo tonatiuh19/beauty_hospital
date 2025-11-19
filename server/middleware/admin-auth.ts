@@ -1,8 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-
-// Admin role type
-export type AdminRole = "admin" | "general_admin" | "receptionist" | "doctor";
+import { AdminRole } from "@shared/database";
 
 // Extend Express Request type to include admin user
 declare global {
@@ -20,7 +18,7 @@ declare global {
 export interface AdminJWTPayload {
   id: number;
   email: string;
-  role: string;
+  role: AdminRole;
 }
 
 /**
@@ -60,7 +58,7 @@ export function authenticateAdmin(
       "receptionist",
       "doctor",
     ];
-    if (!adminRoles.includes(decoded.role as AdminRole)) {
+    if (!adminRoles.includes(decoded.role)) {
       res.status(403).json({
         success: false,
         error: "Access denied. Admin privileges required.",
@@ -72,7 +70,7 @@ export function authenticateAdmin(
     req.adminUser = {
       id: decoded.id,
       email: decoded.email,
-      role: decoded.role as AdminRole,
+      role: decoded.role,
     };
 
     next();

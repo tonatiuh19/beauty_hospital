@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import type { BusinessHours } from "@shared/database";
 import type { ApiResponse } from "@shared/api";
 import axios from "@/lib/axios";
+import { withRetry, getUserFriendlyErrorMessage } from "@/lib/axios-retry";
 
 interface BusinessHoursState {
   businessHours: BusinessHours[];
@@ -18,29 +19,43 @@ const initialState: BusinessHoursState = {
 // Fetch all business hours
 export const fetchBusinessHours = createAsyncThunk(
   "businessHours/fetchBusinessHours",
-  async () => {
-    const response =
-      await axios.get<ApiResponse<BusinessHours[]>>("/business-hours");
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await withRetry(
+        () => axios.get<ApiResponse<BusinessHours[]>>("/business-hours"),
+        { maxRetries: 3, initialDelay: 1000 },
+      );
 
-    if (response.data.success && response.data.data) {
-      return response.data.data;
+      if (response.data.success && response.data.data) {
+        return response.data.data;
+      }
+      throw new Error("Failed to fetch business hours");
+    } catch (error) {
+      return rejectWithValue(getUserFriendlyErrorMessage(error));
     }
-    throw new Error("Failed to fetch business hours");
   },
 );
 
 // Fetch business hours for a specific day
 export const fetchBusinessHoursByDay = createAsyncThunk(
   "businessHours/fetchBusinessHoursByDay",
-  async (dayOfWeek: number) => {
-    const response = await axios.get<ApiResponse<BusinessHours>>(
-      `/business-hours/day/${dayOfWeek}`,
-    );
+  async (dayOfWeek: number, { rejectWithValue }) => {
+    try {
+      const response = await withRetry(
+        () =>
+          axios.get<ApiResponse<BusinessHours>>(
+            `/business-hours/day/${dayOfWeek}`,
+          ),
+        { maxRetries: 3, initialDelay: 1000 },
+      );
 
-    if (response.data.success && response.data.data) {
-      return response.data.data;
+      if (response.data.success && response.data.data) {
+        return response.data.data;
+      }
+      throw new Error("Failed to fetch business hours for this day");
+    } catch (error) {
+      return rejectWithValue(getUserFriendlyErrorMessage(error));
     }
-    throw new Error("Failed to fetch business hours for this day");
   },
 );
 
@@ -64,7 +79,8 @@ const businessHoursSlice = createSlice({
     });
     builder.addCase(fetchBusinessHours.rejected, (state, action) => {
       state.loading = false;
-      state.error = action.error.message || "Failed to fetch business hours";
+      state.error =
+        (action.payload as string) || "Failed to fetch business hours";
     });
 
     // Fetch business hours by day
@@ -78,7 +94,8 @@ const businessHoursSlice = createSlice({
     builder.addCase(fetchBusinessHoursByDay.rejected, (state, action) => {
       state.loading = false;
       state.error =
-        action.error.message || "Failed to fetch business hours for this day";
+        (action.payload as string) ||
+        "Failed to fetch business hours for this day";
     });
   },
 });

@@ -174,10 +174,11 @@ export default function SettingsManagement() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.data.success) {
-        setCoupons(response.data.data);
+        setCoupons(response.data.data.items || []);
       }
     } catch (error) {
       console.error("Error fetching coupons:", error);
+      setCoupons([]);
     }
   };
 
@@ -241,10 +242,11 @@ export default function SettingsManagement() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.data.success) {
-        setSettings(response.data.data);
+        setSettings(response.data.data || {});
       }
     } catch (error) {
       console.error("Error fetching settings:", error);
+      setSettings({});
     }
   };
 
@@ -274,10 +276,11 @@ export default function SettingsManagement() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.data.success) {
-        setContentPages(response.data.data);
+        setContentPages(response.data.data || []);
       }
     } catch (error) {
       console.error("Error fetching content pages:", error);
+      setContentPages([]);
     }
   };
 
@@ -336,10 +339,11 @@ export default function SettingsManagement() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.data.success) {
-        setAdminUsers(response.data.data);
+        setAdminUsers(response.data.data || []);
       }
     } catch (error) {
       console.error("Error fetching admin users:", error);
+      setAdminUsers([]);
     }
   };
 

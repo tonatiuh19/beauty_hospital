@@ -5,6 +5,7 @@ import type {
   ApiResponse,
 } from "@shared/api";
 import axios from "@/lib/axios";
+import { withRetry, getUserFriendlyErrorMessage } from "@/lib/axios-retry";
 
 interface BookedSlotsState {
   bookedSlots: BookedTimeSlot[];
@@ -25,21 +26,32 @@ const initialState: BookedSlotsState = {
 // Fetch booked time slots for a specific date (and optionally service)
 export const fetchBookedSlots = createAsyncThunk(
   "bookedSlots/fetchBookedSlots",
-  async (params: { date: string; service_id?: number }) => {
-    const queryParams = new URLSearchParams();
-    queryParams.append("date", params.date);
-    if (params.service_id) {
-      queryParams.append("service_id", params.service_id.toString());
-    }
+  async (
+    params: { date: string; service_id?: number },
+    { rejectWithValue },
+  ) => {
+    try {
+      const queryParams = new URLSearchParams();
+      queryParams.append("date", params.date);
+      if (params.service_id) {
+        queryParams.append("service_id", params.service_id.toString());
+      }
 
-    const response = await axios.get<ApiResponse<GetBookedTimeSlotsResponse>>(
-      `/appointments/booked-slots?${queryParams.toString()}`,
-    );
+      const response = await withRetry(
+        () =>
+          axios.get<ApiResponse<GetBookedTimeSlotsResponse>>(
+            `/appointments/booked-slots?${queryParams.toString()}`,
+          ),
+        { maxRetries: 3, initialDelay: 1000 },
+      );
 
-    if (response.data.success && response.data.data) {
-      return response.data.data;
+      if (response.data.success && response.data.data) {
+        return response.data.data;
+      }
+      throw new Error("Failed to fetch booked time slots");
+    } catch (error) {
+      return rejectWithValue(getUserFriendlyErrorMessage(error));
     }
-    throw new Error("Failed to fetch booked time slots");
   },
 );
 
@@ -68,7 +80,8 @@ const bookedSlotsSlice = createSlice({
       })
       .addCase(fetchBookedSlots.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.error.message || "Failed to fetch booked slots";
+        state.error =
+          (action.payload as string) || "Failed to fetch booked slots";
       });
   },
 });

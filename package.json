@@ -21,6 +21,7 @@
     "format.fix": "prettier --write .",
     "typecheck": "tsc",
     "db:migrate": "node --loader tsx server/db/migrate.ts",
+    "routes:generate": "node scripts/generate-route-imports.js",
     "vercel-build": "npm run build:client"
   },
   "dependencies": {

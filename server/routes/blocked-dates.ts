@@ -11,6 +11,13 @@ import type {
 } from "@shared/api";
 
 /**
+ * Helper function to get user ID from either regular auth or admin auth
+ */
+function getCurrentUserId(req: any): number | null {
+  return req.user?.id || req.adminUser?.id || null;
+}
+
+/**
  * GET /api/blocked-dates
  * Get all blocked dates (public - needed for appointment calendar)
  */
@@ -28,7 +35,17 @@ export const getBlockedDates: RequestHandler = async (req, res) => {
              u.id as creator_id,
              u.first_name as creator_first_name,
              u.last_name as creator_last_name,
-             u.email as creator_email
+             u.email as creator_email,
+             u.role as creator_role,
+             u.phone as creator_phone,
+             u.profile_picture_url as creator_profile_picture_url,
+             u.specialization as creator_specialization,
+             u.employee_id as creator_employee_id,
+             u.is_active as creator_is_active,
+             u.is_email_verified as creator_is_email_verified,
+             u.created_at as creator_created_at,
+             u.updated_at as creator_updated_at,
+             u.last_login as creator_last_login
       FROM blocked_dates bd
       LEFT JOIN users u ON bd.created_by = u.id
       WHERE 1=1
@@ -97,7 +114,11 @@ export const getBlockedDates: RequestHandler = async (req, res) => {
         email: row.creator_email,
         role: row.creator_role,
         phone: row.creator_phone,
-        is_active: row.creator_is_active,
+        profile_picture_url: row.creator_profile_picture_url,
+        specialization: row.creator_specialization,
+        employee_id: row.creator_employee_id,
+        is_active: Boolean(row.creator_is_active),
+        is_email_verified: Boolean(row.creator_is_email_verified),
         created_at: row.creator_created_at,
         updated_at: row.creator_updated_at,
         last_login: row.creator_last_login,
@@ -220,7 +241,7 @@ export const createBlockedDate: RequestHandler = async (req, res) => {
       reason,
       notes,
     } = req.body as CreateBlockedDateRequest;
-    const userId = req.user?.id;
+    const userId = getCurrentUserId(req);
 
     if (!userId) {
       const response: ApiResponse = {
@@ -318,7 +339,7 @@ export const updateBlockedDate: RequestHandler = async (req, res) => {
       reason,
       notes,
     } = req.body as UpdateBlockedDateRequest;
-    const userId = req.user?.id;
+    const userId = getCurrentUserId(req);
 
     if (!userId) {
       const response: ApiResponse = {
@@ -426,7 +447,7 @@ export const updateBlockedDate: RequestHandler = async (req, res) => {
 export const deleteBlockedDate: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id;
+    const userId = getCurrentUserId(req);
 
     if (!userId) {
       const response: ApiResponse = {

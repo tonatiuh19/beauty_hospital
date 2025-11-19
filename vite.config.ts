@@ -1,7 +1,8 @@
 import { defineConfig, Plugin } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
-import { createServer } from "./server";
+// Import the createServer function from the API file
+import { createServer } from "./api/index";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({

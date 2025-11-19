@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import type { BlockedDate } from "@shared/database";
 import type { ApiResponse, PaginatedResponse } from "@shared/api";
 import axios from "@/lib/axios";
+import { withRetry, getUserFriendlyErrorMessage } from "@/lib/axios-retry";
 
 interface BlockedDatesState {
   blockedDates: BlockedDate[];
@@ -18,34 +19,54 @@ const initialState: BlockedDatesState = {
 // Fetch blocked dates (public)
 export const fetchBlockedDates = createAsyncThunk(
   "blockedDates/fetchBlockedDates",
-  async (params?: { start_date?: string; end_date?: string }) => {
-    const queryParams = new URLSearchParams();
-    if (params?.start_date) queryParams.append("start_date", params.start_date);
-    if (params?.end_date) queryParams.append("end_date", params.end_date);
+  async (
+    params: { start_date?: string; end_date?: string } | undefined,
+    { rejectWithValue },
+  ) => {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.start_date)
+        queryParams.append("start_date", params.start_date);
+      if (params?.end_date) queryParams.append("end_date", params.end_date);
 
-    const response = await axios.get<
-      ApiResponse<PaginatedResponse<BlockedDate>>
-    >(`/blocked-dates?${queryParams.toString()}`);
+      const response = await withRetry(
+        () =>
+          axios.get<ApiResponse<PaginatedResponse<BlockedDate>>>(
+            `/blocked-dates?${queryParams.toString()}`,
+          ),
+        { maxRetries: 3, initialDelay: 1000 },
+      );
 
-    if (response.data.success && response.data.data) {
-      return response.data.data.items;
+      if (response.data.success && response.data.data) {
+        return response.data.data.items;
+      }
+      throw new Error("Failed to fetch blocked dates");
+    } catch (error) {
+      return rejectWithValue(getUserFriendlyErrorMessage(error));
     }
-    throw new Error("Failed to fetch blocked dates");
   },
 );
 
 // Check if a date is blocked
 export const checkDateBlocked = createAsyncThunk(
   "blockedDates/checkDateBlocked",
-  async (date: string) => {
-    const response = await axios.get<ApiResponse<{ blocked: boolean }>>(
-      `/blocked-dates/check?date=${date}`,
-    );
+  async (date: string, { rejectWithValue }) => {
+    try {
+      const response = await withRetry(
+        () =>
+          axios.get<ApiResponse<{ blocked: boolean }>>(
+            `/blocked-dates/check?date=${date}`,
+          ),
+        { maxRetries: 3, initialDelay: 1000 },
+      );
 
-    if (response.data.success && response.data.data) {
-      return { date, blocked: response.data.data.blocked };
+      if (response.data.success && response.data.data) {
+        return { date, blocked: response.data.data.blocked };
+      }
+      throw new Error("Failed to check blocked date");
+    } catch (error) {
+      return rejectWithValue(getUserFriendlyErrorMessage(error));
     }
-    throw new Error("Failed to check blocked date");
   },
 );
 
@@ -69,7 +90,8 @@ const blockedDatesSlice = createSlice({
     });
     builder.addCase(fetchBlockedDates.rejected, (state, action) => {
       state.loading = false;
-      state.error = action.error.message || "Failed to fetch blocked dates";
+      state.error =
+        (action.payload as string) || "Failed to fetch blocked dates";
     });
 
     // Check date blocked
@@ -82,7 +104,8 @@ const blockedDatesSlice = createSlice({
     });
     builder.addCase(checkDateBlocked.rejected, (state, action) => {
       state.loading = false;
-      state.error = action.error.message || "Failed to check blocked date";
+      state.error =
+        (action.payload as string) || "Failed to check blocked date";
     });
   },
 });

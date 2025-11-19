@@ -9,7 +9,7 @@ import {
   validatePassword,
   validateEmail,
 } from "../utils/auth";
-import type { User } from "@shared/database";
+import type { User, PatientWithoutPassword } from "@shared/database";
 import type {
   LoginRequest,
   LoginResponse,
@@ -25,14 +25,11 @@ import type {
  */
 export const handleRegister: RequestHandler = async (req, res) => {
   try {
-    const {
-      email,
-      password,
-      first_name,
-      last_name,
-      phone,
-      role = "patient",
-    } = req.body as RegisterRequest;
+    const { email, password, first_name, last_name, phone } =
+      req.body as RegisterRequest;
+
+    // Always register as patient (role is not in RegisterRequest interface)
+    const role = "patient";
 
     // Validate required fields
     if (!email || !password || !first_name || !last_name) {
@@ -106,18 +103,31 @@ export const handleRegister: RequestHandler = async (req, res) => {
     res.status(201).json({
       success: true,
       data: {
-        user: {
+        patient: {
           id: userId,
           email,
-          role,
           first_name,
           last_name,
-          phone: phone || null,
+          role: "patient" as const,
+          phone: phone || undefined,
+          date_of_birth: undefined,
+          gender: undefined,
+          address: undefined,
+          city: undefined,
+          state: undefined,
+          zip_code: undefined,
+          emergency_contact_name: undefined,
+          emergency_contact_phone: undefined,
+          notes: undefined,
           is_active: true,
-        },
+          is_email_verified: false,
+          last_login: undefined,
+          created_at: new Date(),
+          updated_at: new Date(),
+        } as PatientWithoutPassword,
         token,
         refreshToken,
-      } as LoginResponse,
+      },
     } as ApiResponse<LoginResponse>);
   } catch (error) {
     console.error("Register error:", error);
@@ -198,16 +208,21 @@ export const handleLogin: RequestHandler = async (req, res) => {
       [user.id, refreshToken, expiresAt],
     );
 
-    // Remove password hash from response
+    // Remove password hash from response and map to patient format
     const { password_hash, ...userWithoutPassword } = user;
 
     res.json({
       success: true,
       data: {
-        user: userWithoutPassword,
+        patient: {
+          ...userWithoutPassword,
+          role: "patient" as const,
+          is_active: true,
+          is_email_verified: false,
+        } as PatientWithoutPassword,
         token,
         refreshToken,
-      } as LoginResponse,
+      },
     } as ApiResponse<LoginResponse>);
   } catch (error) {
     console.error("Login error:", error);

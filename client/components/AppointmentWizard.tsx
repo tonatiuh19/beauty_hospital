@@ -43,8 +43,10 @@ import {
 } from "@/store/slices/bookedSlotsSlice";
 import { AuthModal } from "./AuthModal";
 import { SimpleCalendar } from "./SimpleCalendar";
+import { useToast } from "@/hooks/use-toast";
 import { StripeCheckoutForm } from "./StripeCheckoutForm";
 import { AppointmentConfirmationModal } from "./AppointmentConfirmationModal";
+import { ErrorModal } from "./ErrorModal";
 import { PhoneInput } from "./ui/phone-input";
 import axios from "@/lib/axios";
 import type { ApiResponse, StripePaymentResponse } from "@shared/api";
@@ -89,6 +91,7 @@ interface ValidationErrors {
 export function AppointmentWizard() {
   // Redux state and dispatch
   const dispatch = useAppDispatch();
+  const { toast } = useToast();
   const {
     services,
     loading: loadingServices,
@@ -96,10 +99,14 @@ export function AppointmentWizard() {
   } = useAppSelector((state) => state.services);
   const appointment = useAppSelector((state) => state.appointment);
   const { isAuthenticated, user } = useAppSelector((state) => state.auth);
-  const { blockedDates, loading: loadingBlockedDates } = useAppSelector(
-    (state) => state.blockedDates,
+  const {
+    blockedDates,
+    loading: loadingBlockedDates,
+    error: blockedDatesError,
+  } = useAppSelector((state) => state.blockedDates);
+  const { businessHours, error: businessHoursError } = useAppSelector(
+    (state) => state.businessHours,
   );
-  const { businessHours } = useAppSelector((state) => state.businessHours);
   const bookedSlotsState = useAppSelector((state) => state.bookedSlots);
   const step = appointment.currentStep;
 
@@ -116,6 +123,15 @@ export function AppointmentWizard() {
   const [paymentId, setPaymentId] = useState<number | null>(null);
   const [isCreatingPayment, setIsCreatingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+
+  // Error modal state
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorModalConfig, setErrorModalConfig] = useState<{
+    title: string;
+    message: string;
+    showRetry: boolean;
+    onRetry?: () => void;
+  }>({ title: "", message: "", showRetry: false });
 
   // Scroll to top when component mounts
   useEffect(() => {
@@ -171,6 +187,47 @@ export function AppointmentWizard() {
     // This useEffect is no longer needed since we removed the old Step 3
     // Step 3 is now the Sesión/Booking Type step
   }, [step, isAuthenticated, appointment.bookedForSelf, user, dispatch]);
+
+  // Show error notifications for API failures
+  useEffect(() => {
+    if (servicesError) {
+      toast({
+        variant: "destructive",
+        title: "Error al cargar servicios",
+        description: servicesError,
+      });
+    }
+  }, [servicesError, toast]);
+
+  useEffect(() => {
+    if (businessHoursError) {
+      toast({
+        variant: "destructive",
+        title: "Error al cargar horarios",
+        description: businessHoursError,
+      });
+    }
+  }, [businessHoursError, toast]);
+
+  useEffect(() => {
+    if (blockedDatesError) {
+      toast({
+        variant: "destructive",
+        title: "Error al cargar fechas bloqueadas",
+        description: blockedDatesError,
+      });
+    }
+  }, [blockedDatesError, toast]);
+
+  useEffect(() => {
+    if (bookedSlotsState.error) {
+      toast({
+        variant: "destructive",
+        title: "Error al cargar disponibilidad",
+        description: bookedSlotsState.error,
+      });
+    }
+  }, [bookedSlotsState.error, toast]);
 
   const handleServiceSelect = (serviceId: number) => {
     dispatch(selectServiceAction(serviceId));
@@ -302,9 +359,13 @@ export function AppointmentWizard() {
             }
           : undefined;
 
+      // When booking for self, send the logged-in user's patient_id
+      const patient_id = appointment.bookedForSelf ? user?.id : undefined;
+
       const response = await axios.post<ApiResponse<StripePaymentResponse>>(
         "/appointments/book-with-payment",
         {
+          patient_id, // Include patient_id when booking for self
           service_id: appointment.service,
           scheduled_at,
           duration_minutes: getServiceDuration(appointment.service),
@@ -323,10 +384,22 @@ export function AppointmentWizard() {
         setClientSecret(response.data.data.clientSecret);
         setPaymentId(response.data.data.paymentId);
       } else {
-        setPaymentError(response.data.error || "Failed to create payment");
+        const errorMsg =
+          response.data.error ||
+          response.data.message ||
+          "Failed to create payment";
+        console.error("Payment creation failed:", response.data);
+        setErrorModalConfig({
+          title: "Error al Procesar el Pago",
+          message: errorMsg,
+          showRetry: true,
+          onRetry: createPaymentIntent,
+        });
+        setShowErrorModal(true);
       }
     } catch (error: any) {
       console.error("Payment creation error:", error);
+      console.error("Error response:", error.response?.data);
 
       // Handle specific error cases
       if (error.response?.status === 409) {
@@ -344,10 +417,18 @@ export function AppointmentWizard() {
           setPaymentError(null);
         }, 3000);
       } else {
-        setPaymentError(
+        // Show error modal for generic errors
+        const errorMessage =
           error.response?.data?.error ||
-            "Error al crear el pago. Por favor intenta de nuevo.",
-        );
+          "Error al crear el pago. Por favor intenta de nuevo.";
+
+        setErrorModalConfig({
+          title: "Error al Procesar el Pago",
+          message: errorMessage,
+          showRetry: true,
+          onRetry: createPaymentIntent,
+        });
+        setShowErrorModal(true);
       }
     } finally {
       setIsCreatingPayment(false);
@@ -377,19 +458,45 @@ export function AppointmentWizard() {
 
       if (error.response?.status === 409) {
         // Slot was taken while user was completing payment
-        setPaymentError(
+        const conflictMessage =
           error.response?.data?.error ||
-            "Lo sentimos, este horario fue reservado por otro cliente. Tu pago será reembolsado automáticamente.",
-        );
+          "Lo sentimos, este horario fue reservado por otro cliente. Tu pago será reembolsado automáticamente.";
+
+        setErrorModalConfig({
+          title: "Horario No Disponible",
+          message: conflictMessage,
+          showRetry: false,
+        });
+        setShowErrorModal(true);
+
+        // Redirect to date/time selection after modal is closed
+        setTimeout(() => {
+          dispatch(setTime(""));
+          dispatch(previousStep());
+          dispatch(previousStep());
+        }, 5000);
       } else {
-        setPaymentError("Error al confirmar el pago");
+        setErrorModalConfig({
+          title: "Error al Confirmar el Pago",
+          message:
+            "Ocurrió un error al confirmar tu pago. Por favor contacta a soporte.",
+          showRetry: true,
+          onRetry: handlePaymentSuccess,
+        });
+        setShowErrorModal(true);
       }
     }
   };
 
   // Handle payment error
   const handlePaymentError = (error: string) => {
-    setPaymentError(error);
+    setErrorModalConfig({
+      title: "Error en el Pago",
+      message: error,
+      showRetry: true,
+      onRetry: createPaymentIntent,
+    });
+    setShowErrorModal(true);
   };
 
   // Handle confirmation modal close
@@ -1825,6 +1932,16 @@ export function AppointmentWizard() {
           contactPhone: user?.phone || appointment.phone,
           amount: getServicePrice(appointment.service),
         }}
+      />
+
+      {/* Error Modal - show when API errors occur */}
+      <ErrorModal
+        open={showErrorModal}
+        onClose={() => setShowErrorModal(false)}
+        title={errorModalConfig.title}
+        message={errorModalConfig.message}
+        showRetry={errorModalConfig.showRetry}
+        onRetry={errorModalConfig.onRetry}
       />
     </div>
   );
