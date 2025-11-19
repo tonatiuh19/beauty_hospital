@@ -6,6 +6,8 @@ import authReducer from "./slices/authSlice";
 import blockedDatesReducer from "./slices/blockedDatesSlice";
 import businessHoursReducer from "./slices/businessHoursSlice";
 import bookedSlotsReducer from "./slices/bookedSlotsSlice";
+import loadingReducer from "./slices/loadingSlice";
+import { loadingMiddleware } from "./middleware/loadingMiddleware";
 
 // Configure the store
 export const store = configureStore({
@@ -17,6 +19,7 @@ export const store = configureStore({
     blockedDates: blockedDatesReducer,
     businessHours: businessHoursReducer,
     bookedSlots: bookedSlotsReducer,
+    loading: loadingReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
@@ -24,7 +27,7 @@ export const store = configureStore({
         // Ignore these action types if needed
         ignoredActions: [],
       },
-    }),
+    }).concat(loadingMiddleware),
 });
 
 // Export types

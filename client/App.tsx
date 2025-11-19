@@ -9,6 +9,7 @@ import { HelmetProvider } from "react-helmet-async";
 import { store } from "@/store";
 import { AppRoutes } from "@/routes/AppRoutes";
 import { restoreUser } from "@/store/slices/authSlice";
+import LoadingMask from "@/components/LoadingMask";
 
 const queryClient = new QueryClient();
 
@@ -23,6 +24,7 @@ function AppContent() {
       <TooltipProvider>
         <Toaster />
         <Sonner />
+        <LoadingMask />
         <BrowserRouter>
           <AppRoutes />
         </BrowserRouter>
