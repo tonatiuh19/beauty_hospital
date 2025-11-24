@@ -26,7 +26,7 @@ export function HeroSection() {
   };
 
   return (
-    <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-br from-white via-pink-50/50 to-purple-50/50">
+    <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-br from-white via-luxury-cream-light/50 to-luxury-cream-dark/50">
       {/* Decorative elements */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary/10 rounded-full blur-3xl" />

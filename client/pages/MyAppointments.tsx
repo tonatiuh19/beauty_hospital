@@ -327,7 +327,7 @@ export default function MyAppointments() {
     return (
       <div className="min-h-screen flex flex-col">
         <MetaHelmet
-          title="Mis Citas - Beauty Hospital"
+          title="Mis Citas - All Beauty Luxury & Wellness"
           description="Administra tus citas médicas"
         />
         <Header />
@@ -353,7 +353,7 @@ export default function MyAppointments() {
   return (
     <div className="flex flex-col bg-gray-50">
       <MetaHelmet
-        title="Mis Citas - Beauty Hospital"
+        title="Mis Citas - All Beauty Luxury & Wellness"
         description="Administra tus citas y perfil"
       />
       <Header />

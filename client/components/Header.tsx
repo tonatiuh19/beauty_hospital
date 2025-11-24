@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { useAppSelector, useAppDispatch } from "../store/hooks";
 import { logout } from "../store/slices/authApiSlice";
 import { AuthModal } from "./AuthModal";
+import { Logo } from "./Logo";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -89,17 +90,18 @@ export function Header() {
             }}
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="flex items-center gap-2 cursor-pointer flex-shrink-0"
+            className="cursor-pointer flex-shrink-0"
           >
-            <div className="w-8 h-8 bg-gradient-to-r from-primary to-secondary rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold">✨</span>
+            <div className="hidden sm:block">
+              <Logo
+                className="gap-3"
+                iconClassName="h-10 w-auto"
+                textClassName="h-10 w-auto"
+              />
             </div>
-            <span className="text-lg sm:text-xl font-bold text-foreground hidden sm:block">
-              Hospital de Depilación
-            </span>
-            <span className="text-lg font-bold text-foreground sm:hidden">
-              H. Depilación
-            </span>
+            <div className="sm:hidden">
+              <Logo variant="icon" iconClassName="h-10 w-auto" />
+            </div>
           </motion.a>
 
           {/* Desktop Navigation */}

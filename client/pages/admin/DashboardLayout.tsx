@@ -2,23 +2,23 @@ import { useState, useEffect } from "react";
 import { Outlet, useNavigate, useLocation, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  LayoutDashboard,
-  Calendar,
-  Users,
-  FileText,
-  CreditCard,
-  Settings,
-  LogOut,
-  Menu,
-  X,
-  ChevronDown,
-  Shield,
-  Stethoscope,
-  UserCog,
-  Bell,
-  Package,
-  CalendarX,
-} from "lucide-react";
+  MdOutlineDashboard,
+  MdOutlineCalendarToday,
+  MdOutlinePeople,
+  MdOutlineDescription,
+  MdOutlinePayment,
+  MdOutlineSettings,
+  MdOutlineLogout,
+  MdOutlineMenu,
+  MdOutlineClose,
+  MdOutlineExpandMore,
+  MdOutlineShield,
+  MdOutlineLocalHospital,
+  MdOutlineManageAccounts,
+  MdOutlineNotifications,
+  MdOutlineShoppingCart,
+  MdOutlineEventBusy,
+} from "react-icons/md";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -54,53 +54,53 @@ interface NavItem {
 const navigation: NavItem[] = [
   {
     title: "Dashboard",
-    icon: LayoutDashboard,
+    icon: MdOutlineDashboard,
     href: "/admin/dashboard",
   },
   {
     title: "Citas",
-    icon: Calendar,
+    icon: MdOutlineCalendarToday,
     href: "/admin/appointments",
     roles: ["admin", "general_admin", "receptionist"],
   },
   {
     title: "Pacientes",
-    icon: Users,
+    icon: MdOutlinePeople,
     href: "/admin/patients",
   },
   {
     title: "Contratos",
-    icon: FileText,
+    icon: MdOutlineDescription,
     href: "#",
     roles: ["admin", "general_admin", "receptionist"],
   },
   {
     title: "Pagos",
-    icon: CreditCard,
+    icon: MdOutlinePayment,
     href: "/admin/payments",
     roles: ["admin", "general_admin", "receptionist"],
   },
   {
     title: "Facturas",
-    icon: FileText,
+    icon: MdOutlineDescription,
     href: "/admin/invoices",
     roles: ["admin", "general_admin", "receptionist"],
   },
   {
     title: "Servicios",
-    icon: Package,
+    icon: MdOutlineShoppingCart,
     href: "/admin/services",
     roles: ["admin", "general_admin"],
   },
   {
     title: "Fechas Bloqueadas",
-    icon: CalendarX,
+    icon: MdOutlineEventBusy,
     href: "/admin/blocked-dates",
     roles: ["admin", "general_admin"],
   },
   {
     title: "Configuración",
-    icon: Settings,
+    icon: MdOutlineSettings,
     href: "/admin/settings",
     roles: ["admin", "general_admin"],
   },
@@ -136,7 +136,7 @@ export default function AdminDashboardLayout() {
       admin: { label: "Admin", color: "bg-red-100 text-red-800" },
       general_admin: {
         label: "General Admin",
-        color: "bg-purple-100 text-purple-800",
+        color: "bg-primary/20 text-primary",
       },
       receptionist: {
         label: "Recepcionista",
@@ -156,13 +156,13 @@ export default function AdminDashboardLayout() {
     switch (role) {
       case "admin":
       case "general_admin":
-        return Shield;
+        return MdOutlineShield;
       case "doctor":
-        return Stethoscope;
+        return MdOutlineLocalHospital;
       case "receptionist":
-        return UserCog;
+        return MdOutlineManageAccounts;
       default:
-        return Shield;
+        return MdOutlineShield;
     }
   };
 
@@ -187,17 +187,19 @@ export default function AdminDashboardLayout() {
       {/* Mobile Menu Button */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-gradient-to-r from-purple-600 to-purple-800 rounded-lg flex items-center justify-center">
-            <Shield className="w-5 h-5 text-white" />
+          <div className="w-8 h-8 bg-gradient-to-r from-luxury-gold-dark to-luxury-gold-light rounded-lg flex items-center justify-center">
+            <MdOutlineShield className="w-5 h-5 text-white" />
           </div>
-          <span className="font-bold text-gray-900">Beauty Hospital</span>
+          <span className="font-bold text-gray-900">
+            All Beauty Luxury & Wellness
+          </span>
         </div>
         <Button
           variant="ghost"
           size="icon"
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
         >
-          {mobileMenuOpen ? <X /> : <Menu />}
+          {mobileMenuOpen ? <MdOutlineClose /> : <MdOutlineMenu />}
         </Button>
       </div>
 
@@ -218,12 +220,12 @@ export default function AdminDashboardLayout() {
                 exit={{ opacity: 0 }}
                 className="flex items-center gap-2"
               >
-                <div className="w-8 h-8 bg-gradient-to-r from-purple-600 to-purple-800 rounded-lg flex items-center justify-center">
-                  <Shield className="w-5 h-5 text-white" />
+                <div className="w-8 h-8 bg-gradient-to-r from-luxury-gold-dark to-luxury-gold-light rounded-lg flex items-center justify-center">
+                  <MdOutlineShield className="w-5 h-5 text-white" />
                 </div>
                 <div>
                   <p className="text-sm font-bold text-gray-900">
-                    Beauty Hospital
+                    All Beauty Luxury & Wellness
                   </p>
                   <p className="text-xs text-gray-500">Admin Panel</p>
                 </div>
@@ -234,9 +236,9 @@ export default function AdminDashboardLayout() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="w-8 h-8 bg-gradient-to-r from-purple-600 to-purple-800 rounded-lg flex items-center justify-center mx-auto"
+                className="w-8 h-8 bg-gradient-to-r from-luxury-gold-dark to-luxury-gold-light rounded-lg flex items-center justify-center mx-auto"
               >
-                <Shield className="w-5 h-5 text-white" />
+                <MdOutlineShield className="w-5 h-5 text-white" />
               </motion.div>
             )}
           </AnimatePresence>
@@ -256,14 +258,14 @@ export default function AdminDashboardLayout() {
                   className={cn(
                     "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors relative",
                     isActive
-                      ? "bg-purple-50 text-purple-700 font-medium"
+                      ? "bg-primary/10 text-primary font-medium"
                       : "text-gray-700 hover:bg-gray-100",
                   )}
                 >
                   <Icon
                     className={cn(
                       "w-5 h-5 flex-shrink-0",
-                      isActive && "text-purple-700",
+                      isActive && "text-primary",
                     )}
                   />
                   {sidebarOpen && (
@@ -272,7 +274,7 @@ export default function AdminDashboardLayout() {
                       {item.badge && (
                         <Badge
                           variant="secondary"
-                          className="bg-purple-100 text-purple-700"
+                          className="bg-primary/20 text-primary"
                         >
                           {item.badge}
                         </Badge>
@@ -282,7 +284,7 @@ export default function AdminDashboardLayout() {
                   {isActive && (
                     <motion.div
                       layoutId="activeTab"
-                      className="absolute left-0 top-0 bottom-0 w-1 bg-purple-700 rounded-r"
+                      className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-r"
                     />
                   )}
                 </Link>
@@ -303,7 +305,7 @@ export default function AdminDashboardLayout() {
               >
                 <Avatar className="w-8 h-8">
                   <AvatarImage src={adminUser.profile_picture_url} />
-                  <AvatarFallback className="bg-purple-600 text-white text-xs">
+                  <AvatarFallback className="bg-primary text-white text-xs">
                     {getInitials(adminUser.first_name, adminUser.last_name)}
                   </AvatarFallback>
                 </Avatar>
@@ -317,7 +319,7 @@ export default function AdminDashboardLayout() {
                         {roleBadge.label}
                       </p>
                     </div>
-                    <ChevronDown className="w-4 h-4 text-gray-400" />
+                    <MdOutlineExpandMore className="w-4 h-4 text-gray-400" />
                   </>
                 )}
               </button>
@@ -346,7 +348,7 @@ export default function AdminDashboardLayout() {
               )}
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout} className="text-red-600">
-                <LogOut className="w-4 h-4 mr-2" />
+                <MdOutlineLogout className="w-4 h-4 mr-2" />
                 Cerrar Sesión
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -358,7 +360,7 @@ export default function AdminDashboardLayout() {
           onClick={() => setSidebarOpen(!sidebarOpen)}
           className="hidden lg:flex absolute -right-3 top-20 w-6 h-6 bg-white border border-gray-200 rounded-full items-center justify-center hover:bg-gray-50 transition-colors"
         >
-          <ChevronDown
+          <MdOutlineExpandMore
             className={cn(
               "w-4 h-4 text-gray-600 transition-transform",
               sidebarOpen ? "rotate-90" : "-rotate-90",
@@ -387,12 +389,12 @@ export default function AdminDashboardLayout() {
             >
               <div className="h-16 border-b border-gray-200 flex items-center justify-between px-4">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 bg-gradient-to-r from-purple-600 to-purple-800 rounded-lg flex items-center justify-center">
-                    <Shield className="w-5 h-5 text-white" />
+                  <div className="w-8 h-8 bg-gradient-to-r from-luxury-gold-dark to-luxury-gold-light rounded-lg flex items-center justify-center">
+                    <MdOutlineShield className="w-5 h-5 text-white" />
                   </div>
                   <div>
                     <p className="text-sm font-bold text-gray-900">
-                      Beauty Hospital
+                      All Beauty Luxury & Wellness
                     </p>
                     <p className="text-xs text-gray-500">Admin Panel</p>
                   </div>
@@ -402,7 +404,7 @@ export default function AdminDashboardLayout() {
                   size="icon"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  <X />
+                  <MdOutlineClose />
                 </Button>
               </div>
 
@@ -420,7 +422,7 @@ export default function AdminDashboardLayout() {
                         className={cn(
                           "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
                           isActive
-                            ? "bg-purple-50 text-purple-700 font-medium"
+                            ? "bg-primary/10 text-primary font-medium"
                             : "text-gray-700 hover:bg-gray-100",
                         )}
                       >
@@ -441,7 +443,7 @@ export default function AdminDashboardLayout() {
                 <div className="flex items-center gap-3 p-2 mb-2">
                   <Avatar className="w-10 h-10">
                     <AvatarImage src={adminUser.profile_picture_url} />
-                    <AvatarFallback className="bg-purple-600 text-white">
+                    <AvatarFallback className="bg-primary text-white">
                       {getInitials(adminUser.first_name, adminUser.last_name)}
                     </AvatarFallback>
                   </Avatar>
@@ -457,7 +459,7 @@ export default function AdminDashboardLayout() {
                   className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"
                   onClick={handleLogout}
                 >
-                  <LogOut className="w-4 h-4 mr-2" />
+                  <MdOutlineLogout className="w-4 h-4 mr-2" />
                   Cerrar Sesión
                 </Button>
               </div>

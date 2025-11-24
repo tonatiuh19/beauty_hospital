@@ -125,9 +125,9 @@ CREATE TABLE IF NOT EXISTS `settings` (
 
 -- Insert default settings
 INSERT INTO `settings` (`setting_key`, `setting_value`, `setting_type`, `category`, `description`, `is_public`) VALUES
-('site_name', 'Beauty Hospital', 'text', 'general', 'Name of the clinic', 1),
+('site_name', 'All Beauty Luxury & Wellness', 'text', 'general', 'Name of the clinic', 1),
 ('site_description', 'Your trusted medical aesthetic center', 'text', 'general', 'Site description', 1),
-('contact_email', 'info@beautyhospital.com', 'text', 'general', 'Contact email', 1),
+('contact_email', 'info@allbeautyluxury.com', 'text', 'general', 'Contact email', 1),
 ('contact_phone', '+1234567890', 'text', 'general', 'Contact phone number', 1),
 ('address', '123 Beauty Street, Medical District', 'text', 'general', 'Physical address', 1),
 ('whatsapp_enabled', 'true', 'boolean', 'notifications', 'Enable WhatsApp notifications', 0),

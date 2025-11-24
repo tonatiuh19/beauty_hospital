@@ -277,8 +277,8 @@ export default function PaymentsManagement() {
                   {formatCurrency(stats?.total_amount || 0)}
                 </p>
               </div>
-              <div className="p-2 bg-purple-50 rounded-lg">
-                <DollarSign className="w-5 h-5 text-purple-600" />
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <DollarSign className="w-5 h-5 text-primary" />
               </div>
             </div>
           </CardContent>

@@ -87,9 +87,6 @@ export const verifyLoginCode = createAsyncThunk<
       );
 
       if (response.data.success && response.data.patient) {
-        // Store tokens in localStorage
-        localStorage.setItem("token", response.data.token);
-        localStorage.setItem("refreshToken", response.data.refreshToken);
         dispatch(setUser(response.data.patient));
         return response.data.patient;
       }
@@ -141,8 +138,6 @@ export const createNewUser = createAsyncThunk<
 export const logout = createAsyncThunk<void, void>(
   "auth/logout",
   async (_, { dispatch }) => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("refreshToken");
     dispatch(clearUser());
   },
 );

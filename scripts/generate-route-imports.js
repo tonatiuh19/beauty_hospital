@@ -15,7 +15,7 @@ const __dirname = path.dirname(__filename);
 
 const routesDir = path.join(__dirname, "../server/routes");
 
-console.log("🚀 Beauty Hospital API - Route Import Generator\n");
+console.log("🚀 All Beauty Luxury & Wellness API - Route Import Generator\n");
 console.log("Available route files and their exports:\n");
 
 // Read all TypeScript files in the routes directory

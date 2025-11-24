@@ -172,8 +172,8 @@ export default function DashboardHome() {
       title: "Total Citas",
       value: metrics.appointments.total,
       icon: Calendar,
-      color: "text-purple-600",
-      bgColor: "bg-purple-50",
+      color: "text-primary",
+      bgColor: "bg-primary/10",
       subtitle: `${metrics.appointments.completed} completadas`,
       trend: {
         value: getPercentageChange(
@@ -212,7 +212,10 @@ export default function DashboardHome() {
     <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
+        <h1
+          className="text-2xl md:text-3xl font-bold text-gray-900"
+          style={{ fontFamily: "Cinzel, serif" }}
+        >
           Dashboard
         </h1>
         <p className="text-sm md:text-base text-gray-500 mt-1">
@@ -278,7 +281,12 @@ export default function DashboardHome() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <CardTitle className="text-lg md:text-xl">Ingresos</CardTitle>
+              <CardTitle
+                className="text-lg md:text-xl"
+                style={{ fontFamily: "Cinzel, serif" }}
+              >
+                Ingresos
+              </CardTitle>
               <div className="flex gap-2 flex-wrap">
                 {(["week", "month", "year"] as const).map((p) => (
                   <button
@@ -286,7 +294,7 @@ export default function DashboardHome() {
                     onClick={() => setPeriod(p)}
                     className={`px-3 py-1 text-xs rounded-md transition-colors ${
                       period === p
-                        ? "bg-purple-100 text-purple-700 font-medium"
+                        ? "bg-primary/20 text-primary font-medium"
                         : "text-gray-600 hover:bg-gray-100"
                     }`}
                   >
@@ -328,7 +336,7 @@ export default function DashboardHome() {
                 <Line
                   type="monotone"
                   dataKey="revenue"
-                  stroke="#9333ea"
+                  stroke="#C9A159"
                   strokeWidth={2}
                   dot={false}
                 />
@@ -340,7 +348,9 @@ export default function DashboardHome() {
         {/* Appointment Status */}
         <Card>
           <CardHeader>
-            <CardTitle>Estado de Citas</CardTitle>
+            <CardTitle style={{ fontFamily: "Cinzel, serif" }}>
+              Estado de Citas
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
@@ -389,7 +399,9 @@ export default function DashboardHome() {
       {/* Top Services */}
       <Card>
         <CardHeader>
-          <CardTitle>Servicios Más Solicitados</CardTitle>
+          <CardTitle style={{ fontFamily: "Cinzel, serif" }}>
+            Servicios Más Solicitados
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">

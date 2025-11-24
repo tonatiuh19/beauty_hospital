@@ -13,9 +13,9 @@ interface MetaHelmetProps {
 }
 
 export function MetaHelmet({
-  title = "Beauty Hospital - Centro de Estética Médica",
+  title = "All Beauty Luxury & Wellness - Centro de Estética Médica",
   description = "Solución completa para clínicas de depilación y centros de estética médica. Atención experta, tecnología avanzada y tratamientos personalizados.",
-  keywords = "beauty hospital, depilación láser, tratamientos estéticos, estética médica, tratamientos faciales, tratamientos corporales",
+  keywords = "all beauty luxury wellness, depilación láser, tratamientos estéticos, estética médica, tratamientos faciales, tratamientos corporales",
   ogTitle,
   ogDescription,
   ogImage = "/og-image.jpg",

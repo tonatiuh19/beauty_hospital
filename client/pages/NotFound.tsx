@@ -15,8 +15,8 @@ const NotFound = () => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <MetaHelmet
-        title="404 - Página No Encontrada | Beauty Hospital"
-        description="La página que buscas no existe. Regresa a la página de inicio de Beauty Hospital."
+        title="404 - Página No Encontrada | All Beauty Luxury & Wellness"
+        description="La página que buscas no existe. Regresa a la página de inicio de All Beauty Luxury & Wellness."
       />
       <div className="text-center">
         <h1 className="text-4xl font-bold mb-4">404</h1>

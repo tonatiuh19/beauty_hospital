@@ -203,7 +203,7 @@ export default function ContractsManagement() {
             Administra los contratos de sesiones múltiples
           </p>
         </div>
-        <Button className="bg-purple-600 hover:bg-purple-700">
+        <Button className="bg-primary hover:bg-primary/90">
           <Plus className="w-4 h-4 mr-2" />
           Nuevo Contrato
         </Button>
@@ -220,8 +220,8 @@ export default function ContractsManagement() {
                   {stats.total_contracts}
                 </p>
               </div>
-              <div className="p-2 bg-purple-50 rounded-lg">
-                <FileText className="w-5 h-5 text-purple-600" />
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <FileText className="w-5 h-5 text-primary" />
               </div>
             </div>
           </CardContent>

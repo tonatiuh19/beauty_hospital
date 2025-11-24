@@ -57,6 +57,31 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        // Luxury palette custom colors
+        luxury: {
+          black: "#000000",
+          "black-light": "#111111",
+          "gray-dark": "#212121",
+          "gray-medium": "#3F3F3F",
+          "gold-dark": "#C9A159",
+          "gold-light": "#E8C580",
+          "cream-dark": "#F9E6BD",
+          "cream-light": "#FFF5E1",
+          beige: "#EFEFEF",
+        },
+        // Success, warning, danger with gold synergy
+        success: {
+          DEFAULT: "#10B981",
+          foreground: "#FFFFFF",
+        },
+        warning: {
+          DEFAULT: "#F59E0B",
+          foreground: "#000000",
+        },
+        danger: {
+          DEFAULT: "#EF4444",
+          foreground: "#FFFFFF",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -108,8 +133,8 @@ export default {
         "fade-in-down": "fade-in-down 0.6s ease-out forwards",
       },
       fontFamily: {
-        display: ["'Playfair Display'", "serif"],
-        sans: ["'Inter'", "sans-serif"],
+        display: ["'Tangerine'", "cursive"],
+        sans: ["'Cinzel'", "serif"],
       },
     },
   },

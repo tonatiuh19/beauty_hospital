@@ -16,7 +16,7 @@ const steps = [
     description:
       "Reserva tu cita en la fecha y hora que mejor se adapte a tu agenda con nuestro sistema de reserva fácil.",
     icon: Calendar,
-    color: "from-secondary to-purple-500",
+    color: "from-secondary to-primary",
   },
   {
     number: 3,
@@ -24,7 +24,7 @@ const steps = [
     description:
       "Realiza el pago seguro de tu tratamiento mediante nuestras opciones de pago confiables y encriptadas.",
     icon: CreditCard,
-    color: "from-violet-500 to-purple-500",
+    color: "from-primary to-secondary",
   },
   {
     number: 4,

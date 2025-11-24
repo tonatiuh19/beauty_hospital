@@ -165,7 +165,7 @@ export function InvoiceRequestModal({
           >
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden">
               {/* Header */}
-              <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white relative">
+              <div className="bg-gradient-to-r from-luxury-gold-dark to-luxury-gold-light p-6 text-white relative">
                 <button
                   onClick={onClose}
                   disabled={isLoading}
@@ -493,7 +493,7 @@ export function InvoiceRequestModal({
                   <Button
                     type="submit"
                     disabled={isLoading}
-                    className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
+                    className="flex-1 bg-gradient-to-r from-luxury-gold-dark to-luxury-gold-light hover:from-luxury-gold-dark/90 hover:to-luxury-gold-light/90"
                   >
                     {isLoading ? "Procesando..." : "Solicitar Factura"}
                   </Button>

@@ -22,9 +22,9 @@ export default function Index() {
   return (
     <div className="min-h-screen">
       <MetaHelmet
-        title="Beauty Hospital - Centro de Estética Médica | Atención Experta y Tecnología Avanzada"
+        title="All Beauty Luxury & Wellness - Centro de Estética Médica | Atención Experta y Tecnología Avanzada"
         description="Transforma tu belleza con nuestros servicios de estética médica expertos. Depilación láser, tratamientos faciales y corporales con tecnología avanzada y atención personalizada."
-        keywords="beauty hospital, depilación láser, tratamientos estéticos, estética médica, tratamientos faciales, tratamientos corporales, clínica de depilación"
+        keywords="all beauty luxury wellness, depilación láser, tratamientos estéticos, estética médica, tratamientos faciales, tratamientos corporales, clínica de depilación"
       />
       <Header />
       <HeroSection />

@@ -507,11 +507,11 @@ async function sendAdminVerificationEmail(
         <div class="container">
           <div class="header">
             <h1 style="margin: 0;">🔐 Verificación de Inicio de Sesión Admin</h1>
-            <p style="margin: 10px 0 0 0;">Panel de Administración Beauty Hospital</p>
+            <p style="margin: 10px 0 0 0;">Panel de Administración All Beauty Luxury & Wellness</p>
           </div>
           <div class="content">
             <p>Hola <strong>${userName}</strong>,</p>
-            <p>Has solicitado iniciar sesión en el Panel de Administración de Beauty Hospital.</p>
+            <p>Has solicitado iniciar sesión en el Panel de Administración de All Beauty Luxury & Wellness.</p>
             <div style="text-align: center;">
               <span class="role-badge">${getRoleNameInSpanish(role)}</span>
             </div>
@@ -532,7 +532,7 @@ async function sendAdminVerificationEmail(
             </p>
           </div>
           <div class="footer">
-            <p style="margin: 5px 0;">&copy; ${new Date().getFullYear()} Beauty Hospital. Todos los derechos reservados.</p>
+            <p style="margin: 5px 0;">&copy; ${new Date().getFullYear()} All Beauty Luxury & Wellness. Todos los derechos reservados.</p>
             <p style="margin: 5px 0;">Este correo fue enviado a ${email} como verificación de seguridad para acceso administrativo.</p>
           </div>
         </div>
@@ -543,9 +543,10 @@ async function sendAdminVerificationEmail(
     console.log("📤 Sending email to:", email);
     const info = await transporter.sendMail({
       from:
-        process.env.SMTP_FROM || `"Beauty Hospital" <${process.env.SMTP_USER}>`,
+        process.env.SMTP_FROM ||
+        `"All Beauty Luxury & Wellness" <${process.env.SMTP_USER}>`,
       to: email,
-      subject: `${code} es tu código de verificación de Admin - Beauty Hospital`,
+      subject: `${code} es tu código de verificación de Admin - All Beauty Luxury & Wellness`,
       html: emailBody,
     });
     console.log("✅ Email sent successfully! Message ID:", info.messageId);

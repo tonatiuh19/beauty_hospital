@@ -1,11 +1,22 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Lock, Mail, ArrowRight, Shield, CheckCircle } from "lucide-react";
+import {
+  MdOutlineLock,
+  MdOutlineEmail,
+  MdOutlineArrowForward,
+  MdOutlineShield,
+  MdOutlineCheckCircle,
+  MdOutlineCalendarMonth,
+  MdOutlinePeople,
+  MdOutlinePayments,
+  MdOutlineSettings,
+} from "react-icons/md";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Logo } from "@/components/Logo";
 import axios from "@/lib/axios";
 
 export default function AdminLogin() {
@@ -110,15 +121,17 @@ export default function AdminLogin() {
           >
             {/* Logo */}
             <div className="flex items-center gap-3 mb-8">
-              <div className="w-12 h-12 bg-gradient-to-r from-purple-600 to-purple-800 rounded-xl flex items-center justify-center">
-                <Shield className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">
-                  Beauty Hospital
-                </h1>
-                <p className="text-sm text-gray-500">Panel de Administración</p>
-              </div>
+              <Logo 
+                className="gap-4" 
+                iconClassName="h-16 w-auto" 
+                textClassName="h-10 w-auto" 
+              />
+            </div>
+
+            <div className="mb-2">
+              <p className="text-sm text-[#6B5335] font-medium">
+                Panel de Administración
+              </p>
             </div>
 
             {/* Welcome text */}
@@ -142,7 +155,7 @@ export default function AdminLogin() {
 
             {success && (
               <Alert className="mb-4 border-green-200 bg-green-50">
-                <CheckCircle className="h-4 w-4 text-green-600" />
+                <MdOutlineCheckCircle className="h-4 w-4 text-[#4A7C59]" />
                 <AlertDescription className="text-green-800">
                   {success}
                 </AlertDescription>
@@ -155,7 +168,7 @@ export default function AdminLogin() {
                 <div className="space-y-2">
                   <Label htmlFor="email">Correo Electrónico</Label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <MdOutlineEmail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[#3D2E1F] w-5 h-5" />
                     <Input
                       id="email"
                       type="email"
@@ -171,7 +184,7 @@ export default function AdminLogin() {
 
                 <Button
                   type="submit"
-                  className="w-full bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-700 hover:to-purple-900"
+                  className="w-full bg-gradient-to-r from-[#A0812E] to-[#C9A159] hover:from-[#8B6E28] hover:to-[#A0812E] text-white font-semibold shadow-md"
                   disabled={loading}
                 >
                   {loading ? (
@@ -179,7 +192,7 @@ export default function AdminLogin() {
                   ) : (
                     <>
                       Continuar
-                      <ArrowRight className="ml-2 w-4 h-4" />
+                      <MdOutlineArrowForward className="ml-2 w-4 h-4" />
                     </>
                   )}
                 </Button>
@@ -189,14 +202,14 @@ export default function AdminLogin() {
             {/* Code Step */}
             {step === "code" && (
               <form onSubmit={handleCodeSubmit} className="space-y-6">
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-6">
+                <div className="bg-primary/10 border border-primary/30 rounded-lg p-4 mb-6">
                   <div className="flex items-start gap-3">
-                    <Shield className="w-5 h-5 text-purple-600 mt-0.5" />
+                    <MdOutlineShield className="w-5 h-5 text-primary mt-0.5" />
                     <div>
-                      <p className="text-sm font-medium text-purple-900">
+                      <p className="text-sm font-medium text-primary">
                         {userName}
                       </p>
-                      <p className="text-xs text-purple-700 capitalize">
+                      <p className="text-xs text-primary capitalize">
                         {userRole.replace("_", " ")}
                       </p>
                     </div>
@@ -206,7 +219,7 @@ export default function AdminLogin() {
                 <div className="space-y-2">
                   <Label htmlFor="code">Código de Verificación</Label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <MdOutlineLock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[#3D2E1F] w-5 h-5" />
                     <Input
                       id="code"
                       type="text"
@@ -222,14 +235,14 @@ export default function AdminLogin() {
                       autoFocus
                     />
                   </div>
-                  <p className="text-xs text-gray-500 text-center">
+                  <p className="text-xs text-[#3D2E1F] text-center">
                     El código expira en 10 minutos
                   </p>
                 </div>
 
                 <Button
                   type="submit"
-                  className="w-full bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-700 hover:to-purple-900"
+                  className="w-full bg-gradient-to-r from-[#A0812E] to-[#C9A159] hover:from-[#8B6E28] hover:to-[#A0812E] text-white font-semibold shadow-md"
                   disabled={loading || code.length !== 6}
                 >
                   {loading ? "Verificando..." : "Iniciar Sesión"}
@@ -243,7 +256,7 @@ export default function AdminLogin() {
                     setError("");
                     setSuccess("");
                   }}
-                  className="w-full text-sm text-gray-600 hover:text-purple-600 transition-colors"
+                  className="w-full text-sm text-gray-600 hover:text-primary transition-colors"
                 >
                   ← Volver a ingresar correo
                 </button>
@@ -253,12 +266,12 @@ export default function AdminLogin() {
             {/* Security notice */}
             <div className="mt-8 p-4 bg-gray-50 rounded-lg border border-gray-200">
               <div className="flex items-start gap-2">
-                <Lock className="w-4 h-4 text-gray-500 mt-0.5" />
+                <MdOutlineLock className="w-5 h-5 text-[#3D2E1F] mt-0.5" />
                 <div>
                   <p className="text-xs font-medium text-gray-700">
                     Acceso Seguro
                   </p>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-[#3D2E1F] mt-1">
                     Utilizamos autenticación sin contraseña para mayor
                     seguridad. Recibirás un código único en tu correo.
                   </p>
@@ -270,7 +283,7 @@ export default function AdminLogin() {
             <div className="mt-6 text-center">
               <a
                 href="/"
-                className="text-sm text-gray-600 hover:text-purple-600 transition-colors"
+                className="text-sm text-gray-600 hover:text-primary transition-colors"
               >
                 ← Volver al sitio principal
               </a>
@@ -280,10 +293,10 @@ export default function AdminLogin() {
       </div>
 
       {/* Right column - Image/Branding */}
-      <div className="hidden lg:block relative bg-gradient-to-br from-purple-600 via-purple-700 to-purple-900 overflow-hidden">
-        <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=1200')] bg-cover bg-center opacity-10"></div>
+      <div className="hidden lg:block relative bg-gradient-to-br from-[#A0812E] via-[#C9A159] to-[#E8C580] overflow-hidden">
+        <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=1200')] bg-cover bg-center opacity-5"></div>
 
-        <div className="relative z-10 h-full flex flex-col justify-center items-center p-12 text-white">
+        <div className="relative z-10 h-full flex flex-col justify-center items-center p-12 text-white drop-shadow-lg">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -291,13 +304,13 @@ export default function AdminLogin() {
             className="max-w-lg text-center"
           >
             <div className="w-20 h-20 bg-white/10 backdrop-blur-sm rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <Shield className="w-10 h-10" />
+              <MdOutlineShield className="w-10 h-10" />
             </div>
 
-            <h2 className="text-4xl font-bold mb-4">
+            <h2 className="text-4xl font-bold mb-4 drop-shadow-lg">
               Sistema de Gestión Integral
             </h2>
-            <p className="text-lg text-purple-100 mb-8">
+            <p className="text-lg text-white/95 mb-8 drop-shadow">
               Administra citas, pacientes, pagos y más desde un solo lugar.
               Diseñado para profesionales de la salud estética.
             </p>
@@ -305,49 +318,54 @@ export default function AdminLogin() {
             <div className="grid gap-4 text-left">
               {[
                 {
-                  icon: "📅",
+                  icon: MdOutlineCalendarMonth,
                   title: "Gestión de Citas",
                   desc: "Calendario intuitivo con recordatorios automáticos",
                 },
                 {
-                  icon: "👥",
+                  icon: MdOutlinePeople,
                   title: "Pacientes",
                   desc: "Historial completo y expedientes médicos",
                 },
                 {
-                  icon: "💳",
+                  icon: MdOutlinePayments,
                   title: "Pagos y Contratos",
                   desc: "Control financiero total con reportes detallados",
                 },
                 {
-                  icon: "⚙️",
+                  icon: MdOutlineSettings,
                   title: "Configuración",
                   desc: "Personaliza servicios, horarios y cupones",
                 },
-              ].map((feature, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.5, delay: 0.4 + index * 0.1 }}
-                  className="flex items-start gap-3 bg-white/10 backdrop-blur-sm rounded-lg p-4"
-                >
-                  <span className="text-2xl">{feature.icon}</span>
-                  <div>
-                    <h3 className="font-semibold text-white">
-                      {feature.title}
-                    </h3>
-                    <p className="text-sm text-purple-100">{feature.desc}</p>
-                  </div>
-                </motion.div>
-              ))}
+              ].map((feature, index) => {
+                const IconComponent = feature.icon;
+                return (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.5, delay: 0.4 + index * 0.1 }}
+                    className="flex items-start gap-3 bg-white/20 backdrop-blur-sm rounded-lg p-4 border border-white/30"
+                  >
+                    <IconComponent className="w-7 h-7 text-white flex-shrink-0 mt-0.5" />
+                    <div>
+                      <h3 className="font-semibold text-white drop-shadow">
+                        {feature.title}
+                      </h3>
+                      <p className="text-sm text-white/90 drop-shadow">
+                        {feature.desc}
+                      </p>
+                    </div>
+                  </motion.div>
+                );
+              })}
             </div>
           </motion.div>
         </div>
 
         {/* Decorative elements */}
-        <div className="absolute top-10 right-10 w-72 h-72 bg-purple-500/20 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-10 left-10 w-96 h-96 bg-purple-400/20 rounded-full blur-3xl"></div>
+        <div className="absolute top-10 right-10 w-72 h-72 bg-white/10 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-10 left-10 w-96 h-96 bg-white/5 rounded-full blur-3xl"></div>
       </div>
     </div>
   );

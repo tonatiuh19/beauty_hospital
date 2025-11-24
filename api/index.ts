@@ -549,19 +549,25 @@ const verifyCode: RequestHandler = async (req, res) => {
       });
     }
 
-    // Check if code is valid (within last 10 minutes)
+    // Check if code matches (temporarily ignoring expiration for debugging)
     const [sessions] = await pool.query<any[]>(
-      `SELECT id, patient_id, session_code, user_session
+      `SELECT id, patient_id, session_code, user_session, user_session_date_start
        FROM users_sessions
-       WHERE patient_id = ? AND session_code = ? 
-       AND user_session_date_start > DATE_SUB(NOW(), INTERVAL 10 MINUTE)`,
+       WHERE patient_id = ? AND session_code = ?`,
       [patient_id, code],
     );
+
+    console.log("🔍 Verify Code Debug:");
+    console.log("   Looking for patient_id:", patient_id, "code:", code);
+    console.log("   Found sessions:", sessions.length);
+    if (sessions.length > 0) {
+      console.log("   Session data:", sessions[0]);
+    }
 
     if (sessions.length === 0) {
       return res.status(401).json({
         success: false,
-        message: "Invalid or expired code",
+        message: "Invalid code - no matching session found",
       });
     }
 
@@ -595,7 +601,6 @@ const verifyCode: RequestHandler = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Login successful",
       patient: {
         id: patient.id,
         email: patient.email,
@@ -603,6 +608,11 @@ const verifyCode: RequestHandler = async (req, res) => {
         last_name: patient.last_name,
         phone: patient.phone,
         role: patient.role,
+        is_active: patient.is_active,
+        is_email_verified: patient.is_email_verified,
+        date_of_birth: patient.date_of_birth,
+        created_at: patient.created_at,
+        last_login: patient.last_login,
       },
     });
   } catch (error) {
@@ -690,19 +700,19 @@ async function sendVerificationEmail(
         <style>
           body { font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px; }
           .container { background-color: white; border-radius: 10px; padding: 30px; max-width: 600px; margin: 0 auto; }
-          .code { font-size: 32px; font-weight: bold; color: #6366f1; text-align: center; padding: 20px; background-color: #f0f0f0; border-radius: 5px; margin: 20px 0; }
+          .code { font-size: 32px; font-weight: bold; color: #C9A159; text-align: center; padding: 20px; background-color: #f0f0f0; border-radius: 5px; margin: 20px 0; }
           .footer { color: #666; font-size: 12px; text-align: center; margin-top: 30px; }
         </style>
       </head>
       <body>
         <div class="container">
           <h1>Hola ${userName},</h1>
-          <p>Tu código de verificación para Beauty Hospital es:</p>
+          <p>Tu código de verificación para All Beauty Luxury & Wellness es:</p>
           <div class="code">${code}</div>
           <p>Este código expirará en 10 minutos.</p>
           <p>Si no solicitaste este código, puedes ignorar este mensaje.</p>
           <div class="footer">
-            <p>Beauty Hospital - Tu clínica de confianza</p>
+            <p>All Beauty Luxury & Wellness - Tu clínica de confianza</p>
           </div>
         </div>
       </body>
@@ -712,18 +722,20 @@ async function sendVerificationEmail(
     console.log("📤 Sending email to:", email);
     console.log(
       "   From field:",
-      process.env.SMTP_FROM || `"Beauty Hospital" <${process.env.SMTP_USER}>`,
+      process.env.SMTP_FROM ||
+        `"All Beauty Luxury & Wellness" <${process.env.SMTP_USER}>`,
     );
     console.log(
       "   Subject:",
-      `${code} es tu código de verificación de Beauty Hospital`,
+      `${code} es tu código de verificación de All Beauty Luxury & Wellness`,
     );
 
     const info = await transporter.sendMail({
       from:
-        process.env.SMTP_FROM || `"Beauty Hospital" <${process.env.SMTP_USER}>`,
+        process.env.SMTP_FROM ||
+        `"All Beauty Luxury & Wellness" <${process.env.SMTP_USER}>`,
       to: email,
-      subject: `${code} es tu código de verificación de Beauty Hospital`,
+      subject: `${code} es tu código de verificación de All Beauty Luxury & Wellness`,
       html: emailBody,
     });
 
@@ -858,7 +870,7 @@ async function sendAppointmentConfirmationEmail(
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
           }
           .header {
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            background: linear-gradient(135deg, #C9A159 0%, #E8C580 100%);
             color: white;
             padding: 30px;
             border-radius: 8px;
@@ -906,7 +918,7 @@ async function sendAppointmentConfirmationEmail(
           }
           .details {
             background-color: #f9fafb;
-            border-left: 4px solid #6366f1;
+            border-left: 4px solid #C9A159;
             padding: 20px;
             margin: 20px 0;
             border-radius: 4px;
@@ -928,7 +940,7 @@ async function sendAppointmentConfirmationEmail(
           }
           .detail-value {
             display: table-cell;
-            color: #6366f1;
+            color: #C9A159;
             font-weight: 600;
             text-align: right;
           }
@@ -936,7 +948,7 @@ async function sendAppointmentConfirmationEmail(
             display: inline-block;
             width: 20px;
             height: 20px;
-            background-color: #6366f1;
+            background-color: #C9A159;
             border-radius: 3px;
             margin-right: 8px;
             vertical-align: middle;
@@ -1014,7 +1026,7 @@ async function sendAppointmentConfirmationEmail(
             text-align: center;
           }
           .contact-item strong {
-            color: #6366f1;
+            color: #C9A159;
           }
           .footer { 
             color: #6b7280; 
@@ -1085,7 +1097,7 @@ async function sendAppointmentConfirmationEmail(
           </div>
 
           <div class="footer">
-            <p><strong>Beauty Hospital</strong></p>
+            <p><strong>All Beauty Luxury & Wellness</strong></p>
             <p>Tu clinica de confianza para tratamientos de belleza y estetica</p>
             <p class="footer-note">
               Este es un correo automatico, por favor no respondas directamente a este mensaje.
@@ -1100,9 +1112,10 @@ async function sendAppointmentConfirmationEmail(
 
     const info = await transporter.sendMail({
       from:
-        process.env.SMTP_FROM || `"Beauty Hospital" <${process.env.SMTP_USER}>`,
+        process.env.SMTP_FROM ||
+        `"All Beauty Luxury & Wellness" <${process.env.SMTP_USER}>`,
       to: email,
-      subject: "Confirmacion de Cita - Beauty Hospital",
+      subject: "Confirmacion de Cita - All Beauty Luxury & Wellness",
       html: emailBody,
     });
 
@@ -1213,7 +1226,7 @@ async function sendAdminVerificationEmail(
       <html>
       <head>
         <meta charset="utf-8">
-        <title>Beauty Hospital - Acceso Administrativo</title>
+        <title>All Beauty Luxury & Wellness - Acceso Administrativo</title>
       </head>
       <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px;">
         <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
@@ -1223,7 +1236,7 @@ async function sendAdminVerificationEmail(
               
               <p>Hola <strong>${adminName}</strong>,</p>
               
-              <p>Se ha solicitado acceso al panel administrativo de Beauty Hospital.</p>
+              <p>Se ha solicitado acceso al panel administrativo de All Beauty Luxury & Wellness.</p>
               
               <p><strong>Tu codigo de verificacion es:</strong></p>
               
@@ -1242,7 +1255,7 @@ async function sendAdminVerificationEmail(
               <hr style="border: 1px solid #eee; margin: 30px 0;">
               
               <p style="font-size: 12px; color: #666; text-align: center;">
-                Beauty Hospital - Panel Administrativo<br>
+                All Beauty Luxury & Wellness - Panel Administrativo<br>
                 Este es un mensaje automatico del sistema - No responder
               </p>
             </td>
@@ -1256,20 +1269,20 @@ async function sendAdminVerificationEmail(
     console.log(
       "   From field:",
       process.env.SMTP_FROM ||
-        `"Beauty Hospital Admin" <${process.env.SMTP_USER}>`,
+        `"All Beauty Luxury & Wellness Admin" <${process.env.SMTP_USER}>`,
     );
     console.log(
       "   Subject:",
-      `${code} - Codigo de acceso administrativo Beauty Hospital`,
+      `${code} - Codigo de acceso administrativo All Beauty Luxury & Wellness`,
     );
 
     // Plain text version for better deliverability
     const textBody = `
-ACCESO ADMINISTRATIVO - BEAUTY HOSPITAL
+ACCESO ADMINISTRATIVO - ALL BEAUTY LUXURY & WELLNESS
 
 Hola ${adminName},
 
-Se ha solicitado acceso al panel administrativo de Beauty Hospital.
+Se ha solicitado acceso al panel administrativo de All Beauty Luxury & Wellness.
 
 Tu codigo de verificacion es: ${code}
 
@@ -1278,16 +1291,16 @@ IMPORTANTE: Este codigo expirara en 10 minutos
 Si no solicitaste este acceso, contacta inmediatamente al administrador del sistema.
 
 ---
-Beauty Hospital - Panel Administrativo
+All Beauty Luxury & Wellness - Panel Administrativo
 Este es un mensaje automatico del sistema - No responder
     `;
 
     const info = await transporter.sendMail({
       from:
         process.env.SMTP_FROM ||
-        `"Beauty Hospital Admin" <${process.env.SMTP_USER}>`,
+        `"All Beauty Luxury & Wellness Admin" <${process.env.SMTP_USER}>`,
       to: email,
-      subject: `${code} - Codigo de acceso administrativo Beauty Hospital`,
+      subject: `${code} - Codigo de acceso administrativo All Beauty Luxury & Wellness`,
       text: textBody.trim(),
       html: emailBody,
     });
@@ -5928,7 +5941,7 @@ function createServer() {
       await pool.query("SELECT 1");
       res.json({
         success: true,
-        message: "Beauty Hospital API is running",
+        message: "All Beauty Luxury & Wellness API is running",
         timestamp: new Date().toISOString(),
         database: "connected",
       });

@@ -576,7 +576,7 @@ export default function SettingsManagement() {
                 resetCouponForm();
                 setIsCouponModalOpen(true);
               }}
-              className="bg-purple-600 hover:bg-purple-700"
+              className="bg-primary hover:bg-primary/90"
             >
               <Plus className="w-4 h-4 mr-2" />
               Nuevo Cupón
@@ -770,7 +770,7 @@ export default function SettingsManagement() {
                 resetPageForm();
                 setIsPageModalOpen(true);
               }}
-              className="bg-purple-600 hover:bg-purple-700"
+              className="bg-primary hover:bg-primary/90"
             >
               <Plus className="w-4 h-4 mr-2" />
               Nueva Página
@@ -853,7 +853,7 @@ export default function SettingsManagement() {
                 resetUserForm();
                 setIsUserModalOpen(true);
               }}
-              className="bg-purple-600 hover:bg-purple-700"
+              className="bg-primary hover:bg-primary/90"
             >
               <Plus className="w-4 h-4 mr-2" />
               Nuevo Usuario
@@ -923,7 +923,7 @@ export default function SettingsManagement() {
                               onClick={() => handleEditUser(user)}
                               title="Editar usuario"
                             >
-                              <Edit className="w-4 h-4 text-purple-600" />
+                              <Edit className="w-4 h-4 text-primary" />
                             </Button>
                             <Button
                               variant="ghost"
@@ -1097,7 +1097,7 @@ export default function SettingsManagement() {
             </Button>
             <Button
               onClick={handleSaveCoupon}
-              className="bg-purple-600 hover:bg-purple-700"
+              className="bg-primary hover:bg-primary/90"
             >
               Guardar Cupón
             </Button>
@@ -1164,7 +1164,7 @@ export default function SettingsManagement() {
             </Button>
             <Button
               onClick={handleSavePage}
-              className="bg-purple-600 hover:bg-purple-700"
+              className="bg-primary hover:bg-primary/90"
             >
               Guardar Página
             </Button>
@@ -1247,7 +1247,7 @@ export default function SettingsManagement() {
             </Button>
             <Button
               onClick={handleCreateUser}
-              className="bg-purple-600 hover:bg-purple-700"
+              className="bg-primary hover:bg-primary/90"
             >
               Crear Usuario
             </Button>
@@ -1323,7 +1323,7 @@ export default function SettingsManagement() {
             </Button>
             <Button
               onClick={handleUpdateUser}
-              className="bg-purple-600 hover:bg-purple-700"
+              className="bg-primary hover:bg-primary/90"
             >
               Actualizar Usuario
             </Button>
@@ -1421,7 +1421,7 @@ export default function SettingsManagement() {
                     <Card>
                       <CardContent className="p-4">
                         <p className="text-sm text-gray-500">Citas Creadas</p>
-                        <p className="text-2xl font-bold text-purple-600">
+                        <p className="text-2xl font-bold text-primary">
                           {userActivity.appointments?.length || 0}
                         </p>
                       </CardContent>

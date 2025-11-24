@@ -107,8 +107,6 @@ export interface VerifyCodeRequest {
 export interface VerifyCodeResponse {
   success: boolean;
   patient: PatientWithoutPassword;
-  token: string;
-  refreshToken: string;
 }
 
 export interface CreatePasswordlessPatientRequest {

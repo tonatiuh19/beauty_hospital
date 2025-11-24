@@ -817,7 +817,7 @@ export function AppointmentWizard() {
                       }}
                       className={`relative w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg transition-all backdrop-blur-sm border-2 ${
                         isCompleted
-                          ? "bg-emerald-500 text-white border-emerald-600 shadow-lg shadow-emerald-500/50"
+                          ? "bg-[#C9A159] text-white border-[#A0812E] shadow-lg shadow-[#C9A159]/50"
                           : isCurrent
                             ? "bg-primary text-white border-primary shadow-2xl shadow-primary/60"
                             : "bg-white/50 text-gray-400 border-white/40"
@@ -851,7 +851,7 @@ export function AppointmentWizard() {
                       transition={{ delay: idx * 0.12 + 0.1 }}
                       className={`hidden sm:block text-xs font-bold mt-3 text-center px-2 transition-all ${
                         isCompleted
-                          ? "text-emerald-600"
+                          ? "text-[#A0812E]"
                           : isCurrent
                             ? "text-primary text-sm"
                             : "text-gray-400"
@@ -1260,11 +1260,11 @@ export function AppointmentWizard() {
                             delay: 0.2,
                             stiffness: 100,
                           }}
-                          className="mx-auto w-20 h-20 bg-blue-500 rounded-full flex items-center justify-center mb-6 shadow-2xl shadow-blue-500/50"
+                          className="mx-auto w-20 h-20 bg-[#C9A159] rounded-full flex items-center justify-center mb-6 shadow-2xl shadow-[#C9A159]/50"
                         >
                           <CheckCircle className="w-10 h-10 text-white" />
                         </motion.div>
-                        <h2 className="text-3xl font-bold mb-3 text-blue-600">
+                        <h2 className="text-3xl font-bold mb-3 text-[#A0812E]">
                           ¿Para Quién es la Cita?
                         </h2>
                         <p className="text-gray-600 text-lg">
@@ -1276,9 +1276,9 @@ export function AppointmentWizard() {
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.6 }}
-                        className="p-5 rounded-2xl bg-emerald-100/60 border-2 border-emerald-300/60 backdrop-blur-sm mb-8"
+                        className="p-5 rounded-2xl bg-[#FFF5E1]/80 border-2 border-[#C9A159]/60 backdrop-blur-sm mb-8"
                       >
-                        <p className="text-sm text-emerald-900 font-bold leading-relaxed flex items-start gap-2">
+                        <p className="text-sm text-[#3D2E1F] font-bold leading-relaxed flex items-start gap-2">
                           <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
                           <span>
                             Sesión iniciada como {user?.first_name}{" "}
@@ -1369,9 +1369,9 @@ export function AppointmentWizard() {
                           <motion.div
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className="p-5 rounded-2xl bg-blue-100/40 border-2 border-blue-300/40 backdrop-blur-sm mb-8"
+                            className="p-5 rounded-2xl bg-[#FFF5E1]/60 border-2 border-[#C9A159]/40 backdrop-blur-sm mb-8"
                           >
-                            <p className="text-sm text-blue-900 font-bold leading-relaxed">
+                            <p className="text-sm text-[#3D2E1F] font-bold leading-relaxed">
                               {appointment.bookedForSelf
                                 ? "✓ Perfecto! La información de contacto será la tuya."
                                 : "✓ Por favor proporciona la información de contacto de la persona para quien es la cita."}
@@ -1553,11 +1553,11 @@ export function AppointmentWizard() {
                         delay: 0.2,
                         stiffness: 100,
                       }}
-                      className="mx-auto w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center mb-6 shadow-2xl shadow-emerald-500/50"
+                      className="mx-auto w-20 h-20 bg-[#C9A159] rounded-full flex items-center justify-center mb-6 shadow-2xl shadow-[#C9A159]/50"
                     >
                       <CheckCircle className="w-10 h-10 text-white" />
                     </motion.div>
-                    <h2 className="text-3xl font-bold mb-3 text-emerald-600">
+                    <h2 className="text-3xl font-bold mb-3 text-[#A0812E]">
                       Resumen y Pago
                     </h2>
                     <p className="text-gray-600 text-lg">
@@ -1641,17 +1641,17 @@ export function AppointmentWizard() {
 
                         {/* Show payment form only after terms are accepted */}
                         {!acceptedTerms || !acceptedPrivacy ? (
-                          <div className="p-8 rounded-2xl bg-amber-50 border-2 border-amber-300 text-center">
-                            <AlertCircle className="w-12 h-12 text-amber-600 mx-auto mb-4" />
-                            <p className="text-amber-800 font-medium">
+                          <div className="p-8 rounded-2xl bg-[#FFF5E1] border-2 border-[#C9A159] text-center">
+                            <AlertCircle className="w-12 h-12 text-[#A0812E] mx-auto mb-4" />
+                            <p className="text-[#3D2E1F] font-medium">
                               ✓ Por favor acepta los términos y condiciones y la
                               política de privacidad para continuar con el pago
                             </p>
                           </div>
                         ) : isCreatingPayment ? (
-                          <div className="p-8 rounded-2xl bg-blue-50 border-2 border-blue-300 text-center">
+                          <div className="p-8 rounded-2xl bg-[#FFF5E1] border-2 border-[#C9A159] text-center">
                             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-                            <p className="text-blue-800 font-medium">
+                            <p className="text-[#3D2E1F] font-medium">
                               Preparando método de pago seguro...
                             </p>
                           </div>
@@ -1718,9 +1718,9 @@ export function AppointmentWizard() {
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.5 }}
-                        className="p-5 rounded-2xl bg-blue-100/40 border-2 border-blue-300/40 backdrop-blur-sm"
+                        className="p-5 rounded-2xl bg-[#FFF5E1]/60 border-2 border-[#C9A159]/40 backdrop-blur-sm"
                       >
-                        <p className="text-sm text-blue-900 font-bold leading-relaxed">
+                        <p className="text-sm text-[#3D2E1F] font-bold leading-relaxed">
                           ✓ Recibirás una confirmación por email y WhatsApp una
                           vez que se procese tu pago. Nuestro equipo se
                           contactará contigo para confirmar los detalles.
@@ -1819,7 +1819,7 @@ export function AppointmentWizard() {
                           )}
 
                           {/* Total */}
-                          <div className="p-4 rounded-xl bg-gradient-to-r from-primary/20 to-emerald-500/20 border-2 border-primary/40 backdrop-blur-sm">
+                          <div className="p-4 rounded-xl bg-gradient-to-r from-[#C9A159]/20 to-[#E8C580]/20 border-2 border-[#A0812E]/40 backdrop-blur-sm">
                             <p className="text-xs text-gray-600 font-bold mb-1">
                               Total a Pagar
                             </p>

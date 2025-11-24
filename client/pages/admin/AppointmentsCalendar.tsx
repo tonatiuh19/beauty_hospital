@@ -110,7 +110,7 @@ interface Patient {
 
 const statusColors = {
   scheduled: "bg-blue-100 text-blue-700",
-  confirmed: "bg-purple-100 text-purple-700",
+  confirmed: "bg-primary/20 text-primary",
   completed: "bg-green-100 text-green-700",
   cancelled: "bg-red-100 text-red-700",
   no_show: "bg-orange-100 text-orange-700",
@@ -333,14 +333,14 @@ export default function AppointmentsCalendar() {
   // Event style getter for react-big-calendar
   const eventStyleGetter = (event: CalendarEvent) => {
     const appointment = event.resource;
-    let backgroundColor = "#9333ea"; // purple default
+    let backgroundColor = "#C9A159"; // gold default
 
     switch (appointment.status) {
       case "scheduled":
         backgroundColor = "#3b82f6"; // blue
         break;
       case "confirmed":
-        backgroundColor = "#9333ea"; // purple
+        backgroundColor = "#C9A159"; // gold
         break;
       case "completed":
         backgroundColor = "#22c55e"; // green
@@ -408,7 +408,7 @@ export default function AppointmentsCalendar() {
         </div>
         <Button
           onClick={() => setIsCreateOpen(true)}
-          className="bg-purple-600 hover:bg-purple-700 w-full sm:w-auto"
+          className="bg-primary hover:bg-primary/90 w-full sm:w-auto"
         >
           <Plus className="w-4 h-4 mr-2" />
           Nueva Cita
@@ -760,7 +760,7 @@ export default function AppointmentsCalendar() {
             </Button>
             <Button
               onClick={handleCreateAppointment}
-              className="bg-purple-600 hover:bg-purple-700"
+              className="bg-primary hover:bg-primary/90"
             >
               Crear Cita
             </Button>

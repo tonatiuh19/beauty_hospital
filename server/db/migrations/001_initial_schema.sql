@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Nov 18, 2025 at 09:20 PM
+-- Generation Time: Nov 23, 2025 at 01:06 PM
 -- Server version: 5.7.23-23
 -- PHP Version: 8.1.33
 
@@ -51,7 +51,16 @@ INSERT INTO `admin_sessions` (`id`, `user_id`, `session_code`, `is_active`, `exp
 (16, 12, 807442, 0, '2025-11-15 05:06:18', '2025-11-15 05:01:01'),
 (17, 12, 397245, 0, '2025-11-15 05:06:18', '2025-11-15 05:06:04'),
 (18, 12, 825751, 0, '2025-11-19 00:56:42', '2025-11-19 00:56:27'),
-(19, 12, 304404, 0, '2025-11-19 03:18:40', '2025-11-19 03:18:23');
+(19, 12, 304404, 0, '2025-11-19 03:18:40', '2025-11-19 03:18:23'),
+(20, 12, 800868, 0, '2025-11-19 21:58:09', '2025-11-19 21:57:59'),
+(21, 12, 490682, 0, '2025-11-19 22:07:08', '2025-11-19 22:06:34'),
+(22, 13, 573310, 0, '2025-11-20 00:27:47', '2025-11-20 00:27:29'),
+(23, 13, 993873, 0, '2025-11-20 05:33:50', '2025-11-20 05:31:25'),
+(24, 13, 503008, 0, '2025-11-21 07:47:49', '2025-11-21 07:47:27'),
+(25, 13, 196841, 0, '2025-11-22 04:42:17', '2025-11-22 04:41:58'),
+(26, 13, 345982, 0, '2025-11-23 00:20:41', '2025-11-23 00:18:45'),
+(27, 13, 623886, 0, '2025-11-23 00:20:41', '2025-11-23 00:20:21'),
+(28, 12, 983836, 0, '2025-11-23 18:43:09', '2025-11-23 18:42:48');
 
 -- --------------------------------------------------------
 
@@ -89,7 +98,9 @@ CREATE TABLE `appointments` (
 
 INSERT INTO `appointments` (`id`, `patient_id`, `doctor_id`, `service_id`, `status`, `scheduled_at`, `duration_minutes`, `notes`, `created_by`, `booked_for_self`, `booking_source`, `created_at`, `updated_at`, `check_in_at`, `check_in_by`, `contract_id`, `cancellation_reason`, `cancelled_at`, `cancelled_by`, `rescheduled_from`, `reminder_sent_at`) VALUES
 (21, 9, NULL, 3, 'confirmed', '2025-11-21 22:30:00', 90, NULL, 9, 1, 'online', '2025-11-19 01:40:18', '2025-11-19 01:40:18', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-(22, 9, NULL, 3, 'confirmed', '2025-11-21 21:00:00', 90, NULL, 9, 1, 'online', '2025-11-19 02:07:54', '2025-11-19 02:07:54', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+(22, 9, NULL, 3, 'confirmed', '2025-11-21 21:00:00', 90, NULL, 9, 1, 'online', '2025-11-19 02:07:54', '2025-11-19 02:07:54', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+(23, 9, NULL, 3, 'confirmed', '2025-12-13 22:30:00', 90, NULL, 9, 1, 'online', '2025-11-19 03:33:12', '2025-11-19 03:33:12', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+(24, 9, NULL, 2, 'confirmed', '2025-11-21 21:00:00', 45, NULL, 9, 1, 'online', '2025-11-19 03:38:00', '2025-11-19 03:38:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -173,7 +184,6 @@ INSERT INTO `blocked_dates` (`id`, `start_date`, `end_date`, `start_time`, `end_
 (3, '2026-01-01', '2026-01-01', NULL, NULL, 1, 'Año Nuevo', 'Cerrado por Año Nuevo', 1, '2025-11-10 20:18:30', '2025-11-10 20:18:30'),
 (4, '2025-12-20', '2025-12-26', NULL, NULL, 1, 'Vacaciones de fin de año', 'Personal en vacaciones navideñas', 1, '2025-11-10 20:18:30', '2025-11-10 20:18:30'),
 (5, '2026-02-14', '2026-02-16', NULL, NULL, 1, 'Mantenimiento de equipos', 'Mantenimiento programado de equipos láser', 1, '2025-11-10 20:18:30', '2025-11-10 20:18:30'),
-(6, '2025-11-20', '2025-11-20', NULL, NULL, 1, 'Evento especial', 'Capacitación del personal médico', 1, '2025-11-10 20:18:30', '2025-11-10 20:18:30'),
 (7, '2025-12-15', '2025-12-15', NULL, NULL, 1, 'Junta administrativa', 'Reunión anual del equipo', 1, '2025-11-10 20:18:30', '2025-11-10 20:18:30'),
 (8, '2026-03-15', '2026-03-20', NULL, NULL, 1, 'Vacaciones de primavera', 'Clínica cerrada temporalmente', 1, '2025-11-10 20:18:30', '2025-11-10 20:18:30'),
 (9, '2026-04-10', '2026-04-10', NULL, NULL, 1, 'Actualización de sistemas', 'Actualización del sistema de gestión', 1, '2025-11-10 20:18:30', '2025-11-10 20:18:30'),
@@ -455,10 +465,11 @@ CREATE TABLE `patients` (
 --
 
 INSERT INTO `patients` (`id`, `first_name`, `last_name`, `email`, `password_hash`, `role`, `is_email_verified`, `last_login`, `phone`, `date_of_birth`, `gender`, `address`, `city`, `state`, `zip_code`, `emergency_contact_name`, `emergency_contact_phone`, `notes`, `is_active`, `created_at`, `updated_at`) VALUES
-(9, 'Alex', 'Gomez', 'axgoomez@gmail.com', NULL, 'patient', 1, '2025-11-19 01:38:17', '4741400364', '1999-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 04:25:54', '2025-11-19 03:06:02'),
+(9, 'Alex', 'Gomez', 'axgoomez@gmail.com', NULL, 'patient', 1, '2025-11-19 21:30:36', '4741400364', '1999-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 04:25:54', '2025-11-19 21:30:36'),
 (10, 'Felix', 'Gomez', 'tonatiuh.gom@gmail.com', NULL, 'patient', 1, '2025-11-12 05:46:39', '4741400363', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 04:37:34', '2025-11-12 05:46:39'),
 (11, 'Felix', 'Gomez', 'test@gmail.com', NULL, 'patient', 0, NULL, '1234567890', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 05:13:59', '2025-11-11 05:13:59'),
-(12, 'Machaca', 'Gomez', 'machaca@gmail.com', NULL, 'patient', 0, NULL, '+52 474 140 0363', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 05:21:46', '2025-11-11 05:21:46');
+(12, 'Machaca', 'Gomez', 'machaca@gmail.com', NULL, 'patient', 0, NULL, '+52 474 140 0363', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 05:21:46', '2025-11-11 05:21:46'),
+(13, 'Hebert', 'Montecino', 'hebert@dupeadsmedia.com', NULL, 'patient', 1, '2025-11-23 00:17:17', '+529095279692', '1994-11-20', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-19 22:33:09', '2025-11-23 00:17:17');
 
 -- --------------------------------------------------------
 
@@ -498,7 +509,9 @@ CREATE TABLE `payments` (
 
 INSERT INTO `payments` (`id`, `appointment_id`, `patient_id`, `amount`, `payment_method`, `payment_status`, `stripe_payment_id`, `stripe_payment_intent_id`, `transaction_id`, `refund_amount`, `refund_reason`, `refunded_at`, `refunded_by`, `refund_approved_by`, `refund_approved_at`, `refund_status`, `coupon_id`, `discount_amount`, `notes`, `processed_by`, `processed_at`, `created_at`, `updated_at`) VALUES
 (19, 21, 9, 1500.00, 'stripe', 'completed', 'pi_3SV0NPAxpuzS9HfB3gU0eOQj', 'pi_3SV0NPAxpuzS9HfB3gU0eOQj', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0.00, NULL, 9, '2025-11-19 01:40:18', '2025-11-19 01:40:18', '2025-11-19 01:40:18'),
-(20, 22, 9, 1500.00, 'stripe', 'completed', 'pi_3SV0o1AxpuzS9HfB3QyhXkPs', 'pi_3SV0o1AxpuzS9HfB3QyhXkPs', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0.00, NULL, 9, '2025-11-19 02:07:54', '2025-11-19 02:07:54', '2025-11-19 02:07:54');
+(20, 22, 9, 1500.00, 'stripe', 'completed', 'pi_3SV0o1AxpuzS9HfB3QyhXkPs', 'pi_3SV0o1AxpuzS9HfB3QyhXkPs', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0.00, NULL, 9, '2025-11-19 02:07:54', '2025-11-19 02:07:54', '2025-11-19 02:07:54'),
+(21, 23, 9, 1500.00, 'stripe', 'completed', 'pi_3SV28IAxpuzS9HfB3AVQEAyX', 'pi_3SV28IAxpuzS9HfB3AVQEAyX', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0.00, NULL, 9, '2025-11-19 03:33:13', '2025-11-19 03:33:13', '2025-11-19 03:33:13'),
+(22, 24, 9, 800.00, 'stripe', 'completed', 'pi_3SV2DHAxpuzS9HfB11dIVkXM', 'pi_3SV2DHAxpuzS9HfB11dIVkXM', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0.00, NULL, 9, '2025-11-19 03:38:00', '2025-11-19 03:38:00', '2025-11-19 03:38:00');
 
 -- --------------------------------------------------------
 
@@ -610,7 +623,7 @@ INSERT INTO `settings` (`id`, `setting_key`, `setting_value`, `setting_type`, `c
 CREATE TABLE `users` (
   `id` int(11) NOT NULL,
   `email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `password_hash` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `password_hash` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `role` enum('admin','general_admin','receptionist','doctor','pos','patient') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'patient',
   `first_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `last_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -634,7 +647,8 @@ INSERT INTO `users` (`id`, `email`, `password_hash`, `role`, `first_name`, `last
 (9, 'axgoomezzzz@gmail.com', '', 'patient', 'Alex', 'Gomez', '4741400363', NULL, NULL, NULL, 1, 0, '2025-11-10 17:33:24', '2025-11-12 04:43:04', '2025-11-11 03:04:36'),
 (10, 'receptionist@beautyhospital.com', '', 'receptionist', 'Maria', 'Garcia', '+1234567891', NULL, NULL, 'EMP001', 1, 0, '2025-11-12 04:42:13', '2025-11-12 04:42:13', NULL),
 (11, 'doctor@beautyhospital.com', '', 'doctor', 'Dr. Juan', 'Martinez', '+1234567892', NULL, NULL, 'DOC001', 1, 0, '2025-11-12 04:42:13', '2025-11-12 04:42:13', NULL),
-(12, 'axgoomez@gmail.com', '', 'general_admin', 'Alex', 'Gomez', '+1234567893', NULL, NULL, 'ADM001', 1, 1, '2025-11-12 04:42:13', '2025-11-19 03:18:40', '2025-11-19 03:18:40');
+(12, 'axgoomez@gmail.com', '', 'general_admin', 'Alex', 'Gomez', '+1234567893', NULL, NULL, 'ADM001', 1, 1, '2025-11-12 04:42:13', '2025-11-23 18:43:08', '2025-11-23 18:43:08'),
+(13, 'hebert@dupeadsmedia.com', '', 'general_admin', 'Hebert', 'Montecinos', NULL, NULL, '', 'ADM002', 1, 1, '2025-11-19 22:15:46', '2025-11-23 00:20:41', '2025-11-23 00:20:41');
 
 -- --------------------------------------------------------
 
@@ -647,8 +661,9 @@ CREATE TABLE `users_sessions` (
   `user_id` int(11) DEFAULT NULL,
   `patient_id` int(11) DEFAULT NULL,
   `session_code` int(6) NOT NULL,
-  `user_session` tinyint(1) NOT NULL,
-  `user_session_date_start` datetime NOT NULL
+  `user_session` tinyint(1) NOT NULL DEFAULT '0',
+  `user_session_date_start` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -657,7 +672,8 @@ CREATE TABLE `users_sessions` (
 
 INSERT INTO `users_sessions` (`id`, `user_id`, `patient_id`, `session_code`, `user_session`, `user_session_date_start`) VALUES
 (16, NULL, 10, 672509, 1, '2025-11-11 23:46:26'),
-(24, NULL, 9, 669759, 1, '2025-11-18 19:37:54');
+(29, NULL, 13, 895861, 1, '2025-11-23 00:15:49'),
+(30, NULL, 9, 438407, 1, '2025-11-23 18:03:25');
 
 --
 -- Indexes for dumped tables
@@ -894,7 +910,10 @@ ALTER TABLE `users`
 ALTER TABLE `users_sessions`
   ADD PRIMARY KEY (`id`),
   ADD KEY `idx_user_id` (`user_id`),
-  ADD KEY `idx_patient_id` (`patient_id`);
+  ADD KEY `idx_patient_id` (`patient_id`),
+  ADD KEY `idx_session_code` (`session_code`),
+  ADD KEY `idx_user_session` (`user_session`),
+  ADD KEY `idx_user_session_date_start` (`user_session_date_start`);
 
 --
 -- AUTO_INCREMENT for dumped tables
@@ -904,13 +923,13 @@ ALTER TABLE `users_sessions`
 -- AUTO_INCREMENT for table `admin_sessions`
 --
 ALTER TABLE `admin_sessions`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=20;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=29;
 
 --
 -- AUTO_INCREMENT for table `appointments`
 --
 ALTER TABLE `appointments`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=23;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=25;
 
 --
 -- AUTO_INCREMENT for table `appointment_reminders`
@@ -994,13 +1013,13 @@ ALTER TABLE `notifications`
 -- AUTO_INCREMENT for table `patients`
 --
 ALTER TABLE `patients`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
 
 --
 -- AUTO_INCREMENT for table `payments`
 --
 ALTER TABLE `payments`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=21;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=23;
 
 --
 -- AUTO_INCREMENT for table `refresh_tokens`
@@ -1024,13 +1043,13 @@ ALTER TABLE `settings`
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
 
 --
 -- AUTO_INCREMENT for table `users_sessions`
 --
 ALTER TABLE `users_sessions`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=25;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=31;
 
 --
 -- Constraints for dumped tables

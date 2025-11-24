@@ -14,7 +14,7 @@ const features = [
     title: "Tecnología Avanzada",
     description:
       "Utilizamos la tecnología de depilación y belleza más moderna para resultados óptimos.",
-    color: "from-secondary to-purple-500",
+    color: "from-secondary to-primary",
   },
   {
     icon: Shield,

@@ -437,19 +437,19 @@ async function sendVerificationEmail(
         <style>
           body { font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px; }
           .container { background-color: white; border-radius: 10px; padding: 30px; max-width: 600px; margin: 0 auto; }
-          .code { font-size: 32px; font-weight: bold; color: #6366f1; text-align: center; padding: 20px; background-color: #f0f0f0; border-radius: 5px; margin: 20px 0; }
+          .code { font-size: 32px; font-weight: bold; color: #C9A159; text-align: center; padding: 20px; background-color: #f0f0f0; border-radius: 5px; margin: 20px 0; }
           .footer { color: #666; font-size: 12px; text-align: center; margin-top: 30px; }
         </style>
       </head>
       <body>
         <div class="container">
           <h1>Hola ${userName},</h1>
-          <p>Tu código de verificación para Beauty Hospital es:</p>
+          <p>Tu código de verificación para All Beauty Luxury & Wellness es:</p>
           <div class="code">${code}</div>
           <p>Este código expirará en 10 minutos.</p>
           <p>Si no solicitaste este código, puedes ignorar este mensaje.</p>
           <div class="footer">
-            <p>Beauty Hospital - Tu clínica de confianza</p>
+            <p>All Beauty Luxury & Wellness - Tu clínica de confianza</p>
           </div>
         </div>
       </body>
@@ -458,9 +458,9 @@ async function sendVerificationEmail(
 
     console.log("📤 Sending email to:", email);
     const info = await transporter.sendMail({
-      from: `"Beauty Hospital" <${process.env.SMTP_USER || "noreply@beautyhospital.com"}>`,
+      from: `"All Beauty Luxury & Wellness" <${process.env.SMTP_USER || "noreply@beautyhospital.com"}>`,
       to: email,
-      subject: `${code} es tu código de verificación de Beauty Hospital`,
+      subject: `${code} es tu código de verificación de All Beauty Luxury & Wellness`,
       html: emailBody,
     });
     console.log("✅ Email sent successfully! Message ID:", info.messageId);

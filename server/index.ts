@@ -140,7 +140,7 @@ export function createServer() {
       const dbConnected = await testConnection();
       res.json({
         success: true,
-        message: "Beauty Hospital API is running",
+        message: "All Beauty Luxury & Wellness API is running",
         timestamp: new Date().toISOString(),
         database: dbConnected ? "connected" : "disconnected",
       });

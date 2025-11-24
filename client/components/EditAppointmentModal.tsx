@@ -233,7 +233,7 @@ export function EditAppointmentModal({
           >
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
               {/* Header */}
-              <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white relative">
+              <div className="bg-gradient-to-r from-luxury-gold-dark to-luxury-gold-light p-6 text-white relative">
                 <button
                   onClick={onClose}
                   disabled={isLoading}
@@ -401,7 +401,7 @@ export function EditAppointmentModal({
                   type="button"
                   onClick={handleSave}
                   disabled={isLoading || !selectedDate || !selectedTime}
-                  className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
+                  className="flex-1 bg-gradient-to-r from-luxury-gold-dark to-luxury-gold-light hover:from-luxury-gold-dark/90 hover:to-luxury-gold-light/90"
                 >
                   {isLoading ? "Guardando..." : "Guardar Cambios"}
                 </Button>

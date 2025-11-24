@@ -1,4 +1,4 @@
-# Beauty Hospital Platform 🏥
+# All Beauty Luxury & Wellness Platform 💎
 
 A complete solution designed for hair removal clinics and medical aesthetic centers. The platform centralizes patient management, appointment scheduling, payments, contracts, and notifications in one secure ecosystem.
 

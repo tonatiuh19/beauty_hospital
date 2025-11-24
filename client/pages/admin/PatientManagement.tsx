@@ -687,7 +687,7 @@ export default function PatientManagement() {
                 {isDoctorRole && (
                   <Button
                     onClick={() => setIsMedicalRecordOpen(true)}
-                    className="bg-purple-600 hover:bg-purple-700"
+                    className="bg-primary hover:bg-primary/90"
                   >
                     <Plus className="w-4 h-4 mr-2" />
                     Agregar Registro
@@ -904,7 +904,7 @@ export default function PatientManagement() {
             </Button>
             <Button
               onClick={handleUpdatePatient}
-              className="bg-purple-600 hover:bg-purple-700"
+              className="bg-primary hover:bg-primary/90"
             >
               Guardar Cambios
             </Button>
@@ -974,7 +974,7 @@ export default function PatientManagement() {
             </Button>
             <Button
               onClick={handleAddMedicalRecord}
-              className="bg-purple-600 hover:bg-purple-700"
+              className="bg-primary hover:bg-primary/90"
             >
               Agregar Registro
             </Button>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -11,7 +11,7 @@ import {
   verifyLoginCode,
   createNewUser,
 } from "../store/slices/authApiSlice";
-import { Loader2 } from "lucide-react";
+import { Loader2, Clock } from "lucide-react";
 
 interface AuthModalProps {
   open: boolean;
@@ -35,6 +35,18 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isPhoneValid, setIsPhoneValid] = useState(false);
+  const [resendTimer, setResendTimer] = useState(0);
+  const [canResend, setCanResend] = useState(false);
+
+  // Timer for resend code (5 minutes = 300 seconds)
+  useEffect(() => {
+    if (resendTimer > 0) {
+      const timer = setTimeout(() => setResendTimer(resendTimer - 1), 1000);
+      return () => clearTimeout(timer);
+    } else if (resendTimer === 0 && step === "verify-code") {
+      setCanResend(true);
+    }
+  }, [resendTimer, step]);
 
   // Reset form
   const resetForm = () => {
@@ -49,6 +61,8 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
     setError("");
     setIsSubmitting(false);
     setIsPhoneValid(false);
+    setResendTimer(0);
+    setCanResend(false);
   };
 
   // Handle email submission
@@ -67,6 +81,8 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
         await dispatch(
           sendVerificationCode({ patient_id: result.patient.id, email }),
         ).unwrap();
+        setResendTimer(300); // 5 minutes
+        setCanResend(false);
         setStep("verify-code");
       } else {
         // Patient doesn't exist, go to sign up
@@ -129,6 +145,8 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
       ).unwrap();
 
       // Go to verification step
+      setResendTimer(300); // 5 minutes
+      setCanResend(false);
       setStep("verify-code");
     } catch (err: any) {
       setError(err || "Ocurrió un error. Intenta de nuevo.");
@@ -139,7 +157,7 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
 
   // Handle resend code
   const handleResendCode = async () => {
-    if (!userId) return;
+    if (!userId || !canResend) return;
 
     setError("");
     setIsSubmitting(true);
@@ -148,12 +166,21 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
       await dispatch(
         sendVerificationCode({ patient_id: userId, email }),
       ).unwrap();
+      setResendTimer(300); // Reset to 5 minutes
+      setCanResend(false);
       setError("");
     } catch (err: any) {
       setError(err || "Error al reenviar código");
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Format timer display (MM:SS)
+  const formatTimer = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
   return (
@@ -274,15 +301,24 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
                 >
                   ← Volver
                 </Button>
-                <Button
-                  type="button"
-                  variant="link"
-                  className="p-0 h-auto"
-                  onClick={handleResendCode}
-                  disabled={isSubmitting}
-                >
-                  Reenviar código
-                </Button>
+                {canResend ? (
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="p-0 h-auto"
+                    onClick={handleResendCode}
+                    disabled={isSubmitting}
+                  >
+                    Reenviar código
+                  </Button>
+                ) : (
+                  <div className="flex items-center gap-1 text-muted-foreground">
+                    <Clock className="h-3 w-3" />
+                    <span className="text-xs">
+                      Reenviar en {formatTimer(resendTimer)}
+                    </span>
+                  </div>
+                )}
               </div>
             </form>
           )}
