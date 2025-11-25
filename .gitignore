@@ -25,6 +25,11 @@ dist-ssr
 service-account-key.json
 *.key.json
 
+# DocuSign private keys
+docusign_private.key
+docusign_private_key_base64.txt
+*.pem
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
