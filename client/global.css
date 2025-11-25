@@ -1,5 +1,5 @@
 /** @import must precede all other statements */
-@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&family=Tangerine:wght@400;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -115,33 +115,21 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: "Cinzel", serif;
+    font-family: "Inter", sans-serif;
   }
 
-  /* All headings default to Cinzel for readability */
+  /* All headings default to Inter for readability */
   h1,
   h2,
   h3,
   h4,
   h5,
   h6 {
-    font-family: "Cinzel", serif;
+    font-family: "Inter", sans-serif;
     @apply font-semibold;
   }
 
-  /* Only very large hero headings (3xl and above) use Tangerine */
-  .text-3xl,
-  .text-4xl,
-  .text-5xl,
-  .text-6xl,
-  .text-7xl,
-  .text-8xl,
-  .text-9xl {
-    font-family: "Tangerine", cursive;
-    @apply font-bold;
-  }
-
-  /* But if explicitly used on body text, keep Cinzel */
+  /* But if explicitly used on body text, keep Inter */
   p.text-3xl,
   p.text-4xl,
   p.text-5xl,
@@ -151,7 +139,7 @@
   div.text-3xl,
   div.text-4xl,
   div.text-5xl {
-    font-family: "Cinzel", serif;
+    font-family: "Inter", sans-serif;
   }
 
   :where(p, span, li, a, button, label, td, th) {

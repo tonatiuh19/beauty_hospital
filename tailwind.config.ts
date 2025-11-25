@@ -133,8 +133,7 @@ export default {
         "fade-in-down": "fade-in-down 0.6s ease-out forwards",
       },
       fontFamily: {
-        display: ["'Tangerine'", "cursive"],
-        sans: ["'Cinzel'", "serif"],
+        sans: ["'Inter'", "sans-serif"],
       },
     },
   },

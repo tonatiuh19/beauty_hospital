@@ -20,6 +20,7 @@ import {
   MdOutlineEventBusy,
 } from "react-icons/md";
 import { Button } from "@/components/ui/button";
+import { Logo } from "@/components/Logo";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -218,11 +219,9 @@ export default function AdminDashboardLayout() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="flex items-center gap-2"
+                className="flex items-center gap-3"
               >
-                <div className="w-8 h-8 bg-gradient-to-r from-luxury-gold-dark to-luxury-gold-light rounded-lg flex items-center justify-center">
-                  <MdOutlineShield className="w-5 h-5 text-white" />
-                </div>
+                <Logo variant="icon" iconClassName="h-8" />
                 <div>
                   <p className="text-sm font-bold text-gray-900">
                     All Beauty Luxury & Wellness
@@ -236,9 +235,9 @@ export default function AdminDashboardLayout() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="w-8 h-8 bg-gradient-to-r from-luxury-gold-dark to-luxury-gold-light rounded-lg flex items-center justify-center mx-auto"
+                className="mx-auto"
               >
-                <MdOutlineShield className="w-5 h-5 text-white" />
+                <Logo variant="icon" iconClassName="h-8" />
               </motion.div>
             )}
           </AnimatePresence>
@@ -388,10 +387,8 @@ export default function AdminDashboardLayout() {
               className="lg:hidden fixed left-0 top-0 bottom-0 w-280 bg-white z-50 flex flex-col"
             >
               <div className="h-16 border-b border-gray-200 flex items-center justify-between px-4">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 bg-gradient-to-r from-luxury-gold-dark to-luxury-gold-light rounded-lg flex items-center justify-center">
-                    <MdOutlineShield className="w-5 h-5 text-white" />
-                  </div>
+                <div className="flex items-center gap-3">
+                  <Logo variant="icon" iconClassName="h-8" />
                   <div>
                     <p className="text-sm font-bold text-gray-900">
                       All Beauty Luxury & Wellness

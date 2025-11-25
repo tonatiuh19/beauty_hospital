@@ -212,10 +212,7 @@ export default function DashboardHome() {
     <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       {/* Header */}
       <div>
-        <h1
-          className="text-2xl md:text-3xl font-bold text-gray-900"
-          style={{ fontFamily: "Cinzel, serif" }}
-        >
+        <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
           Dashboard
         </h1>
         <p className="text-sm md:text-base text-gray-500 mt-1">
@@ -281,12 +278,7 @@ export default function DashboardHome() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <CardTitle
-                className="text-lg md:text-xl"
-                style={{ fontFamily: "Cinzel, serif" }}
-              >
-                Ingresos
-              </CardTitle>
+              <CardTitle className="text-lg md:text-xl">Ingresos</CardTitle>
               <div className="flex gap-2 flex-wrap">
                 {(["week", "month", "year"] as const).map((p) => (
                   <button
@@ -348,9 +340,7 @@ export default function DashboardHome() {
         {/* Appointment Status */}
         <Card>
           <CardHeader>
-            <CardTitle style={{ fontFamily: "Cinzel, serif" }}>
-              Estado de Citas
-            </CardTitle>
+            <CardTitle>Estado de Citas</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
@@ -399,9 +389,7 @@ export default function DashboardHome() {
       {/* Top Services */}
       <Card>
         <CardHeader>
-          <CardTitle style={{ fontFamily: "Cinzel, serif" }}>
-            Servicios Más Solicitados
-          </CardTitle>
+          <CardTitle>Servicios Más Solicitados</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
