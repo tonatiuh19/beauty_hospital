@@ -1,25 +1,43 @@
 import docusign from "docusign-esign";
+import fs from "fs";
 
 const DOCUSIGN_INTEGRATION_KEY = process.env.DOCUSIGN_INTEGRATION_KEY || "";
 const DOCUSIGN_USER_ID = process.env.DOCUSIGN_USER_ID || "";
 const DOCUSIGN_ACCOUNT_ID = process.env.DOCUSIGN_ACCOUNT_ID || "";
 const DOCUSIGN_BASE_PATH =
   process.env.DOCUSIGN_BASE_PATH || "https://demo.docusign.net/restapi";
-const DOCUSIGN_PRIVATE_KEY = process.env.DOCUSIGN_PRIVATE_KEY || "";
-const DOCUSIGN_OAUTH_BASE_PATH =
-  process.env.DOCUSIGN_OAUTH_BASE_PATH || "account-d.docusign.com";
+const DOCUSIGN_PRIVATE_KEY_PATH = process.env.DOCUSIGN_PRIVATE_KEY_PATH || "";
+const DOCUSIGN_AUTH_SERVER =
+  process.env.DOCUSIGN_AUTH_SERVER || "account-d.docusign.com";
+
+export function isDocuSignConfigured(): boolean {
+  return !!(
+    DOCUSIGN_INTEGRATION_KEY &&
+    DOCUSIGN_USER_ID &&
+    DOCUSIGN_ACCOUNT_ID &&
+    DOCUSIGN_PRIVATE_KEY_PATH &&
+    fs.existsSync(DOCUSIGN_PRIVATE_KEY_PATH)
+  );
+}
 
 export async function getDocuSignClient(): Promise<docusign.ApiClient> {
   const apiClient = new docusign.ApiClient();
   apiClient.setBasePath(DOCUSIGN_BASE_PATH);
-  apiClient.setOAuthBasePath(DOCUSIGN_OAUTH_BASE_PATH);
+  apiClient.setOAuthBasePath(DOCUSIGN_AUTH_SERVER);
+
+  // Read private key from file
+  if (!DOCUSIGN_PRIVATE_KEY_PATH || !fs.existsSync(DOCUSIGN_PRIVATE_KEY_PATH)) {
+    throw new Error("DocuSign private key file not found");
+  }
+
+  const privateKey = fs.readFileSync(DOCUSIGN_PRIVATE_KEY_PATH, "utf8");
 
   try {
     const results = await apiClient.requestJWTUserToken(
       DOCUSIGN_INTEGRATION_KEY,
       DOCUSIGN_USER_ID,
       ["signature", "impersonation"],
-      Buffer.from(DOCUSIGN_PRIVATE_KEY, "utf-8"),
+      privateKey,
       3600,
     );
 
@@ -27,8 +45,18 @@ export async function getDocuSignClient(): Promise<docusign.ApiClient> {
     apiClient.addDefaultHeader("Authorization", `Bearer ${accessToken}`);
 
     return apiClient;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error authenticating with DocuSign:", error);
+
+    // Check if consent is required
+    if (error.response?.body?.error === "consent_required") {
+      const consentUrl = `https://${DOCUSIGN_AUTH_SERVER}/oauth/auth?response_type=code&scope=signature%20impersonation&client_id=${DOCUSIGN_INTEGRATION_KEY}&redirect_uri=${process.env.APP_URL}/docusign/callback`;
+      console.error(
+        `\n⚠️  DocuSign consent required. Admin must visit: ${consentUrl}\n`,
+      );
+      throw new Error(`DocuSign consent required. Visit: ${consentUrl}`);
+    }
+
     throw new Error("Failed to authenticate with DocuSign");
   }
 }
@@ -41,6 +69,7 @@ export async function createContractEnvelope(
   sessionsIncluded: number,
   termsAndConditions: string,
   contractNumber: string,
+  returnUrl?: string,
 ): Promise<{ envelopeId: string; signingUrl: string }> {
   try {
     const apiClient = await getDocuSignClient();
@@ -69,12 +98,13 @@ export async function createContractEnvelope(
     document.documentId = "1";
     envelopeDefinition.documents = [document];
 
-    // Add signer
+    // Add signer with clientUserId for embedded signing
     const signer = new docusign.Signer();
     signer.email = patientEmail;
     signer.name = patientName;
     signer.recipientId = "1";
     signer.routingOrder = "1";
+    signer.clientUserId = `client_${Date.now()}`; // Unique ID for embedded signing
 
     // Add signature tab
     const signHere = new docusign.SignHere();
@@ -112,11 +142,13 @@ export async function createContractEnvelope(
 
     // Create recipient view (embedded signing)
     const recipientViewRequest = new docusign.RecipientViewRequest();
-    recipientViewRequest.returnUrl = `${process.env.APP_URL || "http://localhost:5000"}/api/docusign/callback`;
+    recipientViewRequest.returnUrl =
+      returnUrl ||
+      `${process.env.APP_URL || "http://localhost:8080"}/admin/appointments`;
     recipientViewRequest.authenticationMethod = "none";
     recipientViewRequest.email = patientEmail;
     recipientViewRequest.userName = patientName;
-    recipientViewRequest.clientUserId = patientEmail; // Use email as unique client ID
+    recipientViewRequest.clientUserId = signer.clientUserId; // Must match signer's clientUserId
 
     const viewResults = await envelopesApi.createRecipientView(
       DOCUSIGN_ACCOUNT_ID,
@@ -257,13 +289,4 @@ function generateContractHTML(
 </body>
 </html>
   `;
-}
-
-export function isDocuSignConfigured(): boolean {
-  return !!(
-    DOCUSIGN_INTEGRATION_KEY &&
-    DOCUSIGN_USER_ID &&
-    DOCUSIGN_ACCOUNT_ID &&
-    DOCUSIGN_PRIVATE_KEY
-  );
 }

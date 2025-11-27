@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -39,6 +39,7 @@ interface CheckInWithContractProps {
     patient_email: string;
     service_id: number;
     service_name: string;
+    service_price: number;
     scheduled_date: string;
     scheduled_time: string;
   } | null;
@@ -57,6 +58,8 @@ export default function CheckInWithContract({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [contractId, setContractId] = useState<number | null>(null);
+  const [contractNumber, setContractNumber] = useState<string | null>(null);
+  const [envelopeId, setEnvelopeId] = useState<string | null>(null);
   const [signingUrl, setSigningUrl] = useState<string | null>(null);
   const [contractStatus, setContractStatus] = useState<string | null>(null);
 
@@ -103,7 +106,7 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
     try {
       const token = localStorage.getItem("adminAccessToken");
       const response = await axios.get(
-        `/api/admin/contracts/appointment/${appointment.id}`,
+        `/admin/contracts/appointment/${appointment.id}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -112,7 +115,8 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
       if (response.data.success && response.data.data) {
         const contract = response.data.data;
         setContractId(contract.contract_id);
-        setContractStatus(contract.contract_status);
+        setContractStatus(contract.docusign_status);
+        setEnvelopeId(contract.docusign_envelope_id);
 
         if (
           contract.docusign_status === "signed" ||
@@ -145,7 +149,7 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
     try {
       const token = localStorage.getItem("adminAccessToken");
       const response = await axios.post(
-        "/api/admin/contracts/create-and-configure",
+        "/admin/contracts/create-and-configure",
         {
           patient_id: appointment.patient_id,
           patient_name: appointment.patient_name,
@@ -163,15 +167,9 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
 
       if (response.data.success) {
         setContractId(response.data.data.contract_id);
+        setContractNumber(response.data.data.contract_number);
+        setEnvelopeId(response.data.data.envelope_id);
         const configUrl = response.data.data.configuration_url;
-
-        await axios.patch(
-          `/api/admin/appointments/${appointment.id}/status`,
-          { contract_id: response.data.data.contract_id },
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        );
 
         const docusignWindow = window.open(
           configUrl,
@@ -212,7 +210,7 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
     try {
       const token = localStorage.getItem("adminAccessToken");
       const response = await axios.post(
-        `/api/admin/contracts/${contractId}/open-docusign`,
+        `/admin/contracts/${contractId}/open-docusign`,
         {
           patient_name: appointment.patient_name,
           patient_email: appointment.patient_email,
@@ -262,7 +260,7 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
     try {
       const token = localStorage.getItem("adminAccessToken");
       const response = await axios.get(
-        `/api/admin/contracts/${contractId}/status`,
+        `/admin/contracts/${contractId}/status`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -270,9 +268,12 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
 
       if (response.data.success) {
         const status = response.data.data.docusign_status;
+        const contractStat = response.data.data.status;
         setContractStatus(status);
+        setContractNumber(response.data.data.contract_number);
+        setEnvelopeId(response.data.data.docusign_envelope_id);
 
-        if (status === "signed" || status === "completed") {
+        if (status === "completed" || contractStat === "signed") {
           setStep("complete");
           await performCheckIn();
         }
@@ -295,7 +296,7 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
     try {
       const token = localStorage.getItem("adminAccessToken");
       await axios.post(
-        `/api/admin/appointments/${appointment.id}/check-in`,
+        `/admin/appointments/${appointment.id}/check-in`,
         {},
         {
           headers: { Authorization: `Bearer ${token}` },
@@ -317,6 +318,8 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
   const resetState = () => {
     setStep("check");
     setContractId(null);
+    setContractNumber(null);
+    setEnvelopeId(null);
     setSigningUrl(null);
     setContractStatus(null);
     setError(null);
@@ -327,11 +330,17 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
     });
   };
 
-  const handleOpen = () => {
+  // Check for existing contract when dialog opens
+  useEffect(() => {
     if (isOpen && appointment) {
+      // Auto-populate form with service price
+      setContractForm((prev) => ({
+        ...prev,
+        total_amount: appointment.service_price || 0,
+      }));
       checkExistingContract();
     }
-  };
+  }, [isOpen, appointment]);
 
   return (
     <Dialog
@@ -340,8 +349,6 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
         if (!open) {
           onClose();
           resetState();
-        } else {
-          handleOpen();
         }
       }}
     >
@@ -451,25 +458,28 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
             <Alert>
               <FileText className="h-4 w-4" />
               <AlertDescription>
-                El contrato ha sido creado. Ahora debe ser firmado por el
-                paciente antes de proceder con el check-in.
+                El contrato ha sido enviado a DocuSign. El paciente debe firmar
+                antes de proceder con el check-in.
               </AlertDescription>
             </Alert>
 
-            {signingUrl && (
-              <div className="p-4 bg-blue-50 rounded-lg space-y-3">
-                <p className="text-sm font-medium text-blue-900">
-                  URL de Firma DocuSign:
+            {contractNumber && (
+              <div className="p-4 bg-gray-50 rounded-lg">
+                <p className="text-sm font-medium text-gray-700">
+                  Número de Contrato:
                 </p>
-                <a
-                  href={signingUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-blue-600 hover:text-blue-800 text-sm"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  Abrir en DocuSign
-                </a>
+                <p className="text-lg font-semibold text-gray-900">
+                  {contractNumber}
+                </p>
+              </div>
+            )}
+
+            {envelopeId && (
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <p className="text-sm font-medium text-blue-900">
+                  ID de Sobre DocuSign:
+                </p>
+                <p className="text-sm text-blue-700 font-mono">{envelopeId}</p>
               </div>
             )}
 
@@ -478,13 +488,29 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
                 <Label>Estado:</Label>
                 <Badge
                   variant={
-                    contractStatus === "signed" ? "default" : "secondary"
+                    contractStatus === "completed" ||
+                    contractStatus === "signed"
+                      ? "default"
+                      : "secondary"
                   }
                 >
-                  {contractStatus}
+                  {contractStatus === "sent" && "Enviado"}
+                  {contractStatus === "delivered" && "Entregado"}
+                  {contractStatus === "completed" && "Completado"}
+                  {contractStatus === "signed" && "Firmado"}
+                  {!["sent", "delivered", "completed", "signed"].includes(
+                    contractStatus,
+                  ) && contractStatus}
                 </Badge>
               </div>
             )}
+
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-sm text-yellow-800">
+                ℹ️ El estado se actualiza automáticamente cada 3 segundos
+                mientras esta ventana está abierta.
+              </p>
+            </div>
 
             <DialogFooter>
               <Button variant="outline" onClick={onClose}>
@@ -495,7 +521,7 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
                 disabled={loading}
                 className="bg-primary hover:bg-primary/90"
               >
-                {loading ? "Verificando..." : "Verificar Estado de Firma"}
+                {loading ? "Verificando..." : "Verificar Estado Ahora"}
               </Button>
             </DialogFooter>
           </div>

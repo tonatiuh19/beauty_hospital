@@ -75,8 +75,10 @@ interface CalendarAppointment {
   patient_name: string;
   patient_email: string;
   patient_phone: string;
+  service_id: number;
   service_name: string;
   service_category: string;
+  service_price: number;
   scheduled_date: string;
   scheduled_time: string;
   duration_minutes?: number;
@@ -787,8 +789,9 @@ export default function AppointmentsCalendar() {
                 patient_id: selectedAppointment.patient_id,
                 patient_name: selectedAppointment.patient_name,
                 patient_email: selectedAppointment.patient_email,
-                service_id: 0, // You may need to add this to CalendarAppointment interface
+                service_id: selectedAppointment.service_id,
                 service_name: selectedAppointment.service_name,
+                service_price: selectedAppointment.service_price,
                 scheduled_date: selectedAppointment.scheduled_date,
                 scheduled_time: selectedAppointment.scheduled_time,
               }

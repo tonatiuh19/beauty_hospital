@@ -2467,6 +2467,7 @@ const createContractAndOpenDocuSign: RequestHandler = async (req, res) => {
 
     const contractNumber = `CON-${Date.now()}-${patient_id}`;
 
+    // Create contract in database
     const [result] = await pool.query<any>(
       `INSERT INTO contracts (
         patient_id, service_id, contract_number, status, total_amount,
@@ -2478,34 +2479,153 @@ const createContractAndOpenDocuSign: RequestHandler = async (req, res) => {
         contractNumber,
         total_amount,
         sessions_included,
-        "Contract created for DocuSign",
+        `TÉRMINOS Y CONDICIONES DEL SERVICIO
+
+1. ALCANCE DEL SERVICIO
+   El presente contrato cubre las sesiones especificadas del servicio contratado.
+
+2. PROGRAMACIÓN Y ASISTENCIA
+   - Las citas deben programarse con anticipación
+   - Se requiere llegar 10 minutos antes de la hora programada
+   - En caso de no asistir sin previo aviso, se considerará como sesión utilizada
+
+3. POLÍTICA DE CANCELACIÓN
+   - Las cancelaciones deben hacerse con al menos 24 horas de anticipación
+
+4. CUIDADOS Y RECOMENDACIONES
+   - Seguir todas las indicaciones del personal médico
+   - Informar sobre cualquier cambio en el estado de salud`,
       ],
     );
 
     const contractId = result.insertId;
-    const envelopeId = `ENV-${Date.now()}`;
-    const configurationUrl = `https://demo.docusign.net/Signing/StartInSession.aspx?code=${envelopeId}&patient=${encodeURIComponent(patient_name)}&email=${encodeURIComponent(patient_email)}&service=${encodeURIComponent(service_name)}`;
 
-    await pool.query(
-      `UPDATE contracts 
-       SET status = 'pending_signature',
-           docusign_envelope_id = ?,
-           docusign_status = 'sent',
-           updated_at = NOW()
-       WHERE id = ?`,
-      [envelopeId, contractId],
-    );
+    // Try to create DocuSign envelope
+    try {
+      const { createContractEnvelope, isDocuSignConfigured } = await import(
+        "../server/utils/docusign"
+      );
 
-    res.json({
-      success: true,
-      message: "Contract created and DocuSign ready",
-      data: {
-        contract_id: contractId,
-        contract_number: contractNumber,
-        envelope_id: envelopeId,
-        configuration_url: configurationUrl,
-      },
-    });
+      const configured = isDocuSignConfigured();
+      console.log("🔍 DocuSign Configuration Check:", {
+        configured,
+        hasIntegrationKey: !!process.env.DOCUSIGN_INTEGRATION_KEY,
+        hasUserId: !!process.env.DOCUSIGN_USER_ID,
+        hasAccountId: !!process.env.DOCUSIGN_ACCOUNT_ID,
+        hasPrivateKeyPath: !!process.env.DOCUSIGN_PRIVATE_KEY_PATH,
+        basePath: process.env.DOCUSIGN_BASE_PATH,
+      });
+
+      if (configured) {
+        console.log("✅ DocuSign is configured, attempting real API call...");
+        // Use real DocuSign - ensure amount is a number
+        const docusignResult = await createContractEnvelope(
+          patient_name,
+          patient_email,
+          service_name,
+          parseFloat(total_amount),
+          parseInt(sessions_included),
+          "Términos y condiciones estándar del servicio.",
+          contractNumber,
+          return_url,
+        );
+
+        console.log("✅ DocuSign envelope created:", docusignResult.envelopeId);
+
+        await pool.query(
+          `UPDATE contracts 
+           SET status = 'pending_signature',
+               docusign_envelope_id = ?,
+               docusign_status = 'sent',
+               updated_at = NOW()
+           WHERE id = ?`,
+          [docusignResult.envelopeId, contractId],
+        );
+
+        // Link contract to appointments for this patient and service
+        await pool.query(
+          `UPDATE appointments 
+           SET contract_id = ?,
+               updated_at = NOW()
+           WHERE patient_id = ? 
+             AND service_id = ? 
+             AND status IN ('scheduled', 'confirmed')
+             AND contract_id IS NULL`,
+          [contractId, patient_id, service_id],
+        );
+
+        res.json({
+          success: true,
+          message: "Contract created and sent to DocuSign",
+          data: {
+            contract_id: contractId,
+            contract_number: contractNumber,
+            envelope_id: docusignResult.envelopeId,
+            configuration_url: docusignResult.signingUrl,
+          },
+        });
+      } else {
+        console.log("⚠️ DocuSign not configured, using demo fallback");
+        // Fallback to demo mode
+        const envelopeId = `ENV-${Date.now()}`;
+        const configurationUrl = `https://demo.docusign.net/Signing/StartInSession.aspx?code=${envelopeId}&patient=${encodeURIComponent(patient_name)}&email=${encodeURIComponent(patient_email)}&service=${encodeURIComponent(service_name)}`;
+
+        await pool.query(
+          `UPDATE contracts 
+           SET status = 'pending_signature',
+               docusign_envelope_id = ?,
+               docusign_status = 'sent',
+               updated_at = NOW()
+           WHERE id = ?`,
+          [envelopeId, contractId],
+        );
+
+        res.json({
+          success: true,
+          message: "Contract created (demo mode)",
+          data: {
+            contract_id: contractId,
+            contract_number: contractNumber,
+            envelope_id: envelopeId,
+            configuration_url: configurationUrl,
+          },
+        });
+      }
+    } catch (docusignError: any) {
+      console.error("❌ DocuSign API call failed:", docusignError);
+      console.error("Error details:", {
+        message: docusignError.message,
+        stack: docusignError.stack,
+        response: docusignError.response?.data,
+        status: docusignError.response?.status,
+      });
+
+      // If DocuSign fails, still return success but with demo URL
+      const envelopeId = `ENV-${Date.now()}`;
+      const configurationUrl = `https://demo.docusign.net/Signing/StartInSession.aspx?code=${envelopeId}`;
+
+      await pool.query(
+        `UPDATE contracts 
+         SET status = 'pending_signature',
+             docusign_envelope_id = ?,
+             docusign_status = 'sent',
+             updated_at = NOW()
+         WHERE id = ?`,
+        [envelopeId, contractId],
+      );
+
+      res.json({
+        success: true,
+        message: "Contract created (demo mode - DocuSign unavailable)",
+        data: {
+          contract_id: contractId,
+          contract_number: contractNumber,
+          envelope_id: envelopeId,
+          configuration_url: configurationUrl,
+          docusign_error: docusignError.message,
+        },
+      });
+    }
   } catch (error) {
     console.error("Error creating contract:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -2697,9 +2817,51 @@ const getContractStatus: RequestHandler = async (req, res) => {
       });
     }
 
+    const contract = contracts[0];
+
+    // If there's a DocuSign envelope, fetch the latest status
+    if (contract.docusign_envelope_id) {
+      try {
+        const { getEnvelopeStatus } = await import("../server/utils/docusign");
+        const envelopeStatus = await getEnvelopeStatus(
+          contract.docusign_envelope_id,
+        );
+
+        console.log("📋 DocuSign envelope status:", envelopeStatus);
+
+        // Update contract status in database if it changed
+        const newDocuSignStatus = envelopeStatus.status.toLowerCase();
+        if (newDocuSignStatus !== contract.docusign_status) {
+          const updateQuery =
+            newDocuSignStatus === "completed"
+              ? `UPDATE contracts 
+                 SET docusign_status = ?, 
+                     status = 'signed',
+                     signed_at = NOW(),
+                     updated_at = NOW()
+                 WHERE id = ?`
+              : `UPDATE contracts 
+                 SET docusign_status = ?,
+                     updated_at = NOW()
+                 WHERE id = ?`;
+
+          await pool.query(updateQuery, [newDocuSignStatus, id]);
+
+          contract.docusign_status = newDocuSignStatus;
+          if (newDocuSignStatus === "completed") {
+            contract.status = "signed";
+            contract.signed_at = new Date();
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching DocuSign status:", error);
+        // Continue with database status if DocuSign API fails
+      }
+    }
+
     res.json({
       success: true,
-      data: contracts[0],
+      data: contract,
     });
   } catch (error) {
     console.error("Error getting contract status:", error);
@@ -2843,6 +3005,56 @@ const checkInAppointment: RequestHandler = async (req, res) => {
   } catch (error) {
     console.error("Error checking in appointment:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * POST /api/webhooks/docusign
+ * DocuSign webhook to receive status updates
+ */
+const handleDocuSignWebhook: RequestHandler = async (req, res) => {
+  try {
+    console.log(
+      "📨 DocuSign webhook received:",
+      JSON.stringify(req.body, null, 2),
+    );
+
+    const { event, data } = req.body;
+
+    // DocuSign Connect sends XML, but we can also configure it to send JSON
+    // The envelope status is in envelopeStatus
+    const envelopeId = data?.envelopeSummary?.envelopeId || data?.envelopeId;
+    const status = data?.envelopeSummary?.status || data?.status;
+
+    if (!envelopeId) {
+      console.error("❌ No envelope ID in webhook");
+      return res.status(400).json({ message: "No envelope ID provided" });
+    }
+
+    console.log(`🔔 Envelope ${envelopeId} status: ${status}`);
+
+    // Update contract status
+    const updateQuery =
+      status === "completed"
+        ? `UPDATE contracts 
+           SET docusign_status = ?, 
+               status = 'signed',
+               signed_at = NOW(),
+               updated_at = NOW()
+           WHERE docusign_envelope_id = ?`
+        : `UPDATE contracts 
+           SET docusign_status = ?,
+               updated_at = NOW()
+           WHERE docusign_envelope_id = ?`;
+
+    await pool.query(updateQuery, [status.toLowerCase(), envelopeId]);
+
+    console.log(`✅ Contract updated for envelope ${envelopeId}`);
+
+    res.status(200).json({ message: "Webhook processed" });
+  } catch (error) {
+    console.error("Error processing DocuSign webhook:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -6389,6 +6601,41 @@ function createServer() {
     res.json({ message: "pong" });
   });
 
+  // DocuSign configuration check (admin only, for debugging)
+  expressApp.get("/api/admin/docusign/status", async (_req, res) => {
+    try {
+      const { isDocuSignConfigured } = await import("../server/utils/docusign");
+
+      const integrationKey = process.env.DOCUSIGN_INTEGRATION_KEY || "";
+      const configured = isDocuSignConfigured();
+
+      const consentUrl = `https://${process.env.DOCUSIGN_AUTH_SERVER || "account-d.docusign.com"}/oauth/auth?response_type=code&scope=signature%20impersonation&client_id=${integrationKey}&redirect_uri=${process.env.APP_URL || "http://localhost:8080"}/callback`;
+
+      res.json({
+        success: true,
+        configured,
+        consentUrl: configured ? consentUrl : "DocuSign not configured",
+        message: configured
+          ? "DocuSign is configured. If you see errors, visit the consent URL to grant permissions."
+          : "DocuSign is not configured. Check your .env file.",
+        config: {
+          hasIntegrationKey: !!process.env.DOCUSIGN_INTEGRATION_KEY,
+          hasUserId: !!process.env.DOCUSIGN_USER_ID,
+          hasAccountId: !!process.env.DOCUSIGN_ACCOUNT_ID,
+          hasPrivateKey: !!process.env.DOCUSIGN_PRIVATE_KEY_PATH,
+          basePath: process.env.DOCUSIGN_BASE_PATH,
+          authServer: process.env.DOCUSIGN_AUTH_SERVER,
+        },
+      });
+    } catch (error: any) {
+      res.json({
+        success: false,
+        message: "Error checking DocuSign status",
+        error: error.message,
+      });
+    }
+  });
+
   // ==================== CONFIGURE API ROUTES ====================
 
   // Demo routes
@@ -6447,6 +6694,9 @@ function createServer() {
   // Patient Profile
   expressApp.get("/api/patient/profile", getPatientProfile);
   expressApp.put("/api/patient/profile", updatePatientProfile);
+
+  // ==================== WEBHOOKS ====================
+  expressApp.post("/api/webhooks/docusign", handleDocuSignWebhook);
 
   // ==================== ADMIN ROUTES ====================
   // Admin Auth
