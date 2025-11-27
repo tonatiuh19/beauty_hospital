@@ -54,6 +54,7 @@ import {
 import { es } from "date-fns/locale";
 import { Calendar, dateFnsLocalizer, View } from "react-big-calendar";
 import "react-big-calendar/lib/css/react-big-calendar.css";
+import CheckInWithContract from "@/components/CheckInWithContract";
 
 // Setup the localizer for react-big-calendar
 const locales = {
@@ -74,8 +75,10 @@ interface CalendarAppointment {
   patient_name: string;
   patient_email: string;
   patient_phone: string;
+  service_id: number;
   service_name: string;
   service_category: string;
+  service_price: number;
   scheduled_date: string;
   scheduled_time: string;
   duration_minutes?: number;
@@ -133,6 +136,7 @@ export default function AppointmentsCalendar() {
     useState<CalendarAppointment | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isCheckInOpen, setIsCheckInOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [loading, setLoading] = useState(true);
@@ -252,24 +256,15 @@ export default function AppointmentsCalendar() {
     }
   };
 
-  const handleCheckIn = async (appointmentId: number) => {
-    try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.post(
-        `/api/admin/appointments/${appointmentId}/check-in`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
+  const handleCheckIn = (appointment: CalendarAppointment) => {
+    setSelectedAppointment(appointment);
+    setIsDetailsOpen(false);
+    setIsCheckInOpen(true);
+  };
 
-      if (response.data.success) {
-        fetchAppointments();
-        setIsDetailsOpen(false);
-      }
-    } catch (error: any) {
-      alert(error.response?.data?.message || "Error al registrar check-in");
-    }
+  const handleCheckInSuccess = () => {
+    fetchAppointments();
+    setIsCheckInOpen(false);
   };
 
   const handleCancel = async (appointmentId: number, reason: string) => {
@@ -496,80 +491,95 @@ export default function AppointmentsCalendar() {
             <DialogTitle>Detalles de la Cita</DialogTitle>
           </DialogHeader>
           {selectedAppointment && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-gray-500">Paciente</Label>
-                  <p className="font-medium">
-                    {selectedAppointment.patient_name}
-                  </p>
+            <>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-gray-500">Paciente</Label>
+                    <p className="font-medium">
+                      {selectedAppointment.patient_name}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500">Estado</Label>
+                    <Badge className={statusColors[selectedAppointment.status]}>
+                      {statusLabels[selectedAppointment.status]}
+                    </Badge>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500">Fecha</Label>
+                    <p className="font-medium">
+                      {format(
+                        parseISO(selectedAppointment.scheduled_date),
+                        "d 'de' MMMM 'de' yyyy",
+                        { locale: es },
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500">Hora</Label>
+                    <p className="font-medium">
+                      {selectedAppointment.scheduled_time}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500">Servicio</Label>
+                    <p className="font-medium">
+                      {selectedAppointment.service_name}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500">Origen</Label>
+                    <p className="font-medium capitalize">
+                      {selectedAppointment.booking_source.replace("_", " ")}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500">Email</Label>
+                    <p className="font-medium">
+                      {selectedAppointment.patient_email}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500">Teléfono</Label>
+                    <p className="font-medium">
+                      {selectedAppointment.patient_phone}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-gray-500">Estado</Label>
-                  <Badge className={statusColors[selectedAppointment.status]}>
-                    {statusLabels[selectedAppointment.status]}
-                  </Badge>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Fecha</Label>
-                  <p className="font-medium">
-                    {format(
-                      parseISO(selectedAppointment.scheduled_date),
-                      "d 'de' MMMM 'de' yyyy",
-                      { locale: es },
-                    )}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Hora</Label>
-                  <p className="font-medium">
-                    {selectedAppointment.scheduled_time}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Servicio</Label>
-                  <p className="font-medium">
-                    {selectedAppointment.service_name}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Origen</Label>
-                  <p className="font-medium capitalize">
-                    {selectedAppointment.booking_source.replace("_", " ")}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Email</Label>
-                  <p className="font-medium">
-                    {selectedAppointment.patient_email}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Teléfono</Label>
-                  <p className="font-medium">
-                    {selectedAppointment.patient_phone}
-                  </p>
-                </div>
+                {selectedAppointment.notes && (
+                  <div>
+                    <Label className="text-gray-500">Notas</Label>
+                    <p className="text-sm">{selectedAppointment.notes}</p>
+                  </div>
+                )}
+                {selectedAppointment.checked_in_at && (
+                  <div>
+                    <Label className="text-gray-500">Check-in</Label>
+                    <p className="text-sm text-green-600">
+                      Registrado el{" "}
+                      {format(
+                        parseISO(selectedAppointment.checked_in_at),
+                        "d/MM/yyyy HH:mm",
+                      )}
+                    </p>
+                  </div>
+                )}
               </div>
-              {selectedAppointment.notes && (
-                <div>
-                  <Label className="text-gray-500">Notas</Label>
-                  <p className="text-sm">{selectedAppointment.notes}</p>
-                </div>
-              )}
-              {selectedAppointment.checked_in_at && (
-                <div>
-                  <Label className="text-gray-500">Check-in</Label>
-                  <p className="text-sm text-green-600">
-                    Registrado el{" "}
-                    {format(
-                      parseISO(selectedAppointment.checked_in_at),
-                      "d/MM/yyyy HH:mm",
-                    )}
-                  </p>
-                </div>
-              )}
-            </div>
+              {!selectedAppointment.checked_in_at &&
+                selectedAppointment.status !== "cancelled" &&
+                selectedAppointment.status !== "completed" && (
+                  <div className="mt-4">
+                    <Button
+                      onClick={() => handleCheckIn(selectedAppointment)}
+                      className="w-full bg-primary hover:bg-primary/90"
+                    >
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      Registrar Check-in con Contrato
+                    </Button>
+                  </div>
+                )}
+            </>
           )}
         </DialogContent>
       </Dialog>
@@ -767,6 +777,28 @@ export default function AppointmentsCalendar() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Check-In with Contract Modal */}
+      <CheckInWithContract
+        isOpen={isCheckInOpen}
+        onClose={() => setIsCheckInOpen(false)}
+        appointment={
+          selectedAppointment
+            ? {
+                id: selectedAppointment.id,
+                patient_id: selectedAppointment.patient_id,
+                patient_name: selectedAppointment.patient_name,
+                patient_email: selectedAppointment.patient_email,
+                service_id: selectedAppointment.service_id,
+                service_name: selectedAppointment.service_name,
+                service_price: selectedAppointment.service_price,
+                scheduled_date: selectedAppointment.scheduled_date,
+                scheduled_time: selectedAppointment.scheduled_time,
+              }
+            : null
+        }
+        onCheckInSuccess={handleCheckInSuccess}
+      />
     </div>
   );
 }
