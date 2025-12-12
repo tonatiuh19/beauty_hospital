@@ -328,34 +328,34 @@ export default function AppointmentsCalendar() {
   // Event style getter for react-big-calendar
   const eventStyleGetter = (event: CalendarEvent) => {
     const appointment = event.resource;
-    let backgroundColor = "#C9A159"; // gold default
+    let background = "linear-gradient(135deg, #C9A159 0%, #D4AF6A 100%)"; // gold gradient default
 
     switch (appointment.status) {
       case "scheduled":
-        backgroundColor = "#3b82f6"; // blue
+        background = "linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%)"; // blue gradient
         break;
       case "confirmed":
-        backgroundColor = "#C9A159"; // gold
+        background = "linear-gradient(135deg, #C9A159 0%, #D4AF6A 100%)"; // gold gradient
         break;
       case "completed":
-        backgroundColor = "#22c55e"; // green
+        background = "linear-gradient(135deg, #4ade80 0%, #22c55e 100%)"; // green gradient
         break;
       case "cancelled":
-        backgroundColor = "#ef4444"; // red
+        background = "linear-gradient(135deg, #f87171 0%, #ef4444 100%)"; // red gradient
         break;
       case "no_show":
-        backgroundColor = "#f97316"; // orange
+        background = "linear-gradient(135deg, #fb923c 0%, #f97316 100%)"; // orange gradient
         break;
     }
 
     return {
       style: {
-        backgroundColor,
-        borderRadius: "4px",
-        opacity: 0.9,
+        background,
+        borderRadius: "8px",
         color: "white",
-        border: "0px",
+        border: "none",
         display: "block",
+        fontWeight: "500",
       },
     };
   };
@@ -390,20 +390,20 @@ export default function AppointmentsCalendar() {
   }, []);
 
   return (
-    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+    <div className="p-4 md:p-8 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
+          <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
             Calendario de Citas
           </h1>
-          <p className="text-sm md:text-base text-gray-500 mt-1">
+          <p className="text-sm md:text-base text-gray-600 mt-2">
             Gestiona y organiza todas las citas
           </p>
         </div>
         <Button
           onClick={() => setIsCreateOpen(true)}
-          className="bg-primary hover:bg-primary/90 w-full sm:w-auto"
+          className="bg-gradient-to-r from-luxury-gold-dark to-luxury-gold-light hover:shadow-lg transition-all w-full sm:w-auto text-white font-semibold"
         >
           <Plus className="w-4 h-4 mr-2" />
           Nueva Cita
@@ -411,8 +411,8 @@ export default function AppointmentsCalendar() {
       </div>
 
       {/* Filters */}
-      <Card>
-        <CardContent className="p-4">
+      <Card className="border-gray-200 shadow-sm">
+        <CardContent className="p-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             <div className="relative sm:col-span-2 md:col-span-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -420,11 +420,11 @@ export default function AppointmentsCalendar() {
                 placeholder="Buscar por paciente o servicio..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                className="pl-10 border-gray-200 focus:border-primary focus:ring-primary"
               />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
+              <SelectTrigger className="border-gray-200 focus:border-primary focus:ring-primary">
                 <SelectValue placeholder="Filtrar por estado" />
               </SelectTrigger>
               <SelectContent>
@@ -441,14 +441,100 @@ export default function AppointmentsCalendar() {
       </Card>
 
       {/* Big Calendar */}
-      <Card>
-        <CardContent className="p-2 md:p-6">
+      <Card className="border-gray-200 shadow-md overflow-hidden">
+        <CardContent className="p-6">
           {loading ? (
             <div className="flex items-center justify-center h-[600px]">
-              <p className="text-gray-500">Cargando calendario...</p>
+              <div className="text-center">
+                <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <p className="text-gray-600 font-medium">
+                  Cargando calendario...
+                </p>
+              </div>
             </div>
           ) : (
-            <div style={{ height: "700px" }}>
+            <div style={{ height: "700px" }} className="calendar-container">
+              <style>{`
+                .calendar-container .rbc-calendar {
+                  font-family: inherit;
+                }
+                .calendar-container .rbc-header {
+                  padding: 12px 8px;
+                  font-weight: 600;
+                  font-size: 14px;
+                  color: #374151;
+                  background: linear-gradient(to bottom, #f9fafb, #f3f4f6);
+                  border-bottom: 2px solid #e5e7eb;
+                }
+                .calendar-container .rbc-today {
+                  background-color: #fef3c7;
+                }
+                .calendar-container .rbc-off-range-bg {
+                  background-color: #f9fafb;
+                }
+                .calendar-container .rbc-day-bg {
+                  border-color: #e5e7eb;
+                }
+                .calendar-container .rbc-month-row {
+                  border-color: #e5e7eb;
+                }
+                .calendar-container .rbc-date-cell {
+                  padding: 8px;
+                  font-weight: 500;
+                  color: #1f2937;
+                }
+                .calendar-container .rbc-current {
+                  color: #C9A159;
+                  font-weight: 700;
+                }
+                .calendar-container .rbc-toolbar {
+                  padding: 16px;
+                  background: white;
+                  border-radius: 12px;
+                  margin-bottom: 16px;
+                  border: 1px solid #e5e7eb;
+                }
+                .calendar-container .rbc-toolbar button {
+                  color: #374151;
+                  border: 1px solid #d1d5db;
+                  padding: 8px 16px;
+                  border-radius: 8px;
+                  font-weight: 500;
+                  transition: all 0.2s;
+                }
+                .calendar-container .rbc-toolbar button:hover {
+                  background: linear-gradient(to right, #C9A159, #D4AF6A);
+                  color: white;
+                  border-color: #C9A159;
+                }
+                .calendar-container .rbc-toolbar button.rbc-active {
+                  background: linear-gradient(to right, #C9A159, #D4AF6A);
+                  color: white;
+                  border-color: #C9A159;
+                  box-shadow: 0 2px 8px rgba(201, 161, 89, 0.3);
+                }
+                .calendar-container .rbc-event {
+                  padding: 4px 8px;
+                  border-radius: 6px;
+                  border: none;
+                  font-size: 13px;
+                  font-weight: 500;
+                  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                }
+                .calendar-container .rbc-event:hover {
+                  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+                  transform: translateY(-1px);
+                  transition: all 0.2s;
+                }
+                .calendar-container .rbc-show-more {
+                  background: linear-gradient(to right, #C9A159, #D4AF6A);
+                  color: white;
+                  padding: 4px 8px;
+                  border-radius: 4px;
+                  font-size: 12px;
+                  font-weight: 600;
+                }
+              `}</style>
               <Calendar
                 localizer={localizer}
                 events={calendarEvents}

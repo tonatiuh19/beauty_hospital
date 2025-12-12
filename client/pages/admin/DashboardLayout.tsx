@@ -184,7 +184,7 @@ export default function AdminDashboardLayout() {
   const roleBadge = getRoleBadge(adminUser.role);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#0f0f0f]">
       {/* Mobile Menu Button */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -208,10 +208,10 @@ export default function AdminDashboardLayout() {
       <motion.aside
         initial={false}
         animate={{ width: sidebarOpen ? 280 : 80 }}
-        className="hidden lg:flex fixed left-0 top-0 bottom-0 bg-white border-r border-gray-200 flex-col z-40"
+        className="hidden lg:flex fixed left-0 top-0 bottom-0 bg-[#1a1a1a] flex-col z-40"
       >
         {/* Logo */}
-        <div className="h-16 border-b border-gray-200 flex items-center justify-between px-4">
+        <div className="h-16 flex items-center justify-between px-4">
           <AnimatePresence mode="wait">
             {sidebarOpen ? (
               <motion.div
@@ -223,10 +223,10 @@ export default function AdminDashboardLayout() {
               >
                 <Logo variant="icon" iconClassName="h-8" />
                 <div>
-                  <p className="text-sm font-bold text-gray-900">
+                  <p className="text-sm font-bold text-white">
                     All Beauty Luxury & Wellness
                   </p>
-                  <p className="text-xs text-gray-500">Admin Panel</p>
+                  <p className="text-xs text-gray-400">Admin Panel</p>
                 </div>
               </motion.div>
             ) : (
@@ -244,8 +244,8 @@ export default function AdminDashboardLayout() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-4">
-          <div className="space-y-1 px-3">
+        <nav className="flex-1 overflow-y-auto py-6">
+          <div className="space-y-2 px-3">
             {navigation.filter(canAccessRoute).map((item) => {
               const isActive = location.pathname === item.href;
               const Icon = item.icon;
@@ -255,36 +255,30 @@ export default function AdminDashboardLayout() {
                   key={item.href}
                   to={item.href}
                   className={cn(
-                    "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors relative",
+                    "flex items-center gap-3 px-4 py-3 rounded-xl transition-all relative group",
                     isActive
-                      ? "bg-primary/10 text-primary font-medium"
-                      : "text-gray-700 hover:bg-gray-100",
+                      ? "bg-gradient-to-r from-luxury-gold-dark to-luxury-gold-light text-white shadow-lg"
+                      : "text-gray-400 hover:text-white hover:bg-white/5",
                   )}
                 >
                   <Icon
                     className={cn(
-                      "w-5 h-5 flex-shrink-0",
-                      isActive && "text-primary",
+                      "w-5 h-5 flex-shrink-0 transition-transform group-hover:scale-110",
+                      isActive && "text-white",
                     )}
                   />
                   {sidebarOpen && (
                     <>
-                      <span className="flex-1">{item.title}</span>
+                      <span className="flex-1 font-medium">{item.title}</span>
                       {item.badge && (
                         <Badge
                           variant="secondary"
-                          className="bg-primary/20 text-primary"
+                          className="bg-white/20 text-white border-0"
                         >
                           {item.badge}
                         </Badge>
                       )}
                     </>
-                  )}
-                  {isActive && (
-                    <motion.div
-                      layoutId="activeTab"
-                      className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-r"
-                    />
                   )}
                 </Link>
               );
@@ -293,28 +287,44 @@ export default function AdminDashboardLayout() {
         </nav>
 
         {/* User Profile */}
-        <div className="border-t border-gray-200 p-4">
+        <div className="border-t border-white/10 p-4 relative">
+          {/* Toggle Button */}
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className={cn(
+              "hidden lg:flex absolute -top-5 w-8 h-8 bg-gradient-to-r from-luxury-gold-dark to-luxury-gold-light rounded-full items-center justify-center hover:shadow-lg transition-all shadow-md",
+              sidebarOpen ? "right-4" : "left-1/2 -translate-x-1/2",
+            )}
+          >
+            <MdOutlineExpandMore
+              className={cn(
+                "w-5 h-5 text-white transition-transform",
+                sidebarOpen ? "rotate-90" : "-rotate-90",
+              )}
+            />
+          </button>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 className={cn(
-                  "w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-100 transition-colors",
+                  "w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors",
                   !sidebarOpen && "justify-center",
                 )}
               >
-                <Avatar className="w-8 h-8">
+                <Avatar className="w-10 h-10 ring-2 ring-luxury-gold-light/50">
                   <AvatarImage src={adminUser.profile_picture_url} />
-                  <AvatarFallback className="bg-primary text-white text-xs">
+                  <AvatarFallback className="bg-gradient-to-r from-luxury-gold-dark to-luxury-gold-light text-white text-sm font-semibold">
                     {getInitials(adminUser.first_name, adminUser.last_name)}
                   </AvatarFallback>
                 </Avatar>
                 {sidebarOpen && (
                   <>
                     <div className="flex-1 text-left">
-                      <p className="text-sm font-medium text-gray-900">
+                      <p className="text-sm font-semibold text-white">
                         {adminUser.first_name} {adminUser.last_name}
                       </p>
-                      <p className="text-xs text-gray-500 capitalize">
+                      <p className="text-xs text-gray-400 capitalize">
                         {roleBadge.label}
                       </p>
                     </div>
@@ -353,19 +363,6 @@ export default function AdminDashboardLayout() {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-
-        {/* Toggle Button */}
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="hidden lg:flex absolute -right-3 top-20 w-6 h-6 bg-white border border-gray-200 rounded-full items-center justify-center hover:bg-gray-50 transition-colors"
-        >
-          <MdOutlineExpandMore
-            className={cn(
-              "w-4 h-4 text-gray-600 transition-transform",
-              sidebarOpen ? "rotate-90" : "-rotate-90",
-            )}
-          />
-        </button>
       </motion.aside>
 
       {/* Mobile Sidebar */}
@@ -474,8 +471,10 @@ export default function AdminDashboardLayout() {
           "pt-16 lg:pt-0",
         )}
       >
-        <div className="min-h-screen">
-          <Outlet />
+        <div className="min-h-screen lg:p-6 lg:bg-[#1a1a1a]">
+          <div className="lg:bg-white lg:rounded-3xl lg:shadow-sm min-h-screen lg:min-h-[calc(100vh-3rem)] overflow-hidden">
+            <Outlet />
+          </div>
         </div>
       </main>
     </div>
