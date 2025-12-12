@@ -36,6 +36,7 @@ export function Header() {
   const handleLogout = () => {
     dispatch(logout());
     setIsOpen(false);
+    navigate("/");
   };
 
   // Function to handle navigation to sections
