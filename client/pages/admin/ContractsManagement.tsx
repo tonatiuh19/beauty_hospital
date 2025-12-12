@@ -101,6 +101,8 @@ export default function ContractsManagement() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [loading, setLoading] = useState(true);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
@@ -165,6 +167,8 @@ export default function ContractsManagement() {
 
   const fetchContractDetails = async (contractId: number) => {
     try {
+      setLoadingDetails(true);
+      setIsDetailsOpen(true);
       const token = localStorage.getItem("adminAccessToken");
       const response = await axios.get(`/admin/contracts/${contractId}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -173,10 +177,41 @@ export default function ContractsManagement() {
       if (response.data.success) {
         setSelectedContract(response.data.data.contract);
         setContractSessions(response.data.data.sessions || []);
-        setIsDetailsOpen(true);
       }
     } catch (error) {
       console.error("Error fetching contract details:", error);
+      setIsDetailsOpen(false);
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+  const downloadContractPDF = async (contractId: number) => {
+    try {
+      setDownloading(true);
+      const token = localStorage.getItem("adminAccessToken");
+      const response = await axios.get(
+        `/admin/contracts/${contractId}/download`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          responseType: "blob",
+        },
+      );
+
+      // Create a blob URL and trigger download
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `contrato-${contractId}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Error downloading contract PDF:", error);
+      alert("Error al descargar el contrato");
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -203,14 +238,14 @@ export default function ContractsManagement() {
             Administra los contratos de sesiones múltiples
           </p>
         </div>
-        <Button className="bg-primary hover:bg-primary/90">
+        {/* <Button className="bg-primary hover:bg-primary/90">
           <Plus className="w-4 h-4 mr-2" />
           Nuevo Contrato
-        </Button>
+        </Button> */}
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      {/*       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-start justify-between">
@@ -291,7 +326,7 @@ export default function ContractsManagement() {
           </CardContent>
         </Card>
       </div>
-
+ */}
       {/* Filters */}
       <Card>
         <CardContent className="p-4">
@@ -422,17 +457,19 @@ export default function ContractsManagement() {
                         >
                           <Eye className="w-4 h-4" />
                         </Button>
-                        {contract.contract_file_url && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              window.open(contract.contract_file_url!, "_blank")
-                            }
-                          >
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => downloadContractPDF(contract.id)}
+                          title="Descargar PDF firmado"
+                          disabled={downloading}
+                        >
+                          {downloading ? (
+                            <div className="w-4 h-4 border-2 border-gray-300 border-t-primary rounded-full animate-spin" />
+                          ) : (
                             <Download className="w-4 h-4" />
-                          </Button>
-                        )}
+                          )}
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -475,192 +512,215 @@ export default function ContractsManagement() {
             <DialogTitle>Detalles del Contrato</DialogTitle>
           </DialogHeader>
 
-          {selectedContract && (
-            <div className="space-y-6">
-              {/* Contract Info */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-gray-500">Paciente</Label>
-                  <p className="font-medium">{selectedContract.patient_name}</p>
-                  <p className="text-sm text-gray-500">
-                    {selectedContract.patient_email}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Estado</Label>
-                  <Badge
-                    variant="secondary"
-                    className={statusColors[selectedContract.status]}
-                  >
-                    {statusLabels[selectedContract.status]}
-                  </Badge>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Servicio</Label>
-                  <p className="font-medium">{selectedContract.service_name}</p>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Total de Sesiones</Label>
-                  <p className="font-medium">
-                    {selectedContract.total_sessions}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Sesiones Completadas</Label>
-                  <p className="font-medium text-green-600">
-                    {selectedContract.completed_sessions}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Sesiones Restantes</Label>
-                  <p className="font-medium text-orange-600">
-                    {selectedContract.remaining_sessions}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Monto Total</Label>
-                  <p className="font-medium">
-                    {formatCurrency(selectedContract.total_amount)}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Monto Pagado</Label>
-                  <p className="font-medium text-green-600">
-                    {formatCurrency(selectedContract.amount_paid)}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Monto Pendiente</Label>
-                  <p className="font-medium text-orange-600">
-                    {formatCurrency(selectedContract.amount_pending)}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Fecha de Inicio</Label>
-                  <p className="font-medium">
-                    {format(
-                      parseISO(selectedContract.start_date),
-                      "dd/MM/yyyy",
-                    )}
-                  </p>
-                </div>
-                {selectedContract.signed_at && (
+          {loadingDetails ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <div className="w-12 h-12 border-4 border-gray-200 border-t-primary rounded-full animate-spin mx-auto mb-4" />
+                <p className="text-gray-500">
+                  Cargando detalles del contrato...
+                </p>
+              </div>
+            </div>
+          ) : (
+            selectedContract && (
+              <div className="space-y-6">
+                {/* Contract Info */}
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label className="text-gray-500">Firmado el</Label>
+                    <Label className="text-gray-500">Paciente</Label>
+                    <p className="font-medium">
+                      {selectedContract.patient_name}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      {selectedContract.patient_email}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500">Estado</Label>
+                    <Badge
+                      variant="secondary"
+                      className={statusColors[selectedContract.status]}
+                    >
+                      {statusLabels[selectedContract.status]}
+                    </Badge>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500">Servicio</Label>
+                    <p className="font-medium">
+                      {selectedContract.service_name}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500">Total de Sesiones</Label>
+                    <p className="font-medium">
+                      {selectedContract.total_sessions}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500">
+                      Sesiones Completadas
+                    </Label>
+                    <p className="font-medium text-green-600">
+                      {selectedContract.completed_sessions}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500">Sesiones Restantes</Label>
+                    <p className="font-medium text-orange-600">
+                      {selectedContract.remaining_sessions}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500">Monto Total</Label>
+                    <p className="font-medium">
+                      {formatCurrency(selectedContract.total_amount)}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500">Monto Pagado</Label>
+                    <p className="font-medium text-green-600">
+                      {formatCurrency(selectedContract.amount_paid)}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500">Monto Pendiente</Label>
+                    <p className="font-medium text-orange-600">
+                      {formatCurrency(selectedContract.amount_pending)}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500">Fecha de Inicio</Label>
                     <p className="font-medium">
                       {format(
-                        parseISO(selectedContract.signed_at),
-                        "dd/MM/yyyy HH:mm",
+                        parseISO(selectedContract.start_date),
+                        "dd/MM/yyyy",
                       )}
                     </p>
                   </div>
-                )}
-              </div>
-
-              {/* Progress */}
-              <div>
-                <Label className="text-gray-500 mb-2 block">
-                  Progreso del Contrato
-                </Label>
-                <Progress
-                  value={calculateProgress(
-                    selectedContract.completed_sessions,
-                    selectedContract.total_sessions,
+                  {selectedContract.signed_at && (
+                    <div>
+                      <Label className="text-gray-500">Firmado el</Label>
+                      <p className="font-medium">
+                        {format(
+                          parseISO(selectedContract.signed_at),
+                          "dd/MM/yyyy HH:mm",
+                        )}
+                      </p>
+                    </div>
                   )}
-                  className="h-3"
-                />
-                <p className="text-sm text-gray-500 mt-1">
-                  {calculateProgress(
-                    selectedContract.completed_sessions,
-                    selectedContract.total_sessions,
-                  ).toFixed(1)}
-                  % completado
-                </p>
-              </div>
+                </div>
 
-              {/* Sessions */}
-              <div>
-                <Label className="text-gray-500 mb-3 block">
-                  Historial de Sesiones
-                </Label>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {contractSessions.length === 0 ? (
-                    <p className="text-center text-gray-500 py-4">
-                      No hay sesiones registradas
-                    </p>
-                  ) : (
-                    contractSessions.map((session) => (
-                      <div
-                        key={session.id}
-                        className="p-3 border rounded-lg flex items-center justify-between"
-                      >
-                        <div>
-                          <p className="font-medium">
-                            Sesión #{session.session_number}
-                          </p>
-                          {session.notes && (
-                            <p className="text-sm text-gray-500">
-                              {session.notes}
+                {/* Progress */}
+                <div>
+                  <Label className="text-gray-500 mb-2 block">
+                    Progreso del Contrato
+                  </Label>
+                  <Progress
+                    value={calculateProgress(
+                      selectedContract.completed_sessions,
+                      selectedContract.total_sessions,
+                    )}
+                    className="h-3"
+                  />
+                  <p className="text-sm text-gray-500 mt-1">
+                    {calculateProgress(
+                      selectedContract.completed_sessions,
+                      selectedContract.total_sessions,
+                    ).toFixed(1)}
+                    % completado
+                  </p>
+                </div>
+
+                {/* Sessions */}
+                <div>
+                  <Label className="text-gray-500 mb-3 block">
+                    Historial de Sesiones
+                  </Label>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {contractSessions.length === 0 ? (
+                      <p className="text-center text-gray-500 py-4">
+                        No hay sesiones registradas
+                      </p>
+                    ) : (
+                      contractSessions.map((session) => (
+                        <div
+                          key={session.id}
+                          className="p-3 border rounded-lg flex items-center justify-between"
+                        >
+                          <div>
+                            <p className="font-medium">
+                              Sesión #{session.session_number}
                             </p>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          {session.completed_at ? (
-                            <>
+                            {session.notes && (
+                              <p className="text-sm text-gray-500">
+                                {session.notes}
+                              </p>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            {session.completed_at ? (
+                              <>
+                                <Badge
+                                  variant="secondary"
+                                  className="bg-green-100 text-green-700"
+                                >
+                                  Completada
+                                </Badge>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {format(
+                                    parseISO(session.completed_at),
+                                    "dd/MM/yyyy",
+                                  )}
+                                </p>
+                              </>
+                            ) : (
                               <Badge
                                 variant="secondary"
-                                className="bg-green-100 text-green-700"
+                                className="bg-gray-100 text-gray-600"
                               >
-                                Completada
+                                Pendiente
                               </Badge>
-                              <p className="text-xs text-gray-500 mt-1">
-                                {format(
-                                  parseISO(session.completed_at),
-                                  "dd/MM/yyyy",
-                                )}
-                              </p>
-                            </>
-                          ) : (
-                            <Badge
-                              variant="secondary"
-                              className="bg-gray-100 text-gray-600"
-                            >
-                              Pendiente
-                            </Badge>
-                          )}
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => downloadContractPDF(selectedContract.id)}
+                    disabled={downloading}
+                  >
+                    {downloading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-gray-300 border-t-primary rounded-full animate-spin mr-2" />
+                        Descargando...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4 mr-2" />
+                        Descargar PDF Firmado
+                      </>
+                    )}
+                  </Button>
+                  {selectedContract.signature_url && (
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        window.open(selectedContract.signature_url!, "_blank")
+                      }
+                    >
+                      <Eye className="w-4 h-4 mr-2" />
+                      Ver Firma
+                    </Button>
                   )}
                 </div>
               </div>
-
-              {/* Actions */}
-              <div className="flex gap-2">
-                {selectedContract.contract_file_url && (
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      window.open(selectedContract.contract_file_url!, "_blank")
-                    }
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    Descargar Contrato
-                  </Button>
-                )}
-                {selectedContract.signature_url && (
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      window.open(selectedContract.signature_url!, "_blank")
-                    }
-                  >
-                    <Eye className="w-4 h-4 mr-2" />
-                    Ver Firma
-                  </Button>
-                )}
-              </div>
-            </div>
+            )
           )}
         </DialogContent>
       </Dialog>

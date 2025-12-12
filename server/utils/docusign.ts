@@ -290,3 +290,26 @@ function generateContractHTML(
 </html>
   `;
 }
+
+/**
+ * Get the signed document PDF from DocuSign
+ */
+export async function getSignedDocument(envelopeId: string): Promise<Buffer> {
+  const apiClient = await getDocuSignClient();
+  const envelopesApi = new docusign.EnvelopesApi(apiClient);
+
+  try {
+    // Get the combined PDF (all documents in the envelope)
+    const results = await envelopesApi.getDocument(
+      DOCUSIGN_ACCOUNT_ID,
+      envelopeId,
+      "combined", // "combined" gets all documents as one PDF
+    );
+
+    // The result is a Buffer containing the PDF
+    return results as unknown as Buffer;
+  } catch (error) {
+    console.error("Error retrieving signed document from DocuSign:", error);
+    throw error;
+  }
+}

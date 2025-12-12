@@ -2361,6 +2361,327 @@ const updateAppointmentStatus: RequestHandler = async (req, res) => {
 };
 
 /**
+ * GET /api/admin/contracts
+ * Get all contracts with filtering and pagination
+ */
+const getAllContracts: RequestHandler = async (req, res) => {
+  try {
+    const { search, status, page = 1, limit = 20 } = req.query;
+    const offset = (Number(page) - 1) * Number(limit);
+
+    let whereConditions = [];
+    let params: any[] = [];
+
+    if (search) {
+      whereConditions.push(
+        "(CONCAT(p.first_name, ' ', p.last_name) LIKE ? OR s.name LIKE ? OR c.contract_number LIKE ?)",
+      );
+      const searchTerm = `%${search}%`;
+      params.push(searchTerm, searchTerm, searchTerm);
+    }
+
+    if (status && status !== "all") {
+      whereConditions.push("c.status = ?");
+      params.push(status);
+    }
+
+    const whereClause =
+      whereConditions.length > 0
+        ? `WHERE ${whereConditions.join(" AND ")}`
+        : "";
+
+    // Get contracts
+    const [contracts] = await pool.query<any[]>(
+      `SELECT 
+        c.id,
+        c.contract_number,
+        c.patient_id,
+        CONCAT(p.first_name, ' ', p.last_name) as patient_name,
+        p.email as patient_email,
+        c.service_id,
+        s.name as service_name,
+        c.total_amount,
+        c.sessions_included as total_sessions,
+        c.sessions_completed as completed_sessions,
+        (c.sessions_included - c.sessions_completed) as remaining_sessions,
+        c.total_amount as amount_paid,
+        0 as amount_pending,
+        c.status,
+        c.docusign_envelope_id,
+        c.docusign_status,
+        c.signed_at,
+        c.pdf_url as contract_file_url,
+        c.signature_data as signature_url,
+        c.created_at as start_date,
+        c.created_at,
+        c.updated_at
+       FROM contracts c
+       JOIN patients p ON c.patient_id = p.id
+       JOIN services s ON c.service_id = s.id
+       ${whereClause}
+       ORDER BY c.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [...params, Number(limit), offset],
+    );
+
+    // Get total count
+    const [countResult] = await pool.query<any[]>(
+      `SELECT COUNT(*) as total
+       FROM contracts c
+       JOIN patients p ON c.patient_id = p.id
+       JOIN services s ON c.service_id = s.id
+       ${whereClause}`,
+      params,
+    );
+
+    const total = countResult[0].total;
+    const totalPages = Math.ceil(total / Number(limit));
+
+    // Map status for frontend
+    const mappedContracts = contracts.map((contract) => ({
+      ...contract,
+      status:
+        contract.docusign_status === "completed" ||
+        contract.docusign_status === "signed"
+          ? "active"
+          : contract.status === "signed"
+            ? "active"
+            : "pending",
+      end_date: null,
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        contracts: mappedContracts,
+        total,
+        page: Number(page),
+        totalPages,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching contracts:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * GET /api/admin/contracts/stats
+ * Get contract statistics
+ */
+const getContractStats: RequestHandler = async (req, res) => {
+  try {
+    const [stats] = await pool.query<any[]>(
+      `SELECT 
+        COUNT(*) as total_contracts,
+        SUM(CASE WHEN c.status = 'signed' OR (c.docusign_status IN ('completed', 'signed')) THEN 1 ELSE 0 END) as active_contracts,
+        SUM(CASE WHEN c.sessions_completed >= c.sessions_included THEN 1 ELSE 0 END) as completed_contracts,
+        COALESCE(SUM(c.total_amount), 0) as total_revenue,
+        0 as pending_revenue
+       FROM contracts c`,
+    );
+
+    res.json({
+      success: true,
+      data: stats[0],
+    });
+  } catch (error) {
+    console.error("Error fetching contract stats:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * GET /api/admin/contracts/:id
+ * Get detailed contract information with sessions
+ */
+const getContractDetails: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get contract details
+    const [contracts] = await pool.query<any[]>(
+      `SELECT 
+        c.id,
+        c.contract_number,
+        c.patient_id,
+        CONCAT(p.first_name, ' ', p.last_name) as patient_name,
+        p.email as patient_email,
+        c.service_id,
+        s.name as service_name,
+        c.total_amount,
+        c.sessions_included as total_sessions,
+        c.sessions_completed as completed_sessions,
+        (c.sessions_included - c.sessions_completed) as remaining_sessions,
+        c.total_amount as amount_paid,
+        0 as amount_pending,
+        c.status,
+        c.docusign_envelope_id,
+        c.docusign_status,
+        c.signed_at,
+        c.pdf_url as contract_file_url,
+        c.signature_data as signature_url,
+        c.created_at as start_date,
+        c.created_at,
+        c.updated_at
+       FROM contracts c
+       JOIN patients p ON c.patient_id = p.id
+       JOIN services s ON c.service_id = s.id
+       WHERE c.id = ?`,
+      [id],
+    );
+
+    if (contracts.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Contract not found",
+      });
+    }
+
+    const contract = contracts[0];
+
+    // If we have a DocuSign envelope, fetch latest status
+    if (contract.docusign_envelope_id) {
+      try {
+        const { getEnvelopeStatus } = await import("../server/utils/docusign");
+        const envelopeStatus = await getEnvelopeStatus(
+          contract.docusign_envelope_id,
+        );
+
+        // Update contract with latest DocuSign status
+        if (envelopeStatus) {
+          const oldStatus = contract.docusign_status;
+          contract.docusign_status = envelopeStatus.status;
+
+          // Update database if status changed
+          if (envelopeStatus.status !== oldStatus) {
+            await pool.query(
+              `UPDATE contracts 
+               SET docusign_status = ?,
+                   signed_at = ?
+               WHERE id = ?`,
+              [
+                envelopeStatus.status,
+                envelopeStatus.status === "completed" ? new Date() : null,
+                id,
+              ],
+            );
+          }
+        }
+      } catch (docusignError) {
+        console.error("Error fetching DocuSign status:", docusignError);
+        // Continue without DocuSign update
+      }
+    }
+
+    // Map status
+    contract.status =
+      contract.docusign_status === "completed" ||
+      contract.docusign_status === "signed"
+        ? "active"
+        : contract.status === "signed"
+          ? "active"
+          : "pending";
+
+    // Get appointments linked to this contract (without window function for compatibility)
+    const [appointments] = await pool.query<any[]>(
+      `SELECT 
+        a.id as appointment_id,
+        a.scheduled_at,
+        a.status,
+        a.check_in_at as completed_at,
+        a.notes
+       FROM appointments a
+       WHERE a.contract_id = ?
+       ORDER BY a.scheduled_at ASC`,
+      [id],
+    );
+
+    // Add session numbers manually
+    const sessions = appointments.map((apt, index) => ({
+      id: apt.appointment_id,
+      contract_id: Number(id),
+      appointment_id: apt.appointment_id,
+      session_number: index + 1,
+      completed_at: apt.completed_at,
+      notes: apt.notes,
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        contract,
+        sessions,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching contract details:", error);
+    console.error(
+      "Error details:",
+      error instanceof Error ? error.message : error,
+    );
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+/**
+ * GET /api/admin/contracts/:id/download
+ * Download the signed PDF from DocuSign
+ */
+const downloadContractPDF: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get contract details
+    const [contracts] = await pool.query<any[]>(
+      `SELECT docusign_envelope_id, contract_number, patient_id 
+       FROM contracts 
+       WHERE id = ?`,
+      [id],
+    );
+
+    if (contracts.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Contract not found",
+      });
+    }
+
+    const contract = contracts[0];
+
+    if (!contract.docusign_envelope_id) {
+      return res.status(400).json({
+        success: false,
+        message: "Contract does not have a DocuSign envelope",
+      });
+    }
+
+    // Get signed PDF from DocuSign
+    const { getSignedDocument } = await import("../server/utils/docusign");
+    const pdfBuffer = await getSignedDocument(contract.docusign_envelope_id);
+
+    // Set headers for PDF download
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="contrato-${contract.contract_number || id}.pdf"`,
+    );
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error("Error downloading contract PDF:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error downloading contract PDF",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+/**
  * POST /api/admin/appointments/:id/check-in
  * Check in a patient for their appointment
  */
@@ -2545,8 +2866,7 @@ const createContractAndOpenDocuSign: RequestHandler = async (req, res) => {
         // Link contract to appointments for this patient and service
         await pool.query(
           `UPDATE appointments 
-           SET contract_id = ?,
-               updated_at = NOW()
+           SET contract_id = ?
            WHERE patient_id = ? 
              AND service_id = ? 
              AND status IN ('scheduled', 'confirmed')
@@ -2985,15 +3305,14 @@ const checkInAppointment: RequestHandler = async (req, res) => {
       }
     }
 
-    // Update appointment
+    // Update appointment - don't update updated_at to preserve scheduled_at
     await pool.query(
       `UPDATE appointments 
        SET status = 'confirmed', 
            check_in_at = NOW(),
            notes = CONCAT(COALESCE(notes, ''), 
            CASE WHEN notes IS NULL OR notes = '' THEN '' ELSE '\n' END, 
-           'Checked in at: ', NOW()), 
-           updated_at = NOW()
+           'Checked in at: ', NOW())
        WHERE id = ?`,
       [id],
     );
@@ -6736,6 +7055,10 @@ function createServer() {
   );
 
   // Admin Contract Management
+  expressApp.get("/api/admin/contracts", getAllContracts);
+  expressApp.get("/api/admin/contracts/stats", getContractStats);
+  expressApp.get("/api/admin/contracts/:id", getContractDetails);
+  expressApp.get("/api/admin/contracts/:id/download", downloadContractPDF);
   expressApp.post("/api/admin/contracts/create", createContract);
   expressApp.post(
     "/api/admin/contracts/create-and-configure",

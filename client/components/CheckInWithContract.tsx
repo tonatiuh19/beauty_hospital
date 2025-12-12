@@ -423,7 +423,7 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
               </div>
             </div>
 
-            <div className="p-4 bg-blue-50 rounded-lg space-y-3">
+            {/* <div className="p-4 bg-blue-50 rounded-lg space-y-3">
               <p className="text-sm font-medium text-blue-900">
                 En DocuSign podrás:
               </p>
@@ -435,7 +435,7 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
                 <li>Configurar campos adicionales (fecha, iniciales, etc.)</li>
                 <li>Enviar para que el paciente firme inmediatamente</li>
               </ul>
-            </div>
+            </div> */}
 
             <DialogFooter>
               <Button variant="outline" onClick={onClose}>

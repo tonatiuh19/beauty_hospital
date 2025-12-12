@@ -72,7 +72,7 @@ const navigation: NavItem[] = [
   {
     title: "Contratos",
     icon: MdOutlineDescription,
-    href: "#",
+    href: "/admin/contracts",
     roles: ["admin", "general_admin", "receptionist"],
   },
   {
