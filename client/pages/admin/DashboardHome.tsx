@@ -230,8 +230,9 @@ export default function DashboardHome() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1 }}
+              className="h-full"
             >
-              <Card>
+              <Card className="h-full">
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between">
                     <div>
@@ -275,7 +276,7 @@ export default function DashboardHome() {
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
         {/* Revenue Chart */}
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2 h-full">
           <CardHeader>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <CardTitle className="text-lg md:text-xl">Ingresos</CardTitle>
@@ -338,7 +339,7 @@ export default function DashboardHome() {
         </Card>
 
         {/* Appointment Status */}
-        <Card>
+        <Card className="h-full">
           <CardHeader>
             <CardTitle>Estado de Citas</CardTitle>
           </CardHeader>
