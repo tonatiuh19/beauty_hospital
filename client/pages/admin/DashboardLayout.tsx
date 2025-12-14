@@ -18,6 +18,8 @@ import {
   MdOutlineNotifications,
   MdOutlineShoppingCart,
   MdOutlineEventBusy,
+  MdOutlineMedicalServices,
+  MdOutlineSupervisorAccount,
 } from "react-icons/md";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/Logo";
@@ -57,35 +59,43 @@ const navigation: NavItem[] = [
     title: "Dashboard",
     icon: MdOutlineDashboard,
     href: "/admin/dashboard",
+    roles: ["admin", "general_admin", "receptionist", "pos", "doctor"],
   },
   {
     title: "Citas",
     icon: MdOutlineCalendarToday,
     href: "/admin/appointments",
-    roles: ["admin", "general_admin", "receptionist"],
+    roles: ["admin", "general_admin", "receptionist", "pos"],
   },
   {
     title: "Pacientes",
     icon: MdOutlinePeople,
     href: "/admin/patients",
+    roles: ["admin", "general_admin", "receptionist", "pos", "doctor"],
   },
   {
     title: "Contratos",
     icon: MdOutlineDescription,
     href: "/admin/contracts",
-    roles: ["admin", "general_admin", "receptionist"],
+    roles: ["admin", "general_admin", "receptionist", "pos"],
   },
   {
     title: "Pagos",
     icon: MdOutlinePayment,
     href: "/admin/payments",
-    roles: ["admin", "general_admin", "receptionist"],
+    roles: ["admin", "general_admin", "receptionist", "pos"],
   },
   {
     title: "Facturas",
     icon: MdOutlineDescription,
     href: "/admin/invoices",
-    roles: ["admin", "general_admin", "receptionist"],
+    roles: ["admin", "general_admin", "receptionist", "pos"],
+  },
+  {
+    title: "Expedientes Médicos",
+    icon: MdOutlineMedicalServices,
+    href: "/admin/medical-records",
+    roles: ["general_admin", "doctor"],
   },
   {
     title: "Servicios",
@@ -100,10 +110,16 @@ const navigation: NavItem[] = [
     roles: ["admin", "general_admin"],
   },
   {
+    title: "Gestión de Usuarios",
+    icon: MdOutlineSupervisorAccount,
+    href: "/admin/users",
+    roles: ["general_admin"],
+  },
+  {
     title: "Configuración",
     icon: MdOutlineSettings,
     href: "/admin/settings",
-    roles: ["admin", "general_admin"],
+    roles: ["general_admin"],
   },
 ];
 
@@ -142,6 +158,10 @@ export default function AdminDashboardLayout() {
       receptionist: {
         label: "Recepcionista",
         color: "bg-blue-100 text-blue-800",
+      },
+      pos: {
+        label: "POS",
+        color: "bg-purple-100 text-purple-800",
       },
       doctor: { label: "Doctor", color: "bg-green-100 text-green-800" },
     };

@@ -13,6 +13,8 @@ import InvoicesManagement from "@/pages/admin/InvoicesManagement";
 import SettingsManagement from "@/pages/admin/SettingsManagement";
 import ServicesManagement from "@/pages/admin/ServicesManagement";
 import BlockedDatesManagement from "@/pages/admin/BlockedDatesManagement";
+import UsersManagement from "@/pages/admin/UsersManagement";
+import MedicalRecordsManagement from "@/pages/admin/MedicalRecordsManagement";
 import NotFound from "@/pages/NotFound";
 
 export function AppRoutes() {
@@ -34,6 +36,8 @@ export function AppRoutes() {
         <Route path="invoices" element={<InvoicesManagement />} />
         <Route path="services" element={<ServicesManagement />} />
         <Route path="blocked-dates" element={<BlockedDatesManagement />} />
+        <Route path="users" element={<UsersManagement />} />
+        <Route path="medical-records" element={<MedicalRecordsManagement />} />
         <Route path="settings" element={<SettingsManagement />} />
       </Route>
 

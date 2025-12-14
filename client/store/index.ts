@@ -7,6 +7,8 @@ import blockedDatesReducer from "./slices/blockedDatesSlice";
 import businessHoursReducer from "./slices/businessHoursSlice";
 import bookedSlotsReducer from "./slices/bookedSlotsSlice";
 import loadingReducer from "./slices/loadingSlice";
+import usersReducer from "./slices/usersSlice";
+import medicalRecordsReducer from "./slices/medicalRecordsSlice";
 import { loadingMiddleware } from "./middleware/loadingMiddleware";
 
 // Configure the store
@@ -20,6 +22,8 @@ export const store = configureStore({
     businessHours: businessHoursReducer,
     bookedSlots: bookedSlotsReducer,
     loading: loadingReducer,
+    users: usersReducer,
+    medicalRecords: medicalRecordsReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

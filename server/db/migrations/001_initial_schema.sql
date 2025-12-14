@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Nov 27, 2025 at 04:34 PM
+-- Generation Time: Dec 13, 2025 at 05:05 PM
 -- Server version: 5.7.23-23
 -- PHP Version: 8.1.33
 
@@ -72,7 +72,16 @@ INSERT INTO `admin_sessions` (`id`, `user_id`, `session_code`, `is_active`, `exp
 (37, 12, 674248, 0, '2025-11-27 21:49:25', '2025-11-27 21:49:14'),
 (38, 12, 989162, 0, '2025-11-27 21:55:09', '2025-11-27 21:54:59'),
 (39, 12, 897534, 0, '2025-11-27 22:00:19', '2025-11-27 22:00:07'),
-(40, 12, 262226, 0, '2025-11-27 22:24:54', '2025-11-27 22:24:44');
+(40, 12, 262226, 0, '2025-11-27 22:24:54', '2025-11-27 22:24:44'),
+(41, 12, 527114, 0, '2025-11-27 22:37:23', '2025-11-27 22:37:08'),
+(42, 13, 102324, 0, '2025-12-03 18:19:44', '2025-12-03 18:19:13'),
+(43, 13, 861060, 0, '2025-12-03 18:25:09', '2025-12-03 18:24:48'),
+(44, 13, 146580, 0, '2025-12-05 22:59:05', '2025-12-05 22:58:44'),
+(45, 12, 139134, 0, '2025-12-12 05:22:07', '2025-12-12 05:21:55'),
+(46, 12, 671428, 0, '2025-12-12 06:06:45', '2025-12-12 06:06:35'),
+(47, 12, 950823, 0, '2025-12-13 21:57:30', '2025-12-13 21:57:14'),
+(48, 12, 549290, 0, '2025-12-13 22:27:53', '2025-12-13 22:27:42'),
+(49, 12, 457041, 0, '2025-12-13 22:29:11', '2025-12-13 22:28:56');
 
 -- --------------------------------------------------------
 
@@ -103,6 +112,14 @@ CREATE TABLE `appointments` (
   `rescheduled_from` int(11) DEFAULT NULL COMMENT 'Original appointment ID if rescheduled',
   `reminder_sent_at` timestamp NULL DEFAULT NULL COMMENT 'When reminder was sent'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `appointments`
+--
+
+INSERT INTO `appointments` (`id`, `patient_id`, `doctor_id`, `service_id`, `status`, `scheduled_at`, `duration_minutes`, `notes`, `created_by`, `booked_for_self`, `booking_source`, `created_at`, `updated_at`, `check_in_at`, `check_in_by`, `contract_id`, `cancellation_reason`, `cancelled_at`, `cancelled_by`, `rescheduled_from`, `reminder_sent_at`) VALUES
+(26, 9, NULL, 3, 'confirmed', '2025-11-28 22:30:00', 90, 'Checked in at: 2025-11-27 16:38:25', 9, 1, 'online', '2025-11-27 22:36:41', '2025-11-27 22:38:25', '2025-11-27 22:38:25', NULL, 12, NULL, NULL, NULL, NULL, NULL),
+(27, 9, NULL, 3, 'confirmed', '2025-12-19 21:00:00', 90, NULL, 9, 1, 'online', '2025-12-12 19:36:51', '2025-12-12 19:36:51', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -290,17 +307,7 @@ CREATE TABLE `contracts` (
 --
 
 INSERT INTO `contracts` (`id`, `patient_id`, `service_id`, `contract_number`, `status`, `total_amount`, `sessions_included`, `sessions_completed`, `terms_and_conditions`, `pdf_url`, `signature_data`, `signed_at`, `signed_by`, `created_by`, `created_at`, `updated_at`, `docusign_envelope_id`, `docusign_status`, `docusign_signed_at`) VALUES
-(1, 9, 3, 'CON-1764279364951-9', 'pending_signature', 850.00, 1, 0, 'Contract created for DocuSign', NULL, NULL, NULL, NULL, 1, '2025-11-27 21:36:05', '2025-11-27 21:36:05', 'ENV-1764279365032', 'sent', NULL),
-(2, 9, 3, 'CON-1764279504540-9', 'pending_signature', 1500.00, 1, 0, 'Contract created for DocuSign', NULL, NULL, NULL, NULL, 1, '2025-11-27 21:38:24', '2025-11-27 21:38:24', 'ENV-1764279504618', 'sent', NULL),
-(3, 9, 3, 'CON-1764279554728-9', 'pending_signature', 1500.00, 1, 0, 'Contract created for DocuSign', NULL, NULL, NULL, NULL, 1, '2025-11-27 21:39:14', '2025-11-27 21:39:14', 'ENV-1764279554805', 'sent', NULL),
-(4, 9, 3, 'CON-1764279652417-9', 'pending_signature', 1500.00, 1, 0, 'Contract created for DocuSign', NULL, NULL, NULL, NULL, 1, '2025-11-27 21:40:52', '2025-11-27 21:40:52', 'ENV-1764279652492', 'sent', NULL),
-(5, 9, 3, 'CON-1764280029857-9', 'pending_signature', 1500.00, 1, 0, 'TÉRMINOS Y CONDICIONES DEL SERVICIO\n\n1. ALCANCE DEL SERVICIO\n   El presente contrato cubre las sesiones especificadas del servicio contratado.\n\n2. PROGRAMACIÓN Y ASISTENCIA\n   - Las citas deben programarse con anticipación\n   - Se requiere llegar 10 minutos antes de la hora programada\n   - En caso de no asistir sin previo aviso, se considerará como sesión utilizada\n\n3. POLÍTICA DE CANCELACIÓN\n   - Las cancelaciones deben hacerse con al menos 24 horas de anticipación\n\n4. CUIDADOS Y RECOMENDACIONES\n   - Seguir todas las indicaciones del personal médico\n   - Informar sobre cualquier cambio en el estado de salud', NULL, NULL, NULL, NULL, 1, '2025-11-27 21:47:09', '2025-11-27 21:47:10', 'ENV-1764280030848', 'sent', NULL),
-(6, 9, 3, 'CON-1764280314464-9', 'pending_signature', 1500.00, 1, 0, 'TÉRMINOS Y CONDICIONES DEL SERVICIO\n\n1. ALCANCE DEL SERVICIO\n   El presente contrato cubre las sesiones especificadas del servicio contratado.\n\n2. PROGRAMACIÓN Y ASISTENCIA\n   - Las citas deben programarse con anticipación\n   - Se requiere llegar 10 minutos antes de la hora programada\n   - En caso de no asistir sin previo aviso, se considerará como sesión utilizada\n\n3. POLÍTICA DE CANCELACIÓN\n   - Las cancelaciones deben hacerse con al menos 24 horas de anticipación\n\n4. CUIDADOS Y RECOMENDACIONES\n   - Seguir todas las indicaciones del personal médico\n   - Informar sobre cualquier cambio en el estado de salud', NULL, NULL, NULL, NULL, 1, '2025-11-27 21:51:54', '2025-11-27 21:51:55', 'ENV-1764280315369', 'sent', NULL),
-(7, 9, 3, 'CON-1764280520881-9', 'pending_signature', 1500.00, 1, 0, 'TÉRMINOS Y CONDICIONES DEL SERVICIO\n\n1. ALCANCE DEL SERVICIO\n   El presente contrato cubre las sesiones especificadas del servicio contratado.\n\n2. PROGRAMACIÓN Y ASISTENCIA\n   - Las citas deben programarse con anticipación\n   - Se requiere llegar 10 minutos antes de la hora programada\n   - En caso de no asistir sin previo aviso, se considerará como sesión utilizada\n\n3. POLÍTICA DE CANCELACIÓN\n   - Las cancelaciones deben hacerse con al menos 24 horas de anticipación\n\n4. CUIDADOS Y RECOMENDACIONES\n   - Seguir todas las indicaciones del personal médico\n   - Informar sobre cualquier cambio en el estado de salud', NULL, NULL, NULL, NULL, 1, '2025-11-27 21:55:21', '2025-11-27 21:55:21', 'ENV-1764280521736', 'sent', NULL),
-(8, 9, 3, 'CON-1764280735544-9', 'pending_signature', 1500.00, 1, 0, 'TÉRMINOS Y CONDICIONES DEL SERVICIO\n\n1. ALCANCE DEL SERVICIO\n   El presente contrato cubre las sesiones especificadas del servicio contratado.\n\n2. PROGRAMACIÓN Y ASISTENCIA\n   - Las citas deben programarse con anticipación\n   - Se requiere llegar 10 minutos antes de la hora programada\n   - En caso de no asistir sin previo aviso, se considerará como sesión utilizada\n\n3. POLÍTICA DE CANCELACIÓN\n   - Las cancelaciones deben hacerse con al menos 24 horas de anticipación\n\n4. CUIDADOS Y RECOMENDACIONES\n   - Seguir todas las indicaciones del personal médico\n   - Informar sobre cualquier cambio en el estado de salud', NULL, NULL, NULL, NULL, 1, '2025-11-27 21:58:55', '2025-11-27 21:58:56', 'ENV-1764280736473', 'sent', NULL),
-(9, 9, 3, 'CON-1764280829175-9', 'pending_signature', 1500.00, 1, 0, 'TÉRMINOS Y CONDICIONES DEL SERVICIO\n\n1. ALCANCE DEL SERVICIO\n   El presente contrato cubre las sesiones especificadas del servicio contratado.\n\n2. PROGRAMACIÓN Y ASISTENCIA\n   - Las citas deben programarse con anticipación\n   - Se requiere llegar 10 minutos antes de la hora programada\n   - En caso de no asistir sin previo aviso, se considerará como sesión utilizada\n\n3. POLÍTICA DE CANCELACIÓN\n   - Las cancelaciones deben hacerse con al menos 24 horas de anticipación\n\n4. CUIDADOS Y RECOMENDACIONES\n   - Seguir todas las indicaciones del personal médico\n   - Informar sobre cualquier cambio en el estado de salud', NULL, NULL, NULL, NULL, 1, '2025-11-27 22:00:29', '2025-11-27 22:00:32', 'dc841678-761c-8ce7-8091-b00e98b41b58', 'sent', NULL),
-(10, 9, 3, 'CON-1764282351470-9', 'signed', 1500.00, 1, 0, 'TÉRMINOS Y CONDICIONES DEL SERVICIO\n\n1. ALCANCE DEL SERVICIO\n   El presente contrato cubre las sesiones especificadas del servicio contratado.\n\n2. PROGRAMACIÓN Y ASISTENCIA\n   - Las citas deben programarse con anticipación\n   - Se requiere llegar 10 minutos antes de la hora programada\n   - En caso de no asistir sin previo aviso, se considerará como sesión utilizada\n\n3. POLÍTICA DE CANCELACIÓN\n   - Las cancelaciones deben hacerse con al menos 24 horas de anticipación\n\n4. CUIDADOS Y RECOMENDACIONES\n   - Seguir todas las indicaciones del personal médico\n   - Informar sobre cualquier cambio en el estado de salud', NULL, NULL, '2025-11-27 22:26:34', NULL, 1, '2025-11-27 22:25:51', '2025-11-27 22:26:34', '869b1544-33e6-88dc-81b5-67d31ab91b21', 'completed', NULL),
-(11, 9, 2, 'CON-1764282613066-9', 'pending_signature', 800.00, 1, 0, 'TÉRMINOS Y CONDICIONES DEL SERVICIO\n\n1. ALCANCE DEL SERVICIO\n   El presente contrato cubre las sesiones especificadas del servicio contratado.\n\n2. PROGRAMACIÓN Y ASISTENCIA\n   - Las citas deben programarse con anticipación\n   - Se requiere llegar 10 minutos antes de la hora programada\n   - En caso de no asistir sin previo aviso, se considerará como sesión utilizada\n\n3. POLÍTICA DE CANCELACIÓN\n   - Las cancelaciones deben hacerse con al menos 24 horas de anticipación\n\n4. CUIDADOS Y RECOMENDACIONES\n   - Seguir todas las indicaciones del personal médico\n   - Informar sobre cualquier cambio en el estado de salud', NULL, NULL, NULL, NULL, 1, '2025-11-27 22:30:13', '2025-11-27 22:30:16', '7e091db8-db8b-8f81-81ba-5238feb11b4a', 'sent', NULL);
+(12, 9, 3, 'CON-1764283074949-9', 'signed', 1500.00, 1, 0, 'TÉRMINOS Y CONDICIONES DEL SERVICIO\n\n1. ALCANCE DEL SERVICIO\n   El presente contrato cubre las sesiones especificadas del servicio contratado.\n\n2. PROGRAMACIÓN Y ASISTENCIA\n   - Las citas deben programarse con anticipación\n   - Se requiere llegar 10 minutos antes de la hora programada\n   - En caso de no asistir sin previo aviso, se considerará como sesión utilizada\n\n3. POLÍTICA DE CANCELACIÓN\n   - Las cancelaciones deben hacerse con al menos 24 horas de anticipación\n\n4. CUIDADOS Y RECOMENDACIONES\n   - Seguir todas las indicaciones del personal médico\n   - Informar sobre cualquier cambio en el estado de salud', NULL, NULL, '2025-11-27 22:38:25', NULL, 1, '2025-11-27 22:37:55', '2025-11-27 22:38:25', '295c1709-9c0c-8911-802e-83d658b51b89', 'completed', NULL);
 
 -- --------------------------------------------------------
 
@@ -421,11 +428,14 @@ CREATE TABLE `medical_records` (
   `patient_id` int(11) NOT NULL,
   `doctor_id` int(11) NOT NULL,
   `appointment_id` int(11) DEFAULT NULL,
+  `visit_date` date NOT NULL,
   `diagnosis` text COLLATE utf8mb4_unicode_ci,
   `treatment` text COLLATE utf8mb4_unicode_ci,
   `notes` text COLLATE utf8mb4_unicode_ci,
   `allergies` text COLLATE utf8mb4_unicode_ci,
   `medications` text COLLATE utf8mb4_unicode_ci,
+  `prescriptions` text COLLATE utf8mb4_unicode_ci,
+  `files` json DEFAULT NULL COMMENT 'Array of file URLs/paths',
   `medical_history` text COLLATE utf8mb4_unicode_ci,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -487,7 +497,7 @@ CREATE TABLE `patients` (
 --
 
 INSERT INTO `patients` (`id`, `first_name`, `last_name`, `email`, `password_hash`, `role`, `is_email_verified`, `last_login`, `phone`, `date_of_birth`, `gender`, `address`, `city`, `state`, `zip_code`, `emergency_contact_name`, `emergency_contact_phone`, `notes`, `is_active`, `created_at`, `updated_at`) VALUES
-(9, 'Alex', 'Gomez', 'axgoomez@gmail.com', NULL, 'patient', 1, '2025-11-23 19:35:00', '4741400364', '1999-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 04:25:54', '2025-11-23 19:35:00'),
+(9, 'Alex', 'Gomez', 'axgoomez@gmail.com', NULL, 'patient', 1, '2025-12-12 19:36:33', '4741400364', '1999-08-19', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 04:25:54', '2025-12-12 19:36:33'),
 (10, 'Felix', 'Gomez', 'tonatiuh.gom@gmail.com', NULL, 'patient', 1, '2025-11-12 05:46:39', '4741400363', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 04:37:34', '2025-11-12 05:46:39'),
 (11, 'Felix', 'Gomez', 'test@gmail.com', NULL, 'patient', 0, NULL, '1234567890', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 05:13:59', '2025-11-11 05:13:59'),
 (12, 'Machaca', 'Gomez', 'machaca@gmail.com', NULL, 'patient', 0, NULL, '+52 474 140 0363', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2025-11-11 05:21:46', '2025-11-11 05:21:46'),
@@ -534,7 +544,9 @@ INSERT INTO `payments` (`id`, `appointment_id`, `patient_id`, `amount`, `payment
 (20, NULL, 9, 1500.00, 'stripe', 'completed', 'pi_3SV0o1AxpuzS9HfB3QyhXkPs', 'pi_3SV0o1AxpuzS9HfB3QyhXkPs', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0.00, NULL, 9, '2025-11-19 02:07:54', '2025-11-19 02:07:54', '2025-11-19 02:07:54'),
 (21, NULL, 9, 1500.00, 'stripe', 'completed', 'pi_3SV28IAxpuzS9HfB3AVQEAyX', 'pi_3SV28IAxpuzS9HfB3AVQEAyX', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0.00, NULL, 9, '2025-11-19 03:33:13', '2025-11-19 03:33:13', '2025-11-19 03:33:13'),
 (22, NULL, 9, 800.00, 'stripe', 'completed', 'pi_3SV2DHAxpuzS9HfB11dIVkXM', 'pi_3SV2DHAxpuzS9HfB11dIVkXM', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0.00, NULL, 9, '2025-11-19 03:38:00', '2025-11-19 03:38:00', '2025-11-19 03:38:00'),
-(23, NULL, 9, 1500.00, 'stripe', 'completed', 'pi_3SWj3sAxpuzS9HfB0wNu7dSl', 'pi_3SWj3sAxpuzS9HfB0wNu7dSl', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0.00, NULL, 9, '2025-11-23 19:35:24', '2025-11-23 19:35:24', '2025-11-23 19:35:24');
+(23, NULL, 9, 1500.00, 'stripe', 'completed', 'pi_3SWj3sAxpuzS9HfB0wNu7dSl', 'pi_3SWj3sAxpuzS9HfB0wNu7dSl', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0.00, NULL, 9, '2025-11-23 19:35:24', '2025-11-23 19:35:24', '2025-11-23 19:35:24'),
+(24, 26, 9, 1500.00, 'stripe', 'completed', 'pi_3SYDneAxpuzS9HfB017Gt4xD', 'pi_3SYDneAxpuzS9HfB017Gt4xD', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0.00, NULL, 9, '2025-11-27 22:36:41', '2025-11-27 22:36:41', '2025-11-27 22:36:41'),
+(25, 27, 9, 1500.00, 'stripe', 'completed', 'pi_3Sdc8n47qEGGczco00NdNPyQ', 'pi_3Sdc8n47qEGGczco00NdNPyQ', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0.00, NULL, 9, '2025-12-12 19:36:51', '2025-12-12 19:36:51', '2025-12-12 19:36:51');
 
 -- --------------------------------------------------------
 
@@ -670,8 +682,8 @@ INSERT INTO `users` (`id`, `email`, `password_hash`, `role`, `first_name`, `last
 (9, 'axgoomezzzz@gmail.com', '', 'patient', 'Alex', 'Gomez', '4741400363', NULL, NULL, NULL, 1, 0, '2025-11-10 17:33:24', '2025-11-12 04:43:04', '2025-11-11 03:04:36'),
 (10, 'receptionist@beautyhospital.com', '', 'receptionist', 'Maria', 'Garcia', '+1234567891', NULL, NULL, 'EMP001', 1, 0, '2025-11-12 04:42:13', '2025-11-12 04:42:13', NULL),
 (11, 'doctor@beautyhospital.com', '', 'doctor', 'Dr. Juan', 'Martinez', '+1234567892', NULL, NULL, 'DOC001', 1, 0, '2025-11-12 04:42:13', '2025-11-12 04:42:13', NULL),
-(12, 'axgoomez@gmail.com', '', 'general_admin', 'Alex', 'Gomez', '+1234567893', NULL, NULL, 'ADM001', 1, 1, '2025-11-12 04:42:13', '2025-11-27 22:24:54', '2025-11-27 22:24:54'),
-(13, 'hebert@dupeadsmedia.com', '', 'general_admin', 'Hebert', 'Montecinos', NULL, NULL, '', 'ADM002', 1, 1, '2025-11-19 22:15:46', '2025-11-23 00:20:41', '2025-11-23 00:20:41');
+(12, 'axgoomez@gmail.com', '', 'general_admin', 'Alex', 'Gomez', '+1234567893', NULL, NULL, 'ADM001', 1, 1, '2025-11-12 04:42:13', '2025-12-13 22:29:11', '2025-12-13 22:29:11'),
+(13, 'hebert@dupeadsmedia.com', '', 'general_admin', 'Hebert', 'Montecinos', NULL, NULL, '', 'ADM002', 1, 1, '2025-11-19 22:15:46', '2025-12-05 22:59:05', '2025-12-05 22:59:05');
 
 -- --------------------------------------------------------
 
@@ -696,7 +708,7 @@ CREATE TABLE `users_sessions` (
 INSERT INTO `users_sessions` (`id`, `user_id`, `patient_id`, `session_code`, `user_session`, `user_session_date_start`, `created_at`) VALUES
 (16, NULL, 10, 672509, 1, '2025-11-12 05:46:26', '2025-11-23 19:13:10'),
 (29, NULL, 13, 895861, 1, '2025-11-23 06:15:49', '2025-11-23 19:13:10'),
-(34, NULL, 9, 896381, 1, '2025-11-23 18:34:49', '2025-11-23 19:34:48');
+(36, NULL, 9, 171389, 1, '2025-12-12 19:36:21', '2025-12-12 19:36:20');
 
 --
 -- Indexes for dumped tables
@@ -947,13 +959,13 @@ ALTER TABLE `users_sessions`
 -- AUTO_INCREMENT for table `admin_sessions`
 --
 ALTER TABLE `admin_sessions`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=41;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=50;
 
 --
 -- AUTO_INCREMENT for table `appointments`
 --
 ALTER TABLE `appointments`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=26;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=28;
 
 --
 -- AUTO_INCREMENT for table `appointment_reminders`
@@ -989,7 +1001,7 @@ ALTER TABLE `content_pages`
 -- AUTO_INCREMENT for table `contracts`
 --
 ALTER TABLE `contracts`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
 
 --
 -- AUTO_INCREMENT for table `coupons`
@@ -1043,7 +1055,7 @@ ALTER TABLE `patients`
 -- AUTO_INCREMENT for table `payments`
 --
 ALTER TABLE `payments`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=24;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=26;
 
 --
 -- AUTO_INCREMENT for table `refresh_tokens`
@@ -1073,7 +1085,7 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `users_sessions`
 --
 ALTER TABLE `users_sessions`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=35;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=37;
 
 --
 -- Constraints for dumped tables

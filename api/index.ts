@@ -2185,6 +2185,296 @@ const updatePatient: RequestHandler = async (req, res) => {
 };
 
 /**
+ * GET /api/admin/medical-records
+ * Get all medical records
+ */
+const getAllMedicalRecords: RequestHandler = async (req, res) => {
+  console.log("[getAllMedicalRecords] Handler called");
+  try {
+    const { patient_id, doctor_id } = req.query;
+
+    let whereClause = "1=1";
+    const queryParams: any[] = [];
+
+    if (patient_id) {
+      whereClause += " AND mr.patient_id = ?";
+      queryParams.push(patient_id);
+    }
+
+    if (doctor_id) {
+      whereClause += " AND mr.doctor_id = ?";
+      queryParams.push(doctor_id);
+    }
+
+    const [records] = await pool.query<any[]>(
+      `SELECT 
+        mr.*,
+        p.first_name as patient_first_name,
+        p.last_name as patient_last_name,
+        p.email as patient_email,
+        p.phone as patient_phone,
+        CONCAT(u.first_name, ' ', u.last_name) as doctor_name
+       FROM medical_records mr
+       JOIN patients p ON mr.patient_id = p.id
+       JOIN users u ON mr.doctor_id = u.id
+       WHERE ${whereClause}
+       ORDER BY mr.visit_date DESC, mr.created_at DESC`,
+      queryParams,
+    );
+
+    // Transform to include patient object
+    const transformedRecords = records.map((record) => ({
+      id: record.id,
+      patient_id: record.patient_id,
+      doctor_id: record.doctor_id,
+      visit_date: record.visit_date,
+      diagnosis: record.diagnosis,
+      treatment: record.treatment,
+      notes: record.notes,
+      prescriptions: record.prescriptions,
+      files: record.files ? JSON.parse(record.files) : [],
+      created_at: record.created_at,
+      updated_at: record.updated_at,
+      patient: {
+        id: record.patient_id,
+        first_name: record.patient_first_name,
+        last_name: record.patient_last_name,
+        email: record.patient_email,
+        phone: record.patient_phone,
+      },
+      doctor_name: record.doctor_name,
+    }));
+
+    res.json({
+      success: true,
+      data: transformedRecords,
+    });
+  } catch (error) {
+    console.error("Error fetching medical records:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * GET /api/admin/medical-records/:id
+ * Get a specific medical record by ID
+ */
+const getMedicalRecordById: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [records] = await pool.query<any[]>(
+      `SELECT 
+        mr.*,
+        p.first_name as patient_first_name,
+        p.last_name as patient_last_name,
+        p.email as patient_email,
+        CONCAT(u.first_name, ' ', u.last_name) as doctor_name
+       FROM medical_records mr
+       JOIN patients p ON mr.patient_id = p.id
+       JOIN users u ON mr.doctor_id = u.id
+       WHERE mr.id = ?`,
+      [id],
+    );
+
+    if (records.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Medical record not found" });
+    }
+
+    const record = records[0];
+    const transformedRecord = {
+      id: record.id,
+      patient_id: record.patient_id,
+      doctor_id: record.doctor_id,
+      visit_date: record.visit_date,
+      diagnosis: record.diagnosis,
+      treatment: record.treatment,
+      notes: record.notes,
+      prescriptions: record.prescriptions,
+      files: record.files ? JSON.parse(record.files) : [],
+      created_at: record.created_at,
+      updated_at: record.updated_at,
+      patient: {
+        id: record.patient_id,
+        first_name: record.patient_first_name,
+        last_name: record.patient_last_name,
+        email: record.patient_email,
+      },
+      doctor_name: record.doctor_name,
+    };
+
+    res.json({
+      success: true,
+      data: transformedRecord,
+    });
+  } catch (error) {
+    console.error("Error fetching medical record:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * POST /api/admin/medical-records
+ * Create a new medical record
+ */
+const createMedicalRecord: RequestHandler = async (req, res) => {
+  try {
+    const {
+      patient_id,
+      visit_date,
+      diagnosis,
+      treatment,
+      notes,
+      prescriptions,
+    } = req.body;
+
+    // Get doctor ID from authenticated user (req.user should be set by auth middleware)
+    // For now, we'll accept it from the request or use a default
+    const doctor_id = (req as any).user?.id || req.body.doctor_id;
+
+    if (!patient_id || !visit_date || !diagnosis || !treatment) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Missing required fields: patient_id, visit_date, diagnosis, treatment",
+      });
+    }
+
+    const [result] = await pool.query<any>(
+      `INSERT INTO medical_records 
+        (patient_id, doctor_id, visit_date, diagnosis, treatment, notes, prescriptions, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      [
+        patient_id,
+        doctor_id,
+        visit_date,
+        diagnosis,
+        treatment,
+        notes || null,
+        prescriptions || null,
+      ],
+    );
+
+    // Fetch the created record
+    const [createdRecord] = await pool.query<any[]>(
+      `SELECT 
+        mr.*,
+        CONCAT(u.first_name, ' ', u.last_name) as doctor_name
+       FROM medical_records mr
+       JOIN users u ON mr.doctor_id = u.id
+       WHERE mr.id = ?`,
+      [result.insertId],
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Medical record created successfully",
+      data: createdRecord[0],
+    });
+  } catch (error) {
+    console.error("Error creating medical record:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * PUT /api/admin/medical-records/:id
+ * Update a medical record
+ */
+const updateMedicalRecord: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      patient_id,
+      visit_date,
+      diagnosis,
+      treatment,
+      notes,
+      prescriptions,
+    } = req.body;
+
+    // Check if record exists
+    const [existing] = await pool.query<any[]>(
+      "SELECT id FROM medical_records WHERE id = ?",
+      [id],
+    );
+
+    if (existing.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Medical record not found" });
+    }
+
+    const [result] = await pool.query<any>(
+      `UPDATE medical_records 
+       SET patient_id = ?, visit_date = ?, diagnosis = ?, treatment = ?, 
+           notes = ?, prescriptions = ?, updated_at = NOW()
+       WHERE id = ?`,
+      [
+        patient_id,
+        visit_date,
+        diagnosis,
+        treatment,
+        notes || null,
+        prescriptions || null,
+        id,
+      ],
+    );
+
+    // Fetch updated record
+    const [updatedRecord] = await pool.query<any[]>(
+      `SELECT 
+        mr.*,
+        CONCAT(u.first_name, ' ', u.last_name) as doctor_name
+       FROM medical_records mr
+       JOIN users u ON mr.doctor_id = u.id
+       WHERE mr.id = ?`,
+      [id],
+    );
+
+    res.json({
+      success: true,
+      message: "Medical record updated successfully",
+      data: updatedRecord[0],
+    });
+  } catch (error) {
+    console.error("Error updating medical record:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * DELETE /api/admin/medical-records/:id
+ * Delete a medical record
+ */
+const deleteMedicalRecord: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [result] = await pool.query<any>(
+      "DELETE FROM medical_records WHERE id = ?",
+      [id],
+    );
+
+    if (result.affectedRows === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Medical record not found" });
+    }
+
+    res.json({
+      success: true,
+      message: "Medical record deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting medical record:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
  * GET /api/admin/appointments
  * Get all appointments with filters
  */
@@ -4908,6 +5198,48 @@ const deleteAdminUser: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Check if user exists and get their data
+    const [users] = await pool.query<any[]>(
+      "SELECT id, email, role FROM users WHERE id = ?",
+      [id],
+    );
+
+    if (users.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    // Check if user has related records
+    const [appointmentCount] = await pool.query<any[]>(
+      "SELECT COUNT(*) as count FROM appointments WHERE created_by = ?",
+      [id],
+    );
+
+    const [medicalRecordsCount] = await pool.query<any[]>(
+      "SELECT COUNT(*) as count FROM medical_records WHERE doctor_id = ?",
+      [id],
+    );
+
+    const hasAppointments = appointmentCount[0]?.count > 0;
+    const hasMedicalRecords = medicalRecordsCount[0]?.count > 0;
+
+    if (hasAppointments || hasMedicalRecords) {
+      return res.status(400).json({
+        success: false,
+        message: `No se puede eliminar el usuario porque tiene ${
+          hasAppointments
+            ? `${appointmentCount[0].count} citas registradas`
+            : ""
+        }${hasAppointments && hasMedicalRecords ? " y " : ""}${
+          hasMedicalRecords
+            ? `${medicalRecordsCount[0].count} expedientes médicos`
+            : ""
+        }. Por favor, desactive el usuario en su lugar.`,
+      });
+    }
+
+    // Proceed with deletion if no related records
     const [result] = await pool.query<any>("DELETE FROM users WHERE id = ?", [
       id,
     ]);
@@ -4922,12 +5254,22 @@ const deleteAdminUser: RequestHandler = async (req, res) => {
       success: true,
       message: "User deleted successfully",
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error deleting admin user:", error);
+
+    // Check for foreign key constraint error
+    if (error.code === "ER_ROW_IS_REFERENCED_2") {
+      return res.status(400).json({
+        success: false,
+        message:
+          "No se puede eliminar el usuario porque tiene registros asociados. Por favor, desactive el usuario en su lugar.",
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: "Internal server error",
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: error.message || "Unknown error",
     });
   }
 };
@@ -7040,6 +7382,21 @@ function createServer() {
   expressApp.get("/api/admin/patients", getAllAdminPatients);
   expressApp.get("/api/admin/patients/:id", getAdminPatientById);
   expressApp.patch("/api/admin/patients/:id", updatePatient);
+
+  // Admin Medical Records Management
+  expressApp.get("/api/admin/medical-records", getAllMedicalRecords);
+  expressApp.get("/api/admin/medical-records/:id", getMedicalRecordById);
+  expressApp.post("/api/admin/medical-records", createMedicalRecord);
+  expressApp.put("/api/admin/medical-records/:id", updateMedicalRecord);
+  expressApp.delete("/api/admin/medical-records/:id", deleteMedicalRecord);
+
+  // Admin User Management
+  expressApp.get("/api/admin/users", getAdminUsers);
+  expressApp.get("/api/admin/users/:id", getAdminUser);
+  expressApp.post("/api/admin/users", createAdminUser);
+  expressApp.put("/api/admin/users/:id", updateAdminUser);
+  expressApp.delete("/api/admin/users/:id", deleteAdminUser);
+  expressApp.patch("/api/admin/users/:id/toggle-active", toggleAdminUserActive);
 
   // Admin Appointment Management
   expressApp.get("/api/admin/appointments", getAllAdminAppointments);
