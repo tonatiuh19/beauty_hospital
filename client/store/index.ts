@@ -10,6 +10,7 @@ import loadingReducer from "./slices/loadingSlice";
 import usersReducer from "./slices/usersSlice";
 import medicalRecordsReducer from "./slices/medicalRecordsSlice";
 import contractsReducer from "./slices/contractsSlice";
+import patientAppointmentsReducer from "./slices/patientAppointmentsSlice";
 import { loadingMiddleware } from "./middleware/loadingMiddleware";
 
 // Configure the store
@@ -26,6 +27,7 @@ export const store = configureStore({
     users: usersReducer,
     medicalRecords: medicalRecordsReducer,
     contracts: contractsReducer,
+    patientAppointments: patientAppointmentsReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

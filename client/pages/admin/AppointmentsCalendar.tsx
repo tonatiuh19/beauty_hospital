@@ -723,14 +723,6 @@ export default function AppointmentsCalendar() {
                       </svg>
                       Generar Código QR para Check-in
                     </Button>
-                    <Button
-                      onClick={() => handleCheckIn(selectedAppointment)}
-                      variant="outline"
-                      className="w-full"
-                    >
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      Check-in Manual con Contrato
-                    </Button>
                   </div>
                 )}
             </>

@@ -75,6 +75,8 @@ interface Contract {
   signature_url: string | null;
   signed_at: string | null;
   created_at: string;
+  terms_and_conditions?: string;
+  signed_terms?: string; // The immutable terms that were actually signed
 }
 
 interface ContractSession {
@@ -105,7 +107,6 @@ export default function ContractsManagement() {
   const { toast } = useToast();
   const {
     contracts: storeContracts,
-    selectedContract,
     loading: storeLoading,
     updateLoading,
   } = useAppSelector((state) => state.contracts);
@@ -114,7 +115,7 @@ export default function ContractsManagement() {
   const [contractSessions, setContractSessions] = useState<ContractSession[]>(
     [],
   );
-  const [selectedContractData, setSelectedContract] = useState<Contract | null>(
+  const [selectedContract, setSelectedContract] = useState<Contract | null>(
     null,
   );
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
@@ -705,6 +706,25 @@ export default function ContractsManagement() {
                     </div>
                   )}
                 </div>
+
+                {/* Legal Compliance Notice */}
+                {selectedContract.signed_terms && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <CheckCircle className="w-5 h-5 text-blue-600 mt-0.5" />
+                      <div>
+                        <p className="font-medium text-blue-900 text-sm">
+                          Contrato Firmado con Validez Legal
+                        </p>
+                        <p className="text-xs text-blue-700 mt-1">
+                          Este contrato fue firmado digitalmente. Los términos
+                          originales están preservados y no pueden modificarse
+                          para garantizar la validez legal.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Progress */}
                 <div>

@@ -36,9 +36,17 @@ import {
   InvoiceData,
 } from "@/components/InvoiceRequestModal";
 import { EditAppointmentModal } from "@/components/EditAppointmentModal";
-import { useAppSelector } from "@/store/hooks";
+import { useAppSelector, useAppDispatch } from "@/store/hooks";
 import { useToast } from "@/hooks/use-toast";
 import axios from "@/lib/axios";
+import {
+  fetchPatientAppointments,
+  fetchPatientProfile,
+  updatePatientProfile,
+  downloadContract,
+  cancelAppointment,
+  resetAppointments,
+} from "@/store/slices/patientAppointmentsSlice";
 
 interface PatientAppointment {
   id: number;
@@ -65,6 +73,8 @@ interface PatientAppointment {
     status: string;
     method: string;
   } | null;
+  contract_id?: number;
+  contract_status?: string;
   is_past: boolean;
   is_upcoming: boolean;
   can_cancel: boolean;
@@ -88,12 +98,18 @@ interface PatientProfile {
 }
 
 export default function MyAppointments() {
+  const dispatch = useAppDispatch();
   const { isAuthenticated, user } = useAppSelector((state) => state.auth);
+  const {
+    appointments,
+    profile,
+    loading,
+    profileLoading,
+    downloadingContractId,
+    error,
+  } = useAppSelector((state) => state.patientAppointments);
   const { toast } = useToast();
 
-  const [loading, setLoading] = useState(true);
-  const [appointments, setAppointments] = useState<PatientAppointment[]>([]);
-  const [profile, setProfile] = useState<PatientProfile | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState<Partial<PatientProfile>>({});
 
@@ -108,83 +124,58 @@ export default function MyAppointments() {
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      fetchAppointments();
-      fetchProfile();
+      dispatch(fetchPatientAppointments(user.id));
+      dispatch(fetchPatientProfile(user.id));
     }
-  }, [isAuthenticated, user]);
 
-  const fetchAppointments = async () => {
-    if (!user?.id) return;
+    return () => {
+      dispatch(resetAppointments());
+    };
+  }, [isAuthenticated, user, dispatch]);
 
-    try {
-      setLoading(true);
-      const response = await axios.get(
-        `/patient/appointments?patient_id=${user.id}`,
-      );
-      if (response.data.success) {
-        setAppointments(response.data.data.appointments || []);
-      }
-    } catch (error: any) {
+  useEffect(() => {
+    if (profile) {
+      setProfileForm(profile);
+    }
+  }, [profile]);
+
+  // Show errors from Redux state
+  useEffect(() => {
+    if (error) {
       toast({
         variant: "destructive",
         title: "Error",
-        description:
-          error.response?.data?.message || "No se pudieron cargar las citas",
+        description: error,
       });
-    } finally {
-      setLoading(false);
     }
-  };
-
-  const fetchProfile = async () => {
-    if (!user?.id) return;
-
-    try {
-      const response = await axios.get(
-        `/patient/profile?patient_id=${user.id}`,
-      );
-      if (response.data.success) {
-        setProfile(response.data.data);
-        setProfileForm(response.data.data);
-      }
-    } catch (error: any) {
-      console.error("Error fetching profile:", error);
-    }
-  };
+  }, [error, toast]);
 
   const handleCancelAppointment = async () => {
     if (!selectedAppointment || !user?.id) return;
 
     try {
       setIsProcessing(true);
-      const response = await axios.patch(
-        `/patient/appointments/${selectedAppointment.id}/cancel`,
-        {
-          patient_id: user.id,
-          cancellation_reason: cancellationReason,
-        },
-      );
+      const result = await dispatch(
+        cancelAppointment({
+          appointmentId: selectedAppointment.id,
+          patientId: user.id,
+          reason: cancellationReason,
+        }),
+      ).unwrap();
 
-      if (response.data.success) {
-        const data = response.data.data;
-        toast({
-          title: "Cita cancelada",
-          description: data.penalization_applied
-            ? "❌ No habrá reembolso - cancelación con menos de 24 horas de anticipación"
-            : `✅ Reembolso procesado: $${data.refund_amount?.toFixed(2)}`,
-          variant: data.penalization_applied ? "destructive" : "default",
-        });
+      toast({
+        title: "Cita cancelada",
+        description: "La cita ha sido cancelada exitosamente",
+      });
 
-        setShowCancelModal(false);
-        setCancellationReason("");
-        fetchAppointments();
-      }
+      setShowCancelModal(false);
+      setCancellationReason("");
+      setSelectedAppointment(null);
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Error",
-        description:
-          error.response?.data?.message || "No se pudo cancelar la cita",
+        description: error || "No se pudo cancelar la cita",
       });
     } finally {
       setIsProcessing(false);
@@ -215,7 +206,10 @@ export default function MyAppointments() {
         });
 
         setShowEditModal(false);
-        fetchAppointments();
+        // Refresh appointments
+        if (user?.id) {
+          dispatch(fetchPatientAppointments(user.id));
+        }
       }
     } catch (error: any) {
       toast({
@@ -268,28 +262,46 @@ export default function MyAppointments() {
 
     try {
       setIsProcessing(true);
-      const response = await axios.put(`/patient/profile`, {
-        patient_id: user.id,
-        ...profileForm,
-      });
+      await dispatch(
+        updatePatientProfile({
+          patientId: user.id,
+          updates: profileForm,
+        }),
+      ).unwrap();
 
-      if (response.data.success) {
-        setProfile(response.data.data);
-        setIsEditingProfile(false);
-        toast({
-          title: "Perfil actualizado",
-          description: "Tus datos han sido actualizados exitosamente",
-        });
-      }
+      setIsEditingProfile(false);
+      toast({
+        title: "Perfil actualizado",
+        description: "Tus datos han sido actualizados exitosamente",
+      });
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Error",
-        description:
-          error.response?.data?.message || "No se pudo actualizar el perfil",
+        description: error || "No se pudo actualizar el perfil",
       });
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleDownloadContract = async (
+    contractId: number,
+    appointmentId: number,
+  ) => {
+    try {
+      await dispatch(downloadContract({ contractId, appointmentId })).unwrap();
+
+      toast({
+        title: "Contrato descargado",
+        description: "El contrato se ha descargado exitosamente",
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error || "No se pudo descargar el contrato",
+      });
     }
   };
 
@@ -416,6 +428,18 @@ export default function MyAppointments() {
                             setSelectedAppointment(apt);
                             setShowInvoiceModal(true);
                           }}
+                          onDownloadContract={
+                            apt.contract_id && apt.contract_status === "signed"
+                              ? () =>
+                                  handleDownloadContract(
+                                    apt.contract_id!,
+                                    apt.id,
+                                  )
+                              : undefined
+                          }
+                          isDownloadingContract={
+                            downloadingContractId === apt.contract_id
+                          }
                         />
                       ))}
                     </div>
@@ -445,6 +469,18 @@ export default function MyAppointments() {
                             setSelectedAppointment(apt);
                             setShowInvoiceModal(true);
                           }}
+                          onDownloadContract={
+                            apt.contract_id && apt.contract_status === "signed"
+                              ? () =>
+                                  handleDownloadContract(
+                                    apt.contract_id!,
+                                    apt.id,
+                                  )
+                              : undefined
+                          }
+                          isDownloadingContract={
+                            downloadingContractId === apt.contract_id
+                          }
                         />
                       ))}
                     </div>
@@ -456,7 +492,11 @@ export default function MyAppointments() {
 
           {/* Profile Tab */}
           <TabsContent value="profile">
-            {profile && (
+            {profileLoading ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+              </div>
+            ) : profile ? (
               <div className="bg-white rounded-lg shadow-lg p-6 max-w-4xl">
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-2xl font-bold text-gray-900">
@@ -775,6 +815,11 @@ export default function MyAppointments() {
                   </div>
                 )}
               </div>
+            ) : (
+              <div className="bg-white rounded-lg shadow p-8 text-center">
+                <User className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600">No se pudo cargar el perfil</p>
+              </div>
             )}
           </TabsContent>
         </Tabs>
@@ -912,6 +957,8 @@ interface AppointmentCardProps {
   onCancel?: () => void;
   onEdit?: () => void;
   onRequestInvoice?: () => void;
+  onDownloadContract?: () => void;
+  isDownloadingContract?: boolean;
 }
 
 function AppointmentCard({
@@ -919,6 +966,8 @@ function AppointmentCard({
   onCancel,
   onEdit,
   onRequestInvoice,
+  onDownloadContract,
+  isDownloadingContract = false,
 }: AppointmentCardProps) {
   const appointmentDate = new Date(appointment.scheduled_at);
 
@@ -1007,6 +1056,27 @@ function AppointmentCard({
             >
               <XCircle className="w-4 h-4 mr-2" />
               Cancelar
+            </Button>
+          )}
+          {onDownloadContract && (
+            <Button
+              onClick={onDownloadContract}
+              disabled={isDownloadingContract}
+              variant="outline"
+              size="sm"
+              className="w-full lg:w-auto bg-green-50 hover:bg-green-100 text-green-700 border-green-200 disabled:opacity-50"
+            >
+              {isDownloadingContract ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Descargando...
+                </>
+              ) : (
+                <>
+                  <FileText className="w-4 h-4 mr-2" />
+                  Descargar Contrato
+                </>
+              )}
             </Button>
           )}
           {appointment.payment &&
