@@ -59,7 +59,7 @@ const navigation: NavItem[] = [
     title: "Dashboard",
     icon: MdOutlineDashboard,
     href: "/admin/dashboard",
-    roles: ["admin", "general_admin", "receptionist", "pos", "doctor"],
+    roles: ["admin", "general_admin"],
   },
   {
     title: "Citas",
@@ -134,12 +134,39 @@ export default function AdminDashboardLayout() {
     // Load admin user from localStorage
     const storedUser = localStorage.getItem("adminUser");
     if (storedUser) {
-      setAdminUser(JSON.parse(storedUser));
+      const user = JSON.parse(storedUser);
+      setAdminUser(user);
+
+      // Check if current route is accessible for this user
+      const currentRoute = navigation.find(
+        (item) => item.href === location.pathname,
+      );
+      const isAccessible =
+        currentRoute &&
+        (!currentRoute.roles || currentRoute.roles.includes(user.role));
+
+      // If not accessible or on base /admin path, redirect to first available route
+      if (
+        !isAccessible ||
+        location.pathname === "/admin" ||
+        location.pathname === "/admin/"
+      ) {
+        const firstAccessibleRoute = navigation.find(
+          (item) => !item.roles || item.roles.includes(user.role),
+        );
+
+        if (
+          firstAccessibleRoute &&
+          location.pathname !== firstAccessibleRoute.href
+        ) {
+          navigate(firstAccessibleRoute.href, { replace: true });
+        }
+      }
     } else {
       // Redirect to login if no user found
       navigate("/admin/login");
     }
-  }, [navigate]);
+  }, [navigate, location.pathname]);
 
   const handleLogout = () => {
     localStorage.removeItem("adminAccessToken");

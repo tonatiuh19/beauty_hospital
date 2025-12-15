@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { useFormik } from "formik";
+import * as Yup from "yup";
 import {
   MdOutlineSupervisorAccount,
   MdOutlineAdd,
@@ -60,6 +62,34 @@ import {
   type UserFormData,
 } from "@/store/slices/usersSlice";
 
+// Validation schema
+const userValidationSchema = Yup.object({
+  first_name: Yup.string()
+    .required("El nombre es requerido")
+    .min(2, "El nombre debe tener al menos 2 caracteres"),
+  last_name: Yup.string()
+    .required("El apellido es requerido")
+    .min(2, "El apellido debe tener al menos 2 caracteres"),
+  email: Yup.string()
+    .required("El email es requerido")
+    .email("Debe ser un email válido"),
+  role: Yup.string()
+    .required("El rol es requerido")
+    .oneOf(
+      ["admin", "general_admin", "receptionist", "doctor", "pos"],
+      "Rol inválido",
+    ),
+  employee_id: Yup.string(),
+  phone: Yup.string(),
+  specialization: Yup.string().when("role", {
+    is: "doctor",
+    then: (schema) =>
+      schema.required("La especialización es requerida para doctores"),
+    otherwise: (schema) => schema,
+  }),
+  is_active: Yup.boolean(),
+});
+
 export default function UsersManagement() {
   const { toast } = useToast();
   const dispatch = useAppDispatch();
@@ -71,16 +101,105 @@ export default function UsersManagement() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [formData, setFormData] = useState<UserFormData>({
-    email: "",
-    role: "receptionist",
-    first_name: "",
-    last_name: "",
-    phone: "",
-    employee_id: "",
-    specialization: "",
-    password: "",
-    is_active: true,
+
+  // Formik for create modal
+  const createFormik = useFormik({
+    initialValues: {
+      email: "",
+      role: "receptionist",
+      first_name: "",
+      last_name: "",
+      phone: "",
+      employee_id: "",
+      specialization: "",
+      is_active: true,
+    },
+    validationSchema: userValidationSchema,
+    onSubmit: async (values) => {
+      // Check for duplicate email
+      const emailExists = users.some(
+        (user) => user.email.toLowerCase() === values.email.toLowerCase(),
+      );
+
+      if (emailExists) {
+        toast({
+          title: "Error",
+          description: "Ya existe un usuario con este correo electrónico",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      try {
+        await dispatch(createUser(values)).unwrap();
+        toast({
+          title: "Éxito",
+          description: "Usuario creado exitosamente",
+        });
+        setIsCreateModalOpen(false);
+        createFormik.resetForm();
+        dispatch(fetchUsers());
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error || "No se pudo crear el usuario",
+          variant: "destructive",
+        });
+      }
+    },
+  });
+
+  // Formik for edit modal
+  const editFormik = useFormik({
+    initialValues: {
+      email: "",
+      role: "receptionist",
+      first_name: "",
+      last_name: "",
+      phone: "",
+      employee_id: "",
+      specialization: "",
+      is_active: true,
+    },
+    validationSchema: userValidationSchema,
+    onSubmit: async (values) => {
+      if (!selectedUser) return;
+
+      // Check for duplicate email (excluding current user)
+      const emailExists = users.some(
+        (user) =>
+          user.id !== selectedUser.id &&
+          user.email.toLowerCase() === values.email.toLowerCase(),
+      );
+
+      if (emailExists) {
+        toast({
+          title: "Error",
+          description: "Ya existe otro usuario con este correo electrónico",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      try {
+        await dispatch(
+          updateUser({ id: selectedUser.id, data: values }),
+        ).unwrap();
+        toast({
+          title: "Éxito",
+          description: "Usuario actualizado exitosamente",
+        });
+        setIsEditModalOpen(false);
+        editFormik.resetForm();
+        dispatch(fetchUsers());
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error || "No se pudo actualizar el usuario",
+          variant: "destructive",
+        });
+      }
+    },
   });
 
   useEffect(() => {
@@ -96,47 +215,6 @@ export default function UsersManagement() {
       });
     }
   }, [error, toast]);
-
-  const handleCreateUser = async () => {
-    try {
-      await dispatch(createUser(formData)).unwrap();
-      toast({
-        title: "Éxito",
-        description: "Usuario creado exitosamente",
-      });
-      setIsCreateModalOpen(false);
-      resetForm();
-      dispatch(fetchUsers());
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error || "No se pudo crear el usuario",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleUpdateUser = async () => {
-    if (!selectedUser) return;
-    try {
-      await dispatch(
-        updateUser({ id: selectedUser.id, data: formData }),
-      ).unwrap();
-      toast({
-        title: "Éxito",
-        description: "Usuario actualizado exitosamente",
-      });
-      setIsEditModalOpen(false);
-      resetForm();
-      dispatch(fetchUsers());
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error || "No se pudo actualizar el usuario",
-        variant: "destructive",
-      });
-    }
-  };
 
   const handleDeleteUser = async () => {
     if (!selectedUser) return;
@@ -159,7 +237,7 @@ export default function UsersManagement() {
 
   const openEditModal = (user: AdminUser) => {
     dispatch(selectUserAction(user));
-    setFormData({
+    editFormik.setValues({
       email: user.email,
       role: user.role,
       first_name: user.first_name,
@@ -167,7 +245,6 @@ export default function UsersManagement() {
       phone: user.phone || "",
       employee_id: user.employee_id || "",
       specialization: user.specialization || "",
-      password: "",
       is_active: user.is_active,
     });
     setIsEditModalOpen(true);
@@ -178,18 +255,14 @@ export default function UsersManagement() {
     setIsDeleteModalOpen(true);
   };
 
-  const resetForm = () => {
-    setFormData({
-      email: "",
-      role: "receptionist",
-      first_name: "",
-      last_name: "",
-      phone: "",
-      employee_id: "",
-      specialization: "",
-      password: "",
-      is_active: true,
-    });
+  const handleCloseCreateModal = () => {
+    setIsCreateModalOpen(false);
+    createFormik.resetForm();
+  };
+
+  const handleCloseEditModal = () => {
+    setIsEditModalOpen(false);
+    editFormik.resetForm();
     dispatch(selectUserAction(null));
   };
 
@@ -405,120 +478,177 @@ export default function UsersManagement() {
               Agrega un nuevo usuario administrativo al sistema
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="first_name">Nombre</Label>
-                <Input
-                  id="first_name"
-                  value={formData.first_name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, first_name: e.target.value })
-                  }
-                />
+          <form onSubmit={createFormik.handleSubmit}>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="first_name">
+                    Nombre <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="first_name"
+                    name="first_name"
+                    value={createFormik.values.first_name}
+                    onChange={createFormik.handleChange}
+                    onBlur={createFormik.handleBlur}
+                    className={
+                      createFormik.touched.first_name &&
+                      createFormik.errors.first_name
+                        ? "border-red-500"
+                        : ""
+                    }
+                  />
+                  {createFormik.touched.first_name &&
+                    createFormik.errors.first_name && (
+                      <p className="text-sm text-red-500">
+                        {createFormik.errors.first_name}
+                      </p>
+                    )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="last_name">
+                    Apellido <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="last_name"
+                    name="last_name"
+                    value={createFormik.values.last_name}
+                    onChange={createFormik.handleChange}
+                    onBlur={createFormik.handleBlur}
+                    className={
+                      createFormik.touched.last_name &&
+                      createFormik.errors.last_name
+                        ? "border-red-500"
+                        : ""
+                    }
+                  />
+                  {createFormik.touched.last_name &&
+                    createFormik.errors.last_name && (
+                      <p className="text-sm text-red-500">
+                        {createFormik.errors.last_name}
+                      </p>
+                    )}
+                </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="last_name">Apellido</Label>
-                <Input
-                  id="last_name"
-                  value={formData.last_name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, last_name: e.target.value })
-                  }
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={formData.email}
-                onChange={(e) =>
-                  setFormData({ ...formData, email: e.target.value })
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Contraseña</Label>
-              <Input
-                id="password"
-                type="password"
-                value={formData.password}
-                onChange={(e) =>
-                  setFormData({ ...formData, password: e.target.value })
-                }
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="role">Rol</Label>
-                <Select
-                  value={formData.role}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, role: value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="general_admin">General Admin</SelectItem>
-                    <SelectItem value="receptionist">Recepcionista</SelectItem>
-                    <SelectItem value="doctor">Doctor</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="employee_id">ID Empleado</Label>
-                <Input
-                  id="employee_id"
-                  value={formData.employee_id}
-                  onChange={(e) =>
-                    setFormData({ ...formData, employee_id: e.target.value })
-                  }
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="phone">Teléfono</Label>
-                <Input
-                  id="phone"
-                  value={formData.phone}
-                  onChange={(e) =>
-                    setFormData({ ...formData, phone: e.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="specialization">
-                  Especialización (Doctores)
+                <Label htmlFor="email">
+                  Email <span className="text-red-500">*</span>
                 </Label>
                 <Input
-                  id="specialization"
-                  value={formData.specialization}
-                  onChange={(e) =>
-                    setFormData({ ...formData, specialization: e.target.value })
+                  id="email"
+                  name="email"
+                  type="email"
+                  value={createFormik.values.email}
+                  onChange={createFormik.handleChange}
+                  onBlur={createFormik.handleBlur}
+                  className={
+                    createFormik.touched.email && createFormik.errors.email
+                      ? "border-red-500"
+                      : ""
                   }
-                  disabled={formData.role !== "doctor"}
                 />
+                {createFormik.touched.email && createFormik.errors.email && (
+                  <p className="text-sm text-red-500">
+                    {createFormik.errors.email}
+                  </p>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="role">
+                    Rol <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={createFormik.values.role}
+                    onValueChange={(value) =>
+                      createFormik.setFieldValue("role", value)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="general_admin">
+                        General Admin
+                      </SelectItem>
+                      <SelectItem value="receptionist">
+                        Recepcionista
+                      </SelectItem>
+                      <SelectItem value="doctor">Doctor</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {createFormik.touched.role && createFormik.errors.role && (
+                    <p className="text-sm text-red-500">
+                      {createFormik.errors.role}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="employee_id">ID Empleado</Label>
+                  <Input
+                    id="employee_id"
+                    name="employee_id"
+                    value={createFormik.values.employee_id}
+                    onChange={createFormik.handleChange}
+                    onBlur={createFormik.handleBlur}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Teléfono</Label>
+                  <Input
+                    id="phone"
+                    name="phone"
+                    value={createFormik.values.phone}
+                    onChange={createFormik.handleChange}
+                    onBlur={createFormik.handleBlur}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="specialization">
+                    Especialización (Doctores)
+                    {createFormik.values.role === "doctor" && (
+                      <span className="text-red-500"> *</span>
+                    )}
+                  </Label>
+                  <Input
+                    id="specialization"
+                    name="specialization"
+                    value={createFormik.values.specialization}
+                    onChange={createFormik.handleChange}
+                    onBlur={createFormik.handleBlur}
+                    disabled={createFormik.values.role !== "doctor"}
+                    className={
+                      createFormik.touched.specialization &&
+                      createFormik.errors.specialization
+                        ? "border-red-500"
+                        : ""
+                    }
+                  />
+                  {createFormik.touched.specialization &&
+                    createFormik.errors.specialization && (
+                      <p className="text-sm text-red-500">
+                        {createFormik.errors.specialization}
+                      </p>
+                    )}
+                </div>
               </div>
             </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsCreateModalOpen(false);
-                resetForm();
-              }}
-            >
-              Cancelar
-            </Button>
-            <Button onClick={handleCreateUser}>Crear Usuario</Button>
-          </DialogFooter>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCloseCreateModal}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={!createFormik.isValid}>
+                Crear Usuario
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
@@ -531,153 +661,210 @@ export default function UsersManagement() {
               Actualiza la información del usuario
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit_first_name">Nombre</Label>
-                <Input
-                  id="edit_first_name"
-                  value={formData.first_name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, first_name: e.target.value })
-                  }
-                />
+          <form onSubmit={editFormik.handleSubmit}>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit_first_name">
+                    Nombre <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="edit_first_name"
+                    name="first_name"
+                    value={editFormik.values.first_name}
+                    onChange={editFormik.handleChange}
+                    onBlur={editFormik.handleBlur}
+                    className={
+                      editFormik.touched.first_name &&
+                      editFormik.errors.first_name
+                        ? "border-red-500"
+                        : ""
+                    }
+                  />
+                  {editFormik.touched.first_name &&
+                    editFormik.errors.first_name && (
+                      <p className="text-sm text-red-500">
+                        {editFormik.errors.first_name}
+                      </p>
+                    )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit_last_name">
+                    Apellido <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="edit_last_name"
+                    name="last_name"
+                    value={editFormik.values.last_name}
+                    onChange={editFormik.handleChange}
+                    onBlur={editFormik.handleBlur}
+                    className={
+                      editFormik.touched.last_name &&
+                      editFormik.errors.last_name
+                        ? "border-red-500"
+                        : ""
+                    }
+                  />
+                  {editFormik.touched.last_name &&
+                    editFormik.errors.last_name && (
+                      <p className="text-sm text-red-500">
+                        {editFormik.errors.last_name}
+                      </p>
+                    )}
+                </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit_last_name">Apellido</Label>
-                <Input
-                  id="edit_last_name"
-                  value={formData.last_name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, last_name: e.target.value })
-                  }
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit_email">Email</Label>
-              <Input
-                id="edit_email"
-                type="email"
-                value={formData.email}
-                onChange={(e) =>
-                  setFormData({ ...formData, email: e.target.value })
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit_password">
-                Nueva Contraseña (dejar en blanco para mantener la actual)
-              </Label>
-              <Input
-                id="edit_password"
-                type="password"
-                value={formData.password}
-                onChange={(e) =>
-                  setFormData({ ...formData, password: e.target.value })
-                }
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit_role">Rol</Label>
-                <Select
-                  value={formData.role}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, role: value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="general_admin">General Admin</SelectItem>
-                    <SelectItem value="receptionist">Recepcionista</SelectItem>
-                    <SelectItem value="doctor">Doctor</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit_employee_id">ID Empleado</Label>
-                <Input
-                  id="edit_employee_id"
-                  value={formData.employee_id}
-                  onChange={(e) =>
-                    setFormData({ ...formData, employee_id: e.target.value })
-                  }
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit_phone">Teléfono</Label>
-                <Input
-                  id="edit_phone"
-                  value={formData.phone}
-                  onChange={(e) =>
-                    setFormData({ ...formData, phone: e.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit_specialization">
-                  Especialización (Doctores)
+                <Label htmlFor="edit_email">
+                  Email <span className="text-red-500">*</span>
                 </Label>
                 <Input
-                  id="edit_specialization"
-                  value={formData.specialization}
-                  onChange={(e) =>
-                    setFormData({ ...formData, specialization: e.target.value })
-                  }
-                  disabled={formData.role !== "doctor"}
-                />
-              </div>
-            </div>
-            <div className="flex items-center justify-between p-4 border rounded-lg">
-              <div className="space-y-0.5">
-                <Label htmlFor="edit_is_active" className="text-base">
-                  Estado del Usuario
-                </Label>
-                <p className="text-sm text-gray-500">
-                  {formData.is_active
-                    ? "Usuario activo en el sistema"
-                    : "Usuario desactivado, no podrá iniciar sesión"}
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <Badge
-                  variant={formData.is_active ? "default" : "secondary"}
+                  id="edit_email"
+                  name="email"
+                  type="email"
+                  value={editFormik.values.email}
+                  onChange={editFormik.handleChange}
+                  onBlur={editFormik.handleBlur}
                   className={
-                    formData.is_active
-                      ? "bg-green-100 text-green-700"
-                      : "bg-gray-100 text-gray-700"
-                  }
-                >
-                  {formData.is_active ? "Activo" : "Inactivo"}
-                </Badge>
-                <Switch
-                  id="edit_is_active"
-                  checked={formData.is_active}
-                  onCheckedChange={(checked) =>
-                    setFormData({ ...formData, is_active: checked })
+                    editFormik.touched.email && editFormik.errors.email
+                      ? "border-red-500"
+                      : ""
                   }
                 />
+                {editFormik.touched.email && editFormik.errors.email && (
+                  <p className="text-sm text-red-500">
+                    {editFormik.errors.email}
+                  </p>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit_role">
+                    Rol <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={editFormik.values.role}
+                    onValueChange={(value) =>
+                      editFormik.setFieldValue("role", value)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="general_admin">
+                        General Admin
+                      </SelectItem>
+                      <SelectItem value="receptionist">
+                        Recepcionista
+                      </SelectItem>
+                      <SelectItem value="doctor">Doctor</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {editFormik.touched.role && editFormik.errors.role && (
+                    <p className="text-sm text-red-500">
+                      {editFormik.errors.role}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit_employee_id">ID Empleado</Label>
+                  <Input
+                    id="edit_employee_id"
+                    name="employee_id"
+                    value={editFormik.values.employee_id}
+                    onChange={editFormik.handleChange}
+                    onBlur={editFormik.handleBlur}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit_phone">Teléfono</Label>
+                  <Input
+                    id="edit_phone"
+                    name="phone"
+                    value={editFormik.values.phone}
+                    onChange={editFormik.handleChange}
+                    onBlur={editFormik.handleBlur}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit_specialization">
+                    Especialización (Doctores)
+                    {editFormik.values.role === "doctor" && (
+                      <span className="text-red-500"> *</span>
+                    )}
+                  </Label>
+                  <Input
+                    id="edit_specialization"
+                    name="specialization"
+                    value={editFormik.values.specialization}
+                    onChange={editFormik.handleChange}
+                    onBlur={editFormik.handleBlur}
+                    disabled={editFormik.values.role !== "doctor"}
+                    className={
+                      editFormik.touched.specialization &&
+                      editFormik.errors.specialization
+                        ? "border-red-500"
+                        : ""
+                    }
+                  />
+                  {editFormik.touched.specialization &&
+                    editFormik.errors.specialization && (
+                      <p className="text-sm text-red-500">
+                        {editFormik.errors.specialization}
+                      </p>
+                    )}
+                </div>
+              </div>
+              <div className="flex items-center justify-between p-4 border rounded-lg">
+                <div className="space-y-0.5">
+                  <Label htmlFor="edit_is_active" className="text-base">
+                    Estado del Usuario
+                  </Label>
+                  <p className="text-sm text-gray-500">
+                    {editFormik.values.is_active
+                      ? "Usuario activo en el sistema"
+                      : "Usuario desactivado, no podrá iniciar sesión"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Badge
+                    variant={
+                      editFormik.values.is_active ? "default" : "secondary"
+                    }
+                    className={
+                      editFormik.values.is_active
+                        ? "bg-green-100 text-green-700"
+                        : "bg-gray-100 text-gray-700"
+                    }
+                  >
+                    {editFormik.values.is_active ? "Activo" : "Inactivo"}
+                  </Badge>
+                  <Switch
+                    id="edit_is_active"
+                    checked={editFormik.values.is_active}
+                    onCheckedChange={(checked) =>
+                      editFormik.setFieldValue("is_active", checked)
+                    }
+                  />
+                </div>
               </div>
             </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsEditModalOpen(false);
-                resetForm();
-              }}
-            >
-              Cancelar
-            </Button>
-            <Button onClick={handleUpdateUser}>Actualizar Usuario</Button>
-          </DialogFooter>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCloseEditModal}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={!editFormik.isValid}>
+                Actualizar Usuario
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

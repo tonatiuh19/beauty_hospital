@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { useFormik } from "formik";
+import * as Yup from "yup";
 import {
   Plus,
   Edit,
@@ -35,47 +37,111 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import axios from "@/lib/axios";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import {
+  fetchAdminBlockedDates,
+  createBlockedDate,
+  updateBlockedDate,
+  deleteBlockedDate,
+} from "@/store/slices/blockedDatesSlice";
 
-interface BlockedDate {
-  id: number;
-  start_date: string;
-  end_date: string;
-  start_time: string | null;
-  end_time: string | null;
-  all_day: boolean;
-  reason: string | null;
-  notes: string | null;
-  created_by: number;
-  created_at: string;
-  updated_at: string;
-  creator_first_name?: string;
-  creator_last_name?: string;
-}
+// Validation schema
+const blockedDateValidationSchema = Yup.object({
+  start_date: Yup.string().required("La fecha de inicio es requerida"),
+  end_date: Yup.string()
+    .required("La fecha de fin es requerida")
+    .test(
+      "is-greater-or-equal",
+      "La fecha de fin debe ser igual o posterior a la fecha de inicio",
+      function (value) {
+        const { start_date } = this.parent;
+        if (!value || !start_date) return true;
+        return new Date(value) >= new Date(start_date);
+      },
+    ),
+  start_time: Yup.string().when("all_day", {
+    is: false,
+    then: (schema) => schema.required("La hora de inicio es requerida"),
+    otherwise: (schema) => schema,
+  }),
+  end_time: Yup.string().when("all_day", {
+    is: false,
+    then: (schema) => schema.required("La hora de fin es requerida"),
+    otherwise: (schema) => schema,
+  }),
+  all_day: Yup.boolean(),
+  reason: Yup.string(),
+  notes: Yup.string(),
+});
 
 export default function BlockedDatesManagement() {
-  const [blockedDates, setBlockedDates] = useState<BlockedDate[]>([]);
-  const [filteredDates, setFilteredDates] = useState<BlockedDate[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+  const dispatch = useAppDispatch();
+  const { blockedDates, loading, error } = useAppSelector(
+    (state) => state.blockedDates,
+  );
+
+  const [filteredDates, setFilteredDates] = useState<typeof blockedDates>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [editingDate, setEditingDate] = useState<BlockedDate | null>(null);
-  const [deletingDate, setDeletingDate] = useState<BlockedDate | null>(null);
-  const [formData, setFormData] = useState({
-    start_date: "",
-    end_date: "",
-    start_time: "",
-    end_time: "",
-    all_day: true,
-    reason: "",
-    notes: "",
+  const [editingDate, setEditingDate] = useState<
+    (typeof blockedDates)[0] | null
+  >(null);
+  const [deletingDate, setDeletingDate] = useState<
+    (typeof blockedDates)[0] | null
+  >(null);
+
+  // Formik instance
+  const formik = useFormik({
+    initialValues: {
+      start_date: "",
+      end_date: "",
+      start_time: "",
+      end_time: "",
+      all_day: true,
+      reason: "",
+      notes: "",
+    },
+    validationSchema: blockedDateValidationSchema,
+    onSubmit: async (values) => {
+      try {
+        const payload = {
+          ...values,
+          start_time: values.all_day ? null : values.start_time || null,
+          end_time: values.all_day ? null : values.end_time || null,
+        };
+
+        if (editingDate) {
+          await dispatch(
+            updateBlockedDate({ id: editingDate.id, data: payload }),
+          ).unwrap();
+          toast({
+            title: "Éxito",
+            description: "Fecha bloqueada actualizada correctamente",
+          });
+        } else {
+          await dispatch(createBlockedDate(payload)).unwrap();
+          toast({
+            title: "Éxito",
+            description: "Fecha bloqueada creada correctamente",
+          });
+        }
+
+        handleCloseDialog();
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error || "No se pudo guardar la fecha bloqueada",
+          variant: "destructive",
+        });
+      }
+    },
   });
-  const { toast } = useToast();
 
   useEffect(() => {
-    fetchBlockedDates();
-  }, []);
+    dispatch(fetchAdminBlockedDates());
+  }, [dispatch]);
 
   useEffect(() => {
     const filtered = blockedDates.filter(
@@ -86,35 +152,23 @@ export default function BlockedDatesManagement() {
     setFilteredDates(filtered);
   }, [searchQuery, blockedDates]);
 
-  const fetchBlockedDates = async () => {
-    try {
-      setLoading(true);
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get("/admin/blocked-dates", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      setBlockedDates(response.data.data.items || []);
-    } catch (error) {
-      console.error("Error fetching blocked dates:", error);
+  useEffect(() => {
+    if (error) {
       toast({
         title: "Error",
-        description: "No se pudieron cargar las fechas bloqueadas",
+        description: error,
         variant: "destructive",
       });
-    } finally {
-      setLoading(false);
     }
-  };
-  const handleOpenDialog = (date?: BlockedDate) => {
+  }, [error, toast]);
+
+  const handleOpenDialog = (date?: (typeof blockedDates)[0]) => {
     if (date) {
       setEditingDate(date);
-      // Convert ISO date strings to YYYY-MM-DD format for date inputs
       const startDate = new Date(date.start_date).toISOString().split("T")[0];
       const endDate = new Date(date.end_date).toISOString().split("T")[0];
 
-      setFormData({
+      formik.setValues({
         start_date: startDate,
         end_date: endDate,
         start_time: date.start_time || "",
@@ -125,15 +179,7 @@ export default function BlockedDatesManagement() {
       });
     } else {
       setEditingDate(null);
-      setFormData({
-        start_date: "",
-        end_date: "",
-        start_time: "",
-        end_time: "",
-        all_day: true,
-        reason: "",
-        notes: "",
-      });
+      formik.resetForm();
     }
     setIsDialogOpen(true);
   };
@@ -141,94 +187,34 @@ export default function BlockedDatesManagement() {
   const handleCloseDialog = () => {
     setIsDialogOpen(false);
     setEditingDate(null);
-    setFormData({
-      start_date: "",
-      end_date: "",
-      start_time: "",
-      end_time: "",
-      all_day: true,
-      reason: "",
-      notes: "",
-    });
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    try {
-      const token = localStorage.getItem("adminAccessToken");
-      const payload = {
-        ...formData,
-        start_time: formData.all_day ? null : formData.start_time || null,
-        end_time: formData.all_day ? null : formData.end_time || null,
-      };
-
-      if (editingDate) {
-        await axios.put(`/admin/blocked-dates/${editingDate.id}`, payload, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        toast({
-          title: "Éxito",
-          description: "Fecha bloqueada actualizada correctamente",
-        });
-      } else {
-        await axios.post("/admin/blocked-dates", payload, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        toast({
-          title: "Éxito",
-          description: "Fecha bloqueada creada correctamente",
-        });
-      }
-
-      handleCloseDialog();
-      fetchBlockedDates();
-    } catch (error) {
-      console.error("Error saving blocked date:", error);
-      toast({
-        title: "Error",
-        description: "No se pudo guardar la fecha bloqueada",
-        variant: "destructive",
-      });
-    }
+    formik.resetForm();
   };
 
   const handleDelete = async () => {
     if (!deletingDate) return;
 
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      await axios.delete(`/admin/blocked-dates/${deletingDate.id}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      await dispatch(deleteBlockedDate(deletingDate.id)).unwrap();
       toast({
         title: "Éxito",
         description: "Fecha bloqueada eliminada correctamente",
       });
       setIsDeleteDialogOpen(false);
       setDeletingDate(null);
-      fetchBlockedDates();
-    } catch (error) {
-      console.error("Error deleting blocked date:", error);
+    } catch (error: any) {
       toast({
         title: "Error",
-        description: "No se pudo eliminar la fecha bloqueada",
+        description: error || "No se pudo eliminar la fecha bloqueada",
         variant: "destructive",
       });
     }
   };
 
-  const formatDateRange = (start: string, end: string) => {
-    const startDate = new Date(start);
-    const endDate = new Date(end);
+  const formatDateRange = (start: Date | string, end: Date | string) => {
+    const startDate = start instanceof Date ? start : new Date(start);
+    const endDate = end instanceof Date ? end : new Date(end);
 
-    if (start === end) {
+    if (startDate.toDateString() === endDate.toDateString()) {
       return format(startDate, "dd MMM yyyy", { locale: es });
     }
     return `${format(startDate, "dd MMM", { locale: es })} - ${format(endDate, "dd MMM yyyy", { locale: es })}`;
@@ -419,41 +405,63 @@ export default function BlockedDatesManagement() {
                 : "Bloquea una fecha o rango de fechas para prevenir citas"}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={formik.handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="start_date">Fecha Inicio *</Label>
+                <Label htmlFor="start_date">
+                  Fecha Inicio <span className="text-red-500">*</span>
+                </Label>
                 <Input
                   id="start_date"
+                  name="start_date"
                   type="date"
-                  value={formData.start_date}
-                  onChange={(e) =>
-                    setFormData({ ...formData, start_date: e.target.value })
+                  value={formik.values.start_date}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
+                  className={
+                    formik.touched.start_date && formik.errors.start_date
+                      ? "border-red-500"
+                      : ""
                   }
-                  required
                 />
+                {formik.touched.start_date && formik.errors.start_date && (
+                  <p className="text-sm text-red-500">
+                    {formik.errors.start_date}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="end_date">Fecha Fin *</Label>
+                <Label htmlFor="end_date">
+                  Fecha Fin <span className="text-red-500">*</span>
+                </Label>
                 <Input
                   id="end_date"
+                  name="end_date"
                   type="date"
-                  value={formData.end_date}
-                  onChange={(e) =>
-                    setFormData({ ...formData, end_date: e.target.value })
+                  value={formik.values.end_date}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
+                  className={
+                    formik.touched.end_date && formik.errors.end_date
+                      ? "border-red-500"
+                      : ""
                   }
-                  required
                 />
+                {formik.touched.end_date && formik.errors.end_date && (
+                  <p className="text-sm text-red-500">
+                    {formik.errors.end_date}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2 md:col-span-2">
                 <div className="flex items-center space-x-2">
                   <Checkbox
                     id="all_day"
-                    checked={formData.all_day}
+                    checked={formik.values.all_day}
                     onCheckedChange={(checked) =>
-                      setFormData({ ...formData, all_day: checked as boolean })
+                      formik.setFieldValue("all_day", checked as boolean)
                     }
                   />
                   <Label htmlFor="all_day" className="cursor-pointer">
@@ -462,46 +470,67 @@ export default function BlockedDatesManagement() {
                 </div>
               </div>
 
-              {!formData.all_day && (
+              {!formik.values.all_day && (
                 <>
                   <div className="space-y-2">
-                    <Label htmlFor="start_time">Hora Inicio</Label>
+                    <Label htmlFor="start_time">
+                      Hora Inicio <span className="text-red-500">*</span>
+                    </Label>
                     <Input
                       id="start_time"
+                      name="start_time"
                       type="time"
-                      value={formData.start_time}
-                      onChange={(e) =>
-                        setFormData({ ...formData, start_time: e.target.value })
+                      value={formik.values.start_time}
+                      onChange={formik.handleChange}
+                      onBlur={formik.handleBlur}
+                      className={
+                        formik.touched.start_time && formik.errors.start_time
+                          ? "border-red-500"
+                          : ""
                       }
-                      required={!formData.all_day}
                     />
+                    {formik.touched.start_time && formik.errors.start_time && (
+                      <p className="text-sm text-red-500">
+                        {formik.errors.start_time}
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="end_time">Hora Fin</Label>
+                    <Label htmlFor="end_time">
+                      Hora Fin <span className="text-red-500">*</span>
+                    </Label>
                     <Input
                       id="end_time"
+                      name="end_time"
                       type="time"
-                      value={formData.end_time}
-                      onChange={(e) =>
-                        setFormData({ ...formData, end_time: e.target.value })
+                      value={formik.values.end_time}
+                      onChange={formik.handleChange}
+                      onBlur={formik.handleBlur}
+                      className={
+                        formik.touched.end_time && formik.errors.end_time
+                          ? "border-red-500"
+                          : ""
                       }
-                      required={!formData.all_day}
                     />
+                    {formik.touched.end_time && formik.errors.end_time && (
+                      <p className="text-sm text-red-500">
+                        {formik.errors.end_time}
+                      </p>
+                    )}
                   </div>
                 </>
               )}
 
               <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="reason">Razón *</Label>
+                <Label htmlFor="reason">Razón</Label>
                 <Input
                   id="reason"
-                  value={formData.reason}
-                  onChange={(e) =>
-                    setFormData({ ...formData, reason: e.target.value })
-                  }
+                  name="reason"
+                  value={formik.values.reason}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
                   placeholder="Ej: Día festivo, Mantenimiento, Vacaciones"
-                  required
                 />
               </div>
 
@@ -509,10 +538,10 @@ export default function BlockedDatesManagement() {
                 <Label htmlFor="notes">Notas Adicionales</Label>
                 <Textarea
                   id="notes"
-                  value={formData.notes}
-                  onChange={(e) =>
-                    setFormData({ ...formData, notes: e.target.value })
-                  }
+                  name="notes"
+                  value={formik.values.notes}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
                   placeholder="Información adicional sobre el bloqueo"
                   rows={3}
                 />
@@ -542,7 +571,7 @@ export default function BlockedDatesManagement() {
                 <X className="h-4 w-4 mr-2" />
                 Cancelar
               </Button>
-              <Button type="submit">
+              <Button type="submit" disabled={!formik.isValid}>
                 <Save className="h-4 w-4 mr-2" />
                 {editingDate ? "Actualizar" : "Crear"}
               </Button>

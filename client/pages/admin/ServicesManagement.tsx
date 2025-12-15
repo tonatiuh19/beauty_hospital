@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { useFormik } from "formik";
+import * as Yup from "yup";
 import {
   Plus,
   Edit,
@@ -54,6 +56,22 @@ const categoryOptions = [
   { value: "other", label: "Otro" },
 ];
 
+// Validation schema
+const serviceValidationSchema = Yup.object({
+  name: Yup.string()
+    .required("El nombre es requerido")
+    .min(3, "El nombre debe tener al menos 3 caracteres"),
+  description: Yup.string(),
+  category: Yup.string().required("La categoría es requerida"),
+  price: Yup.number()
+    .required("El precio es requerido")
+    .min(0, "El precio debe ser mayor o igual a 0"),
+  duration_minutes: Yup.number()
+    .required("La duración es requerida")
+    .min(1, "La duración debe ser al menos 1 minuto"),
+  is_active: Yup.boolean(),
+});
+
 export default function ServicesManagement() {
   const [services, setServices] = useState<Service[]>([]);
   const [filteredServices, setFilteredServices] = useState<Service[]>([]);
@@ -63,15 +81,51 @@ export default function ServicesManagement() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [deletingService, setDeletingService] = useState<Service | null>(null);
-  const [formData, setFormData] = useState({
-    name: "",
-    description: "",
-    category: "laser_hair_removal",
-    price: "",
-    duration_minutes: "",
-    is_active: true,
-  });
   const { toast } = useToast();
+
+  // Formik instance
+  const formik = useFormik({
+    initialValues: {
+      name: "",
+      description: "",
+      category: "laser_hair_removal",
+      price: 0,
+      duration_minutes: 0,
+      is_active: true,
+    },
+    validationSchema: serviceValidationSchema,
+    onSubmit: async (values) => {
+      try {
+        const token = localStorage.getItem("adminAccessToken");
+        if (editingService) {
+          await axios.put(`/admin/services/${editingService.id}`, values, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          toast({
+            title: "Éxito",
+            description: "Servicio actualizado correctamente",
+          });
+        } else {
+          await axios.post("/admin/services", values, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          toast({
+            title: "Éxito",
+            description: "Servicio creado correctamente",
+          });
+        }
+        handleCloseDialog();
+        fetchServices();
+      } catch (error) {
+        console.error("Error saving service:", error);
+        toast({
+          title: "Error",
+          description: "No se pudo guardar el servicio",
+          variant: "destructive",
+        });
+      }
+    },
+  });
 
   useEffect(() => {
     fetchServices();
@@ -114,24 +168,17 @@ export default function ServicesManagement() {
   const handleOpenDialog = (service?: Service) => {
     if (service) {
       setEditingService(service);
-      setFormData({
+      formik.setValues({
         name: service.name,
         description: service.description || "",
         category: service.category,
-        price: service.price.toString(),
-        duration_minutes: service.duration_minutes.toString(),
+        price: service.price,
+        duration_minutes: service.duration_minutes,
         is_active: service.is_active,
       });
     } else {
       setEditingService(null);
-      setFormData({
-        name: "",
-        description: "",
-        category: "laser_hair_removal",
-        price: "",
-        duration_minutes: "",
-        is_active: true,
-      });
+      formik.resetForm();
     }
     setIsDialogOpen(true);
   };
@@ -139,59 +186,7 @@ export default function ServicesManagement() {
   const handleCloseDialog = () => {
     setIsDialogOpen(false);
     setEditingService(null);
-    setFormData({
-      name: "",
-      description: "",
-      category: "laser_hair_removal",
-      price: "",
-      duration_minutes: "",
-      is_active: true,
-    });
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    try {
-      const token = localStorage.getItem("adminAccessToken");
-      const payload = {
-        ...formData,
-        price: parseFloat(formData.price),
-        duration_minutes: parseInt(formData.duration_minutes, 10),
-      };
-
-      if (editingService) {
-        await axios.put(`/admin/services/${editingService.id}`, payload, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        toast({
-          title: "Éxito",
-          description: "Servicio actualizado correctamente",
-        });
-      } else {
-        await axios.post("/admin/services", payload, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        toast({
-          title: "Éxito",
-          description: "Servicio creado correctamente",
-        });
-      }
-
-      handleCloseDialog();
-      fetchServices();
-    } catch (error) {
-      console.error("Error saving service:", error);
-      toast({
-        title: "Error",
-        description: "No se pudo guardar el servicio",
-        variant: "destructive",
-      });
-    }
+    formik.resetForm();
   };
 
   const handleDelete = async () => {
@@ -426,43 +421,60 @@ export default function ServicesManagement() {
                 : "Crea un nuevo servicio para tu clínica"}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={formik.handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="name">Nombre del Servicio *</Label>
+                <Label htmlFor="name">
+                  Nombre del Servicio <span className="text-red-500">*</span>
+                </Label>
                 <Input
                   id="name"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
+                  name="name"
+                  value={formik.values.name}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
                   placeholder="Ej: Láser Diodo - Área Pequeña"
-                  required
+                  className={
+                    formik.touched.name && formik.errors.name
+                      ? "border-red-500"
+                      : ""
+                  }
                 />
+                {formik.touched.name && formik.errors.name && (
+                  <p className="text-sm text-red-500">{formik.errors.name}</p>
+                )}
               </div>
 
               <div className="space-y-2 md:col-span-2">
                 <Label htmlFor="description">Descripción</Label>
                 <Textarea
                   id="description"
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
+                  name="description"
+                  value={formik.values.description}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
                   placeholder="Descripción detallada del servicio"
                   rows={3}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="category">Categoría *</Label>
+                <Label htmlFor="category">
+                  Categoría <span className="text-red-500">*</span>
+                </Label>
                 <Select
-                  value={formData.category}
+                  value={formik.values.category}
                   onValueChange={(value) =>
-                    setFormData({ ...formData, category: value })
+                    formik.setFieldValue("category", value)
                   }
                 >
-                  <SelectTrigger>
+                  <SelectTrigger
+                    className={
+                      formik.touched.category && formik.errors.category
+                        ? "border-red-500"
+                        : ""
+                    }
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -473,48 +485,72 @@ export default function ServicesManagement() {
                     ))}
                   </SelectContent>
                 </Select>
+                {formik.touched.category && formik.errors.category && (
+                  <p className="text-sm text-red-500">
+                    {formik.errors.category}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="price">Precio ($) *</Label>
+                <Label htmlFor="price">
+                  Precio ($) <span className="text-red-500">*</span>
+                </Label>
                 <Input
                   id="price"
+                  name="price"
                   type="number"
                   step="0.01"
                   min="0"
-                  value={formData.price}
-                  onChange={(e) =>
-                    setFormData({ ...formData, price: e.target.value })
-                  }
+                  value={formik.values.price}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
                   placeholder="0.00"
-                  required
+                  className={
+                    formik.touched.price && formik.errors.price
+                      ? "border-red-500"
+                      : ""
+                  }
                 />
+                {formik.touched.price && formik.errors.price && (
+                  <p className="text-sm text-red-500">{formik.errors.price}</p>
+                )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="duration">Duración (minutos) *</Label>
+                <Label htmlFor="duration_minutes">
+                  Duración (minutos) <span className="text-red-500">*</span>
+                </Label>
                 <Input
-                  id="duration"
+                  id="duration_minutes"
+                  name="duration_minutes"
                   type="number"
                   min="1"
-                  value={formData.duration_minutes}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      duration_minutes: e.target.value,
-                    })
-                  }
+                  value={formik.values.duration_minutes}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
                   placeholder="30"
-                  required
+                  className={
+                    formik.touched.duration_minutes &&
+                    formik.errors.duration_minutes
+                      ? "border-red-500"
+                      : ""
+                  }
                 />
+                {formik.touched.duration_minutes &&
+                  formik.errors.duration_minutes && (
+                    <p className="text-sm text-red-500">
+                      {formik.errors.duration_minutes}
+                    </p>
+                  )}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="is_active">Estado</Label>
                 <Select
-                  value={formData.is_active ? "true" : "false"}
+                  value={formik.values.is_active ? "true" : "false"}
                   onValueChange={(value) =>
-                    setFormData({ ...formData, is_active: value === "true" })
+                    formik.setFieldValue("is_active", value === "true")
                   }
                 >
                   <SelectTrigger>
@@ -537,7 +573,7 @@ export default function ServicesManagement() {
                 <X className="h-4 w-4 mr-2" />
                 Cancelar
               </Button>
-              <Button type="submit">
+              <Button type="submit" disabled={!formik.isValid}>
                 <Save className="h-4 w-4 mr-2" />
                 {editingService ? "Actualizar" : "Crear"}
               </Button>

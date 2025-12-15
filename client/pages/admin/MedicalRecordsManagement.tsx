@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { useFormik } from "formik";
+import * as Yup from "yup";
 import {
   MdOutlineMedicalServices,
   MdOutlineAdd,
@@ -60,6 +62,21 @@ import {
   type MedicalRecordFormData,
 } from "@/store/slices/medicalRecordsSlice";
 
+// Validation schema
+const medicalRecordValidationSchema = Yup.object({
+  patient_id: Yup.number().required("El paciente es requerido").nullable(),
+  appointment_id: Yup.number().nullable(),
+  visit_date: Yup.string().required("La fecha de visita es requerida"),
+  diagnosis: Yup.string()
+    .required("El diagnóstico es requerido")
+    .min(10, "El diagnóstico debe tener al menos 10 caracteres"),
+  treatment: Yup.string()
+    .required("El tratamiento es requerido")
+    .min(10, "El tratamiento debe tener al menos 10 caracteres"),
+  prescriptions: Yup.string(),
+  notes: Yup.string(),
+});
+
 export default function MedicalRecordsManagement() {
   const { toast } = useToast();
   const dispatch = useAppDispatch();
@@ -75,14 +92,72 @@ export default function MedicalRecordsManagement() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [formData, setFormData] = useState<MedicalRecordFormData>({
-    patient_id: null,
-    appointment_id: null,
-    visit_date: new Date().toISOString().split("T")[0],
-    diagnosis: "",
-    treatment: "",
-    notes: "",
-    prescriptions: "",
+
+  // Formik for create modal
+  const createFormik = useFormik({
+    initialValues: {
+      patient_id: null,
+      appointment_id: null,
+      visit_date: new Date().toISOString().split("T")[0],
+      diagnosis: "",
+      treatment: "",
+      notes: "",
+      prescriptions: "",
+    },
+    validationSchema: medicalRecordValidationSchema,
+    onSubmit: async (values) => {
+      try {
+        await dispatch(createMedicalRecord(values)).unwrap();
+        toast({
+          title: "Éxito",
+          description: "Expediente médico creado exitosamente",
+        });
+        setIsCreateModalOpen(false);
+        createFormik.resetForm();
+        dispatch(fetchMedicalRecords());
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error || "No se pudo crear el expediente médico",
+          variant: "destructive",
+        });
+      }
+    },
+  });
+
+  // Formik for edit modal
+  const editFormik = useFormik({
+    initialValues: {
+      patient_id: null,
+      appointment_id: null,
+      visit_date: new Date().toISOString().split("T")[0],
+      diagnosis: "",
+      treatment: "",
+      notes: "",
+      prescriptions: "",
+    },
+    validationSchema: medicalRecordValidationSchema,
+    onSubmit: async (values) => {
+      if (!selectedRecord) return;
+      try {
+        await dispatch(
+          updateMedicalRecord({ id: selectedRecord.id, data: values }),
+        ).unwrap();
+        toast({
+          title: "Éxito",
+          description: "Expediente médico actualizado exitosamente",
+        });
+        setIsEditModalOpen(false);
+        editFormik.resetForm();
+        dispatch(fetchMedicalRecords());
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error || "No se pudo actualizar el expediente médico",
+          variant: "destructive",
+        });
+      }
+    },
   });
 
   useEffect(() => {
@@ -90,12 +165,19 @@ export default function MedicalRecordsManagement() {
     dispatch(fetchPatients());
   }, [dispatch]);
 
-  // Fetch appointments when patient is selected in form
+  // Fetch appointments when patient is selected in create form
   useEffect(() => {
-    if (formData.patient_id) {
-      dispatch(fetchAppointments(formData.patient_id));
+    if (createFormik.values.patient_id) {
+      dispatch(fetchAppointments(createFormik.values.patient_id));
     }
-  }, [formData.patient_id, dispatch]);
+  }, [createFormik.values.patient_id, dispatch]);
+
+  // Fetch appointments when patient is selected in edit form
+  useEffect(() => {
+    if (editFormik.values.patient_id) {
+      dispatch(fetchAppointments(editFormik.values.patient_id));
+    }
+  }, [editFormik.values.patient_id, dispatch]);
 
   useEffect(() => {
     if (error) {
@@ -107,47 +189,6 @@ export default function MedicalRecordsManagement() {
     }
   }, [error, toast]);
 
-  const handleCreateRecord = async () => {
-    try {
-      await dispatch(createMedicalRecord(formData)).unwrap();
-      toast({
-        title: "Éxito",
-        description: "Expediente médico creado exitosamente",
-      });
-      setIsCreateModalOpen(false);
-      resetForm();
-      dispatch(fetchMedicalRecords());
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error || "No se pudo crear el expediente médico",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleUpdateRecord = async () => {
-    if (!selectedRecord) return;
-    try {
-      await dispatch(
-        updateMedicalRecord({ id: selectedRecord.id, data: formData }),
-      ).unwrap();
-      toast({
-        title: "Éxito",
-        description: "Expediente médico actualizado exitosamente",
-      });
-      setIsEditModalOpen(false);
-      resetForm();
-      dispatch(fetchMedicalRecords());
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error || "No se pudo actualizar el expediente médico",
-        variant: "destructive",
-      });
-    }
-  };
-
   const openViewModal = (record: MedicalRecord) => {
     dispatch(selectRecord(record));
     setIsViewModalOpen(true);
@@ -155,7 +196,7 @@ export default function MedicalRecordsManagement() {
 
   const openEditModal = (record: MedicalRecord) => {
     dispatch(selectRecord(record));
-    setFormData({
+    editFormik.setValues({
       patient_id: record.patient_id,
       appointment_id: record.appointment_id || null,
       visit_date: record.visit_date.split("T")[0],
@@ -167,16 +208,14 @@ export default function MedicalRecordsManagement() {
     setIsEditModalOpen(true);
   };
 
-  const resetForm = () => {
-    setFormData({
-      patient_id: null,
-      appointment_id: null,
-      visit_date: new Date().toISOString().split("T")[0],
-      diagnosis: "",
-      treatment: "",
-      notes: "",
-      prescriptions: "",
-    });
+  const handleCloseCreateModal = () => {
+    setIsCreateModalOpen(false);
+    createFormik.resetForm();
+  };
+
+  const handleCloseEditModal = () => {
+    setIsEditModalOpen(false);
+    editFormik.resetForm();
     dispatch(selectRecord(null));
   };
 
@@ -354,156 +393,223 @@ export default function MedicalRecordsManagement() {
               Registra un nuevo expediente médico para un paciente
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="patient">Paciente</Label>
-              <Select
-                value={formData.patient_id?.toString() || ""}
-                onValueChange={(value) =>
-                  setFormData({
-                    ...formData,
-                    patient_id: parseInt(value),
-                    appointment_id: null,
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar paciente" />
-                </SelectTrigger>
-                <SelectContent>
-                  {patients.map((patient) => (
-                    <SelectItem key={patient.id} value={patient.id.toString()}>
-                      {patient.first_name} {patient.last_name} - {patient.email}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {formData.patient_id && (
+          <form onSubmit={createFormik.handleSubmit}>
+            <div className="grid gap-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="appointment">Cita (Opcional)</Label>
+                <Label htmlFor="patient">
+                  Paciente <span className="text-red-500">*</span>
+                </Label>
                 <Select
-                  value={formData.appointment_id?.toString() || "none"}
-                  onValueChange={(value) =>
-                    setFormData({
-                      ...formData,
-                      appointment_id: value === "none" ? null : parseInt(value),
-                    })
-                  }
-                  disabled={loading}
+                  value={createFormik.values.patient_id?.toString() || ""}
+                  onValueChange={(value) => {
+                    createFormik.setFieldValue("patient_id", parseInt(value));
+                    createFormik.setFieldValue("appointment_id", null);
+                  }}
                 >
-                  <SelectTrigger>
-                    <SelectValue
-                      placeholder={
-                        loading
-                          ? "Cargando citas..."
-                          : appointments.filter(
-                                (apt) => apt.patient_id === formData.patient_id,
-                              ).length === 0
-                            ? "No hay citas para este paciente"
-                            : "Seleccionar cita relacionada"
-                      }
-                    />
+                  <SelectTrigger
+                    className={
+                      createFormik.touched.patient_id &&
+                      createFormik.errors.patient_id
+                        ? "border-red-500"
+                        : ""
+                    }
+                  >
+                    <SelectValue placeholder="Seleccionar paciente" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Ninguna</SelectItem>
-                    {appointments
-                      .filter((apt) => apt.patient_id === formData.patient_id)
-                      .map((appointment) => (
-                        <SelectItem
-                          key={appointment.id}
-                          value={appointment.id.toString()}
-                        >
-                          {appointment.service_name} -{" "}
-                          {new Date(appointment.scheduled_at).toLocaleString(
-                            "es-MX",
-                          )}{" "}
-                          ({appointment.status})
-                        </SelectItem>
-                      ))}
+                    {patients.map((patient) => (
+                      <SelectItem
+                        key={patient.id}
+                        value={patient.id.toString()}
+                      >
+                        {patient.first_name} {patient.last_name} -{" "}
+                        {patient.email}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
-                {appointments.filter(
-                  (apt) => apt.patient_id === formData.patient_id,
-                ).length === 0 &&
-                  !loading && (
-                    <p className="text-xs text-gray-500">
-                      Este paciente no tiene citas registradas. Puedes crear el
-                      expediente sin asociarlo a una cita.
+                {createFormik.touched.patient_id &&
+                  createFormik.errors.patient_id && (
+                    <p className="text-sm text-red-500">
+                      {String(createFormik.errors.patient_id)}
                     </p>
                   )}
               </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="visit_date">Fecha de Visita</Label>
-              <Input
-                id="visit_date"
-                type="date"
-                value={formData.visit_date}
-                onChange={(e) =>
-                  setFormData({ ...formData, visit_date: e.target.value })
-                }
-              />
+              {createFormik.values.patient_id && (
+                <div className="space-y-2">
+                  <Label htmlFor="appointment">Cita (Opcional)</Label>
+                  <Select
+                    value={
+                      createFormik.values.appointment_id?.toString() || "none"
+                    }
+                    onValueChange={(value) =>
+                      createFormik.setFieldValue(
+                        "appointment_id",
+                        value === "none" ? null : parseInt(value),
+                      )
+                    }
+                    disabled={loading}
+                  >
+                    <SelectTrigger>
+                      <SelectValue
+                        placeholder={
+                          loading
+                            ? "Cargando citas..."
+                            : appointments.filter(
+                                  (apt) =>
+                                    apt.patient_id ===
+                                    createFormik.values.patient_id,
+                                ).length === 0
+                              ? "No hay citas para este paciente"
+                              : "Seleccionar cita relacionada"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Ninguna</SelectItem>
+                      {appointments
+                        .filter(
+                          (apt) =>
+                            apt.patient_id === createFormik.values.patient_id,
+                        )
+                        .map((appointment) => (
+                          <SelectItem
+                            key={appointment.id}
+                            value={appointment.id.toString()}
+                          >
+                            {appointment.service_name} -{" "}
+                            {new Date(appointment.scheduled_at).toLocaleString(
+                              "es-MX",
+                            )}{" "}
+                            ({appointment.status})
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  {appointments.filter(
+                    (apt) => apt.patient_id === createFormik.values.patient_id,
+                  ).length === 0 &&
+                    !loading && (
+                      <p className="text-xs text-gray-500">
+                        Este paciente no tiene citas registradas. Puedes crear
+                        el expediente sin asociarlo a una cita.
+                      </p>
+                    )}
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="visit_date">
+                  Fecha de Visita <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="visit_date"
+                  name="visit_date"
+                  type="date"
+                  value={createFormik.values.visit_date}
+                  onChange={createFormik.handleChange}
+                  onBlur={createFormik.handleBlur}
+                  className={
+                    createFormik.touched.visit_date &&
+                    createFormik.errors.visit_date
+                      ? "border-red-500"
+                      : ""
+                  }
+                />
+                {createFormik.touched.visit_date &&
+                  createFormik.errors.visit_date && (
+                    <p className="text-sm text-red-500">
+                      {createFormik.errors.visit_date}
+                    </p>
+                  )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="diagnosis">
+                  Diagnóstico <span className="text-red-500">*</span>
+                </Label>
+                <Textarea
+                  id="diagnosis"
+                  name="diagnosis"
+                  value={createFormik.values.diagnosis}
+                  onChange={createFormik.handleChange}
+                  onBlur={createFormik.handleBlur}
+                  rows={3}
+                  className={
+                    createFormik.touched.diagnosis &&
+                    createFormik.errors.diagnosis
+                      ? "border-red-500"
+                      : ""
+                  }
+                />
+                {createFormik.touched.diagnosis &&
+                  createFormik.errors.diagnosis && (
+                    <p className="text-sm text-red-500">
+                      {createFormik.errors.diagnosis}
+                    </p>
+                  )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="treatment">
+                  Tratamiento <span className="text-red-500">*</span>
+                </Label>
+                <Textarea
+                  id="treatment"
+                  name="treatment"
+                  value={createFormik.values.treatment}
+                  onChange={createFormik.handleChange}
+                  onBlur={createFormik.handleBlur}
+                  rows={3}
+                  className={
+                    createFormik.touched.treatment &&
+                    createFormik.errors.treatment
+                      ? "border-red-500"
+                      : ""
+                  }
+                />
+                {createFormik.touched.treatment &&
+                  createFormik.errors.treatment && (
+                    <p className="text-sm text-red-500">
+                      {createFormik.errors.treatment}
+                    </p>
+                  )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="prescriptions">Recetas</Label>
+                <Textarea
+                  id="prescriptions"
+                  name="prescriptions"
+                  value={createFormik.values.prescriptions}
+                  onChange={createFormik.handleChange}
+                  onBlur={createFormik.handleBlur}
+                  rows={3}
+                  placeholder="Medicamentos prescritos, dosis, etc."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notas Adicionales</Label>
+                <Textarea
+                  id="notes"
+                  name="notes"
+                  value={createFormik.values.notes}
+                  onChange={createFormik.handleChange}
+                  onBlur={createFormik.handleBlur}
+                  rows={3}
+                  placeholder="Observaciones, recomendaciones, etc."
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="diagnosis">Diagnóstico</Label>
-              <Textarea
-                id="diagnosis"
-                value={formData.diagnosis}
-                onChange={(e) =>
-                  setFormData({ ...formData, diagnosis: e.target.value })
-                }
-                rows={3}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="treatment">Tratamiento</Label>
-              <Textarea
-                id="treatment"
-                value={formData.treatment}
-                onChange={(e) =>
-                  setFormData({ ...formData, treatment: e.target.value })
-                }
-                rows={3}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="prescriptions">Recetas</Label>
-              <Textarea
-                id="prescriptions"
-                value={formData.prescriptions}
-                onChange={(e) =>
-                  setFormData({ ...formData, prescriptions: e.target.value })
-                }
-                rows={3}
-                placeholder="Medicamentos prescritos, dosis, etc."
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="notes">Notas Adicionales</Label>
-              <Textarea
-                id="notes"
-                value={formData.notes}
-                onChange={(e) =>
-                  setFormData({ ...formData, notes: e.target.value })
-                }
-                rows={3}
-                placeholder="Observaciones, recomendaciones, etc."
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsCreateModalOpen(false);
-                resetForm();
-              }}
-            >
-              Cancelar
-            </Button>
-            <Button onClick={handleCreateRecord}>Crear Expediente</Button>
-          </DialogFooter>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCloseCreateModal}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={!createFormik.isValid}>
+                Crear Expediente
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
@@ -516,154 +622,219 @@ export default function MedicalRecordsManagement() {
               Actualiza la información del expediente médico
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit_patient">Paciente</Label>
-              <Select
-                value={formData.patient_id?.toString() || ""}
-                onValueChange={(value) =>
-                  setFormData({
-                    ...formData,
-                    patient_id: parseInt(value),
-                    appointment_id: null,
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar paciente" />
-                </SelectTrigger>
-                <SelectContent>
-                  {patients.map((patient) => (
-                    <SelectItem key={patient.id} value={patient.id.toString()}>
-                      {patient.first_name} {patient.last_name} - {patient.email}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {formData.patient_id && (
+          <form onSubmit={editFormik.handleSubmit}>
+            <div className="grid gap-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="edit_appointment">Cita (Opcional)</Label>
+                <Label htmlFor="edit_patient">
+                  Paciente <span className="text-red-500">*</span>
+                </Label>
                 <Select
-                  value={formData.appointment_id?.toString() || "none"}
-                  onValueChange={(value) =>
-                    setFormData({
-                      ...formData,
-                      appointment_id: value === "none" ? null : parseInt(value),
-                    })
-                  }
-                  disabled={loading}
+                  value={editFormik.values.patient_id?.toString() || ""}
+                  onValueChange={(value) => {
+                    editFormik.setFieldValue("patient_id", parseInt(value));
+                    editFormik.setFieldValue("appointment_id", null);
+                  }}
                 >
-                  <SelectTrigger>
-                    <SelectValue
-                      placeholder={
-                        loading
-                          ? "Cargando citas..."
-                          : appointments.filter(
-                                (apt) => apt.patient_id === formData.patient_id,
-                              ).length === 0
-                            ? "No hay citas para este paciente"
-                            : "Seleccionar cita relacionada"
-                      }
-                    />
+                  <SelectTrigger
+                    className={
+                      editFormik.touched.patient_id &&
+                      editFormik.errors.patient_id
+                        ? "border-red-500"
+                        : ""
+                    }
+                  >
+                    <SelectValue placeholder="Seleccionar paciente" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Ninguna</SelectItem>
-                    {appointments
-                      .filter((apt) => apt.patient_id === formData.patient_id)
-                      .map((appointment) => (
-                        <SelectItem
-                          key={appointment.id}
-                          value={appointment.id.toString()}
-                        >
-                          {appointment.service_name} -{" "}
-                          {new Date(appointment.scheduled_at).toLocaleString(
-                            "es-MX",
-                          )}{" "}
-                          ({appointment.status})
-                        </SelectItem>
-                      ))}
+                    {patients.map((patient) => (
+                      <SelectItem
+                        key={patient.id}
+                        value={patient.id.toString()}
+                      >
+                        {patient.first_name} {patient.last_name} -{" "}
+                        {patient.email}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
-                {appointments.filter(
-                  (apt) => apt.patient_id === formData.patient_id,
-                ).length === 0 &&
-                  !loading && (
-                    <p className="text-xs text-gray-500">
-                      Este paciente no tiene citas registradas. Puedes
-                      actualizar el expediente sin asociarlo a una cita.
+                {editFormik.touched.patient_id &&
+                  editFormik.errors.patient_id && (
+                    <p className="text-sm text-red-500">
+                      {String(editFormik.errors.patient_id)}
                     </p>
                   )}
               </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="edit_visit_date">Fecha de Visita</Label>
-              <Input
-                id="edit_visit_date"
-                type="date"
-                value={formData.visit_date}
-                onChange={(e) =>
-                  setFormData({ ...formData, visit_date: e.target.value })
-                }
-              />
+              {editFormik.values.patient_id && (
+                <div className="space-y-2">
+                  <Label htmlFor="edit_appointment">Cita (Opcional)</Label>
+                  <Select
+                    value={
+                      editFormik.values.appointment_id?.toString() || "none"
+                    }
+                    onValueChange={(value) =>
+                      editFormik.setFieldValue(
+                        "appointment_id",
+                        value === "none" ? null : parseInt(value),
+                      )
+                    }
+                    disabled={loading}
+                  >
+                    <SelectTrigger>
+                      <SelectValue
+                        placeholder={
+                          loading
+                            ? "Cargando citas..."
+                            : appointments.filter(
+                                  (apt) =>
+                                    apt.patient_id ===
+                                    editFormik.values.patient_id,
+                                ).length === 0
+                              ? "No hay citas para este paciente"
+                              : "Seleccionar cita relacionada"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Ninguna</SelectItem>
+                      {appointments
+                        .filter(
+                          (apt) =>
+                            apt.patient_id === editFormik.values.patient_id,
+                        )
+                        .map((appointment) => (
+                          <SelectItem
+                            key={appointment.id}
+                            value={appointment.id.toString()}
+                          >
+                            {appointment.service_name} -{" "}
+                            {new Date(appointment.scheduled_at).toLocaleString(
+                              "es-MX",
+                            )}{" "}
+                            ({appointment.status})
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  {appointments.filter(
+                    (apt) => apt.patient_id === editFormik.values.patient_id,
+                  ).length === 0 &&
+                    !loading && (
+                      <p className="text-xs text-gray-500">
+                        Este paciente no tiene citas registradas. Puedes
+                        actualizar el expediente sin asociarlo a una cita.
+                      </p>
+                    )}
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="edit_visit_date">
+                  Fecha de Visita <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="edit_visit_date"
+                  name="visit_date"
+                  type="date"
+                  value={editFormik.values.visit_date}
+                  onChange={editFormik.handleChange}
+                  onBlur={editFormik.handleBlur}
+                  className={
+                    editFormik.touched.visit_date &&
+                    editFormik.errors.visit_date
+                      ? "border-red-500"
+                      : ""
+                  }
+                />
+                {editFormik.touched.visit_date &&
+                  editFormik.errors.visit_date && (
+                    <p className="text-sm text-red-500">
+                      {editFormik.errors.visit_date}
+                    </p>
+                  )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit_diagnosis">
+                  Diagnóstico <span className="text-red-500">*</span>
+                </Label>
+                <Textarea
+                  id="edit_diagnosis"
+                  name="diagnosis"
+                  value={editFormik.values.diagnosis}
+                  onChange={editFormik.handleChange}
+                  onBlur={editFormik.handleBlur}
+                  rows={3}
+                  className={
+                    editFormik.touched.diagnosis && editFormik.errors.diagnosis
+                      ? "border-red-500"
+                      : ""
+                  }
+                />
+                {editFormik.touched.diagnosis &&
+                  editFormik.errors.diagnosis && (
+                    <p className="text-sm text-red-500">
+                      {editFormik.errors.diagnosis}
+                    </p>
+                  )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit_treatment">
+                  Tratamiento <span className="text-red-500">*</span>
+                </Label>
+                <Textarea
+                  id="edit_treatment"
+                  name="treatment"
+                  value={editFormik.values.treatment}
+                  onChange={editFormik.handleChange}
+                  onBlur={editFormik.handleBlur}
+                  rows={3}
+                  className={
+                    editFormik.touched.treatment && editFormik.errors.treatment
+                      ? "border-red-500"
+                      : ""
+                  }
+                />
+                {editFormik.touched.treatment &&
+                  editFormik.errors.treatment && (
+                    <p className="text-sm text-red-500">
+                      {editFormik.errors.treatment}
+                    </p>
+                  )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit_prescriptions">Recetas</Label>
+                <Textarea
+                  id="edit_prescriptions"
+                  name="prescriptions"
+                  value={editFormik.values.prescriptions}
+                  onChange={editFormik.handleChange}
+                  onBlur={editFormik.handleBlur}
+                  rows={3}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit_notes">Notas Adicionales</Label>
+                <Textarea
+                  id="edit_notes"
+                  name="notes"
+                  value={editFormik.values.notes}
+                  onChange={editFormik.handleChange}
+                  onBlur={editFormik.handleBlur}
+                  rows={3}
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit_diagnosis">Diagnóstico</Label>
-              <Textarea
-                id="edit_diagnosis"
-                value={formData.diagnosis}
-                onChange={(e) =>
-                  setFormData({ ...formData, diagnosis: e.target.value })
-                }
-                rows={3}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit_treatment">Tratamiento</Label>
-              <Textarea
-                id="edit_treatment"
-                value={formData.treatment}
-                onChange={(e) =>
-                  setFormData({ ...formData, treatment: e.target.value })
-                }
-                rows={3}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit_prescriptions">Recetas</Label>
-              <Textarea
-                id="edit_prescriptions"
-                value={formData.prescriptions}
-                onChange={(e) =>
-                  setFormData({ ...formData, prescriptions: e.target.value })
-                }
-                rows={3}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit_notes">Notas Adicionales</Label>
-              <Textarea
-                id="edit_notes"
-                value={formData.notes}
-                onChange={(e) =>
-                  setFormData({ ...formData, notes: e.target.value })
-                }
-                rows={3}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsEditModalOpen(false);
-                resetForm();
-              }}
-            >
-              Cancelar
-            </Button>
-            <Button onClick={handleUpdateRecord}>Actualizar Expediente</Button>
-          </DialogFooter>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCloseEditModal}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={!editFormik.isValid}>
+                Actualizar Expediente
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

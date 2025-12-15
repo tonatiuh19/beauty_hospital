@@ -5675,8 +5675,16 @@ const createAdminUser: RequestHandler = async (req, res) => {
 const updateAdminUser: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
-    const { first_name, last_name, phone, employee_id, specialization, role } =
-      req.body;
+    const {
+      first_name,
+      last_name,
+      email,
+      phone,
+      employee_id,
+      specialization,
+      role,
+      is_active,
+    } = req.body;
 
     const updates: string[] = [];
     const values: any[] = [];
@@ -5688,6 +5696,21 @@ const updateAdminUser: RequestHandler = async (req, res) => {
     if (last_name !== undefined) {
       updates.push("last_name = ?");
       values.push(last_name);
+    }
+    if (email !== undefined) {
+      // Check if email is already used by another user
+      const [existingUsers] = await pool.query<any[]>(
+        "SELECT id FROM users WHERE email = ? AND id != ?",
+        [email, id],
+      );
+      if (existingUsers.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Email already in use by another user",
+        });
+      }
+      updates.push("email = ?");
+      values.push(email);
     }
     if (phone !== undefined) {
       updates.push("phone = ?");
@@ -5704,6 +5727,10 @@ const updateAdminUser: RequestHandler = async (req, res) => {
     if (role !== undefined) {
       updates.push("role = ?");
       values.push(role);
+    }
+    if (is_active !== undefined) {
+      updates.push("is_active = ?");
+      values.push(is_active);
     }
 
     if (updates.length === 0) {
@@ -5989,6 +6016,7 @@ const createBlockedDate: RequestHandler = async (req, res) => {
       all_day,
       reason,
       notes,
+      created_by,
     } = req.body;
 
     if (!start_date || !end_date) {
@@ -5998,10 +6026,10 @@ const createBlockedDate: RequestHandler = async (req, res) => {
       });
     }
 
-    // Get user ID from request (assuming it's set by auth middleware)
-    const userId = (req as any).adminUser?.id || null;
+    // Use created_by from request body (sent by frontend) or fallback to auth middleware
+    const userId = created_by || (req as any).user?.id || null;
 
-    await pool.query(
+    const [result] = await pool.query<any>(
       `INSERT INTO blocked_dates (start_date, end_date, start_time, end_time, all_day, reason, notes, created_by, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
       [
@@ -6016,9 +6044,16 @@ const createBlockedDate: RequestHandler = async (req, res) => {
       ],
     );
 
+    // Fetch the created record to return it
+    const [rows] = await pool.query<any[]>(
+      `SELECT * FROM blocked_dates WHERE id = ?`,
+      [result.insertId],
+    );
+
     res.json({
       success: true,
       message: "Blocked date created successfully",
+      data: rows[0],
     });
   } catch (error) {
     console.error("Error creating blocked date:", error);

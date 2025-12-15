@@ -70,6 +70,123 @@ export const checkDateBlocked = createAsyncThunk(
   },
 );
 
+// Admin: Fetch all blocked dates
+export const fetchAdminBlockedDates = createAsyncThunk(
+  "blockedDates/fetchAdminBlockedDates",
+  async (_, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem("adminAccessToken");
+      const response = await axios.get<
+        ApiResponse<PaginatedResponse<BlockedDate>>
+      >("/admin/blocked-dates", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (response.data.success && response.data.data) {
+        return response.data.data.items;
+      }
+      throw new Error("Failed to fetch blocked dates");
+    } catch (error) {
+      return rejectWithValue(getUserFriendlyErrorMessage(error));
+    }
+  },
+);
+
+// Admin: Create blocked date
+export const createBlockedDate = createAsyncThunk(
+  "blockedDates/createBlockedDate",
+  async (
+    data: {
+      start_date: string;
+      end_date: string;
+      start_time?: string | null;
+      end_time?: string | null;
+      all_day: boolean;
+      reason?: string;
+      notes?: string;
+    },
+    { rejectWithValue },
+  ) => {
+    try {
+      const token = localStorage.getItem("adminAccessToken");
+      const adminUser = JSON.parse(localStorage.getItem("adminUser") || "{}");
+      const created_by = adminUser?.id || null;
+
+      const response = await axios.post<ApiResponse<BlockedDate>>(
+        "/admin/blocked-dates",
+        { ...data, created_by },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+
+      if (response.data.success && response.data.data) {
+        return response.data.data;
+      }
+      throw new Error("Failed to create blocked date");
+    } catch (error) {
+      return rejectWithValue(getUserFriendlyErrorMessage(error));
+    }
+  },
+);
+
+// Admin: Update blocked date
+export const updateBlockedDate = createAsyncThunk(
+  "blockedDates/updateBlockedDate",
+  async (
+    {
+      id,
+      data,
+    }: {
+      id: number;
+      data: {
+        start_date: string;
+        end_date: string;
+        start_time?: string | null;
+        end_time?: string | null;
+        all_day: boolean;
+        reason?: string;
+        notes?: string;
+      };
+    },
+    { rejectWithValue },
+  ) => {
+    try {
+      const token = localStorage.getItem("adminAccessToken");
+      const response = await axios.put<ApiResponse<BlockedDate>>(
+        `/admin/blocked-dates/${id}`,
+        data,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+
+      if (response.data.success && response.data.data) {
+        return response.data.data;
+      }
+      throw new Error("Failed to update blocked date");
+    } catch (error) {
+      return rejectWithValue(getUserFriendlyErrorMessage(error));
+    }
+  },
+);
+
+// Admin: Delete blocked date
+export const deleteBlockedDate = createAsyncThunk(
+  "blockedDates/deleteBlockedDate",
+  async (id: number, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem("adminAccessToken");
+      await axios.delete(`/admin/blocked-dates/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return id;
+    } catch (error) {
+      return rejectWithValue(getUserFriendlyErrorMessage(error));
+    }
+  },
+);
+
 const blockedDatesSlice = createSlice({
   name: "blockedDates",
   initialState,
@@ -106,6 +223,73 @@ const blockedDatesSlice = createSlice({
       state.loading = false;
       state.error =
         (action.payload as string) || "Failed to check blocked date";
+    });
+
+    // Admin: Fetch blocked dates
+    builder.addCase(fetchAdminBlockedDates.pending, (state) => {
+      state.loading = true;
+      state.error = null;
+    });
+    builder.addCase(fetchAdminBlockedDates.fulfilled, (state, action) => {
+      state.loading = false;
+      state.blockedDates = action.payload;
+    });
+    builder.addCase(fetchAdminBlockedDates.rejected, (state, action) => {
+      state.loading = false;
+      state.error =
+        (action.payload as string) || "Failed to fetch blocked dates";
+    });
+
+    // Admin: Create blocked date
+    builder.addCase(createBlockedDate.pending, (state) => {
+      state.loading = true;
+      state.error = null;
+    });
+    builder.addCase(createBlockedDate.fulfilled, (state, action) => {
+      state.loading = false;
+      state.blockedDates.push(action.payload);
+    });
+    builder.addCase(createBlockedDate.rejected, (state, action) => {
+      state.loading = false;
+      state.error =
+        (action.payload as string) || "Failed to create blocked date";
+    });
+
+    // Admin: Update blocked date
+    builder.addCase(updateBlockedDate.pending, (state) => {
+      state.loading = true;
+      state.error = null;
+    });
+    builder.addCase(updateBlockedDate.fulfilled, (state, action) => {
+      state.loading = false;
+      const index = state.blockedDates.findIndex(
+        (d) => d.id === action.payload.id,
+      );
+      if (index !== -1) {
+        state.blockedDates[index] = action.payload;
+      }
+    });
+    builder.addCase(updateBlockedDate.rejected, (state, action) => {
+      state.loading = false;
+      state.error =
+        (action.payload as string) || "Failed to update blocked date";
+    });
+
+    // Admin: Delete blocked date
+    builder.addCase(deleteBlockedDate.pending, (state) => {
+      state.loading = true;
+      state.error = null;
+    });
+    builder.addCase(deleteBlockedDate.fulfilled, (state, action) => {
+      state.loading = false;
+      state.blockedDates = state.blockedDates.filter(
+        (d) => d.id !== action.payload,
+      );
+    });
+    builder.addCase(deleteBlockedDate.rejected, (state, action) => {
+      state.loading = false;
+      state.error =
+        (action.payload as string) || "Failed to delete blocked date";
     });
   },
 });
