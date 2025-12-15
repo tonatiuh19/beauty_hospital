@@ -11,11 +11,15 @@ import {
   Clock,
   Filter,
   DollarSign,
+  Edit,
+  Save,
+  X as CloseIcon,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -40,6 +44,13 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { useToast } from "@/hooks/use-toast";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import {
+  fetchContracts,
+  fetchContractById,
+  updateContractTerms,
+} from "@/store/slices/contractsSlice";
 import axios from "@/lib/axios";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
@@ -90,14 +101,30 @@ const statusLabels = {
 };
 
 export default function ContractsManagement() {
+  const dispatch = useAppDispatch();
+  const { toast } = useToast();
+  const {
+    contracts: storeContracts,
+    selectedContract,
+    loading: storeLoading,
+    updateLoading,
+  } = useAppSelector((state) => state.contracts);
+
   const [contracts, setContracts] = useState<Contract[]>([]);
-  const [selectedContract, setSelectedContract] = useState<Contract | null>(
-    null,
-  );
   const [contractSessions, setContractSessions] = useState<ContractSession[]>(
     [],
   );
+  const [selectedContractData, setSelectedContract] = useState<Contract | null>(
+    null,
+  );
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+
+  // Default contract terms editor
+  const [isDefaultTermsOpen, setIsDefaultTermsOpen] = useState(false);
+  const [defaultTerms, setDefaultTerms] = useState("");
+  const [originalDefaultTerms, setOriginalDefaultTerms] = useState("");
+  const [savingDefaultTerms, setSavingDefaultTerms] = useState(false);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [loading, setLoading] = useState(true);
@@ -226,6 +253,71 @@ export default function ContractsManagement() {
     return (completed / total) * 100;
   };
 
+  // Fetch default contract terms
+  const fetchDefaultTerms = async () => {
+    try {
+      const token = localStorage.getItem("adminAccessToken");
+      const response = await axios.get(
+        "/admin/settings/default-contract-terms",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+
+      if (response.data.success) {
+        const terms = response.data.data.terms;
+        setDefaultTerms(terms);
+        setOriginalDefaultTerms(terms);
+      }
+    } catch (error) {
+      console.error("Error fetching default terms:", error);
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar los términos predeterminados",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Open default terms editor
+  const handleEditDefaultTerms = async () => {
+    await fetchDefaultTerms();
+    setIsDefaultTermsOpen(true);
+  };
+
+  // Save default contract terms
+  const handleSaveDefaultTerms = async () => {
+    try {
+      setSavingDefaultTerms(true);
+      const token = localStorage.getItem("adminAccessToken");
+      const response = await axios.put(
+        "/admin/settings/default-contract-terms",
+        { terms: defaultTerms },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+
+      if (response.data.success) {
+        setOriginalDefaultTerms(defaultTerms);
+        setIsDefaultTermsOpen(false);
+        toast({
+          title: "Éxito",
+          description: "Términos predeterminados actualizados correctamente",
+        });
+      }
+    } catch (error) {
+      console.error("Error saving default terms:", error);
+      toast({
+        title: "Error",
+        description: "No se pudieron guardar los términos",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingDefaultTerms(false);
+    }
+  };
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -238,10 +330,14 @@ export default function ContractsManagement() {
             Administra los contratos de sesiones múltiples
           </p>
         </div>
-        {/* <Button className="bg-primary hover:bg-primary/90">
-          <Plus className="w-4 h-4 mr-2" />
-          Nuevo Contrato
-        </Button> */}
+        <Button
+          onClick={handleEditDefaultTerms}
+          variant="outline"
+          className="border-primary text-primary hover:bg-primary/10"
+        >
+          <Edit className="w-4 h-4 mr-2" />
+          Editar Términos Generales
+        </Button>
       </div>
 
       {/* Stats */}
@@ -722,6 +818,61 @@ export default function ContractsManagement() {
               </div>
             )
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Default Contract Terms Editor Modal */}
+      <Dialog open={isDefaultTermsOpen} onOpenChange={setIsDefaultTermsOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold">
+              Editar Términos Generales del Contrato
+            </DialogTitle>
+            <p className="text-sm text-gray-500 mt-1">
+              Estos términos se usarán en todos los contratos nuevos que se
+              generen
+            </p>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto px-1">
+            <Textarea
+              value={defaultTerms}
+              onChange={(e) => setDefaultTerms(e.target.value)}
+              className="min-h-[400px] font-mono text-sm"
+              placeholder="Ingresa los términos y condiciones del contrato..."
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDefaultTerms(originalDefaultTerms);
+                setIsDefaultTermsOpen(false);
+              }}
+              disabled={savingDefaultTerms}
+            >
+              <CloseIcon className="w-4 h-4 mr-2" />
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSaveDefaultTerms}
+              disabled={
+                savingDefaultTerms || defaultTerms === originalDefaultTerms
+              }
+              className="bg-primary hover:bg-primary/90"
+            >
+              {savingDefaultTerms ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                  Guardando...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4 mr-2" />
+                  Guardar Términos
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

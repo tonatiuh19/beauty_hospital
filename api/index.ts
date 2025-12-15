@@ -7,6 +7,7 @@ import type { RequestHandler } from "express";
 import type { DemoResponse } from "../shared/api";
 import nodemailer from "nodemailer";
 import Stripe from "stripe";
+import crypto from "crypto";
 
 // Database connection
 const pool = mysql.createPool({
@@ -2806,6 +2807,7 @@ const getContractDetails: RequestHandler = async (req, res) => {
         c.total_amount as amount_paid,
         0 as amount_pending,
         c.status,
+        c.terms_and_conditions,
         c.docusign_envelope_id,
         c.docusign_status,
         c.signed_at,
@@ -2919,18 +2921,112 @@ const getContractDetails: RequestHandler = async (req, res) => {
 };
 
 /**
+ * GET /api/admin/settings/default-contract-terms
+ * Get the system-wide default contract terms
+ */
+const getDefaultContractTerms: RequestHandler = async (req, res) => {
+  try {
+    const [settings] = await pool.query<any[]>(
+      `SELECT setting_value, updated_at 
+       FROM system_settings 
+       WHERE setting_key = 'default_contract_terms'`,
+    );
+
+    if (settings.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Default contract terms not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        terms: settings[0].setting_value,
+        updated_at: settings[0].updated_at,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching default contract terms:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching default contract terms",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+/**
+ * PUT /api/admin/settings/default-contract-terms
+ * Update the system-wide default contract terms
+ */
+const updateDefaultContractTerms: RequestHandler = async (req, res) => {
+  try {
+    const { terms } = req.body;
+    const admin_id = (req as any).user?.id || 1; // Get from auth middleware
+
+    if (!terms) {
+      return res.status(400).json({
+        success: false,
+        message: "terms is required",
+      });
+    }
+
+    // Update default terms in system_settings
+    await pool.query(
+      `UPDATE system_settings 
+       SET setting_value = ?,
+           updated_by = ?,
+           updated_at = NOW()
+       WHERE setting_key = 'default_contract_terms'`,
+      [terms, admin_id],
+    );
+
+    // Fetch updated settings
+    const [settings] = await pool.query<any[]>(
+      `SELECT setting_value, updated_at 
+       FROM system_settings 
+       WHERE setting_key = 'default_contract_terms'`,
+    );
+
+    res.json({
+      success: true,
+      message: "Default contract terms updated successfully",
+      data: {
+        terms: settings[0].setting_value,
+        updated_at: settings[0].updated_at,
+      },
+    });
+  } catch (error) {
+    console.error("Error updating default contract terms:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error updating default contract terms",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+/**
  * GET /api/admin/contracts/:id/download
- * Download the signed PDF from DocuSign
+ * Download the signed PDF (regenerate from stored signature)
  */
 const downloadContractPDF: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Get contract details
+    // Get contract details with patient and service info
     const [contracts] = await pool.query<any[]>(
-      `SELECT docusign_envelope_id, contract_number, patient_id 
-       FROM contracts 
-       WHERE id = ?`,
+      `SELECT c.*,
+              c.terms_and_conditions as contract_terms,
+              CONCAT(p.first_name, ' ', p.last_name) as patient_name,
+              p.email as patient_email,
+              p.phone as patient_phone,
+              s.name as service_name
+       FROM contracts c
+       JOIN patients p ON c.patient_id = p.id
+       JOIN services s ON c.service_id = s.id
+       WHERE c.id = ?`,
       [id],
     );
 
@@ -2943,16 +3039,148 @@ const downloadContractPDF: RequestHandler = async (req, res) => {
 
     const contract = contracts[0];
 
-    if (!contract.docusign_envelope_id) {
+    if (!contract.signature_data && !contract.signature_canvas_data) {
       return res.status(400).json({
         success: false,
-        message: "Contract does not have a DocuSign envelope",
+        message: "Contract does not have signature data",
       });
     }
 
-    // Get signed PDF from DocuSign
-    const { getSignedDocument } = await import("../server/utils/docusign");
-    const pdfBuffer = await getSignedDocument(contract.docusign_envelope_id);
+    // Generate PDF from contract data
+    const { jsPDF } = await import("jspdf");
+    const pdf = new jsPDF({ compress: true });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const margin = 20;
+    let yPosition = 20;
+
+    // Header
+    pdf.setFontSize(20);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("All Beauty Luxury & Wellness", pageWidth / 2, yPosition, {
+      align: "center",
+    });
+    yPosition += 10;
+    pdf.setFontSize(16);
+    pdf.text("Contrato de Servicio", pageWidth / 2, yPosition, {
+      align: "center",
+    });
+    yPosition += 15;
+
+    // Patient Information
+    pdf.setFontSize(12);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("INFORMACIÓN DEL PACIENTE", margin, yPosition);
+    yPosition += 8;
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    pdf.text(`Nombre: ${contract.patient_name}`, margin, yPosition);
+    yPosition += 6;
+    pdf.text(`Email: ${contract.patient_email}`, margin, yPosition);
+    yPosition += 6;
+    pdf.text(`Teléfono: ${contract.patient_phone || "N/A"}`, margin, yPosition);
+    yPosition += 10;
+
+    // Service Information
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(12);
+    pdf.text("INFORMACIÓN DEL SERVICIO", margin, yPosition);
+    yPosition += 8;
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    pdf.text(`Servicio: ${contract.service_name}`, margin, yPosition);
+    yPosition += 6;
+    pdf.text(
+      `Precio: $${contract.total_amount.toLocaleString("es-MX")}`,
+      margin,
+      yPosition,
+    );
+    yPosition += 6;
+    pdf.text(
+      `Número de Contrato: ${contract.contract_number}`,
+      margin,
+      yPosition,
+    );
+    yPosition += 10;
+
+    // Contract Terms
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(12);
+    pdf.text("TÉRMINOS Y CONDICIONES", margin, yPosition);
+    yPosition += 8;
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+
+    const terms = (
+      contract.contract_terms ||
+      contract.terms_and_conditions ||
+      ""
+    ).split("\n");
+    const maxWidth = pageWidth - margin * 2;
+
+    for (const line of terms) {
+      if (yPosition > 270) {
+        pdf.addPage();
+        yPosition = 20;
+      }
+      const splitLines = pdf.splitTextToSize(line || " ", maxWidth);
+      for (const splitLine of splitLines) {
+        pdf.text(splitLine, margin, yPosition);
+        yPosition += 5;
+      }
+    }
+
+    // Signature section
+    if (yPosition > 200) {
+      pdf.addPage();
+      yPosition = 20;
+    }
+
+    yPosition += 10;
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(12);
+    pdf.text("FIRMA DEL PACIENTE", margin, yPosition);
+    yPosition += 10;
+
+    // Add signature image
+    try {
+      const signatureData =
+        contract.signature_canvas_data || contract.signature_data;
+      if (signatureData) {
+        pdf.addImage(signatureData, "PNG", margin, yPosition, 60, 22.5);
+        yPosition += 28;
+      }
+    } catch (err) {
+      console.error("Error adding signature to PDF:", err);
+      yPosition += 28;
+    }
+
+    // Date and time of signature
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    if (contract.signed_at) {
+      pdf.text(
+        `Fecha y hora de firma: ${new Date(contract.signed_at).toLocaleString("es-MX")}`,
+        margin,
+        yPosition,
+      );
+    }
+
+    // Add page numbers to all pages
+    const pageCount = pdf.getNumberOfPages();
+    pdf.setFontSize(9);
+    pdf.setFont("helvetica", "normal");
+    for (let i = 1; i <= pageCount; i++) {
+      pdf.setPage(i);
+      pdf.text(
+        `Página ${i} de ${pageCount}`,
+        pageWidth / 2,
+        pdf.internal.pageSize.getHeight() - 10,
+        { align: "center" },
+      );
+    }
+
+    // Convert to buffer and send
+    const pdfBuffer = Buffer.from(pdf.output("arraybuffer"));
 
     // Set headers for PDF download
     res.setHeader("Content-Type", "application/pdf");
@@ -3078,6 +3306,16 @@ const createContractAndOpenDocuSign: RequestHandler = async (req, res) => {
 
     const contractNumber = `CON-${Date.now()}-${patient_id}`;
 
+    // Fetch default terms from database
+    const [defaultTerms] = await pool.query<any[]>(
+      `SELECT setting_value FROM system_settings WHERE setting_key = 'default_contract_terms'`,
+    );
+
+    const terms =
+      defaultTerms.length > 0
+        ? defaultTerms[0].setting_value
+        : "Términos y condiciones estándar del servicio.";
+
     // Create contract in database
     const [result] = await pool.query<any>(
       `INSERT INTO contracts (
@@ -3090,22 +3328,7 @@ const createContractAndOpenDocuSign: RequestHandler = async (req, res) => {
         contractNumber,
         total_amount,
         sessions_included,
-        `TÉRMINOS Y CONDICIONES DEL SERVICIO
-
-1. ALCANCE DEL SERVICIO
-   El presente contrato cubre las sesiones especificadas del servicio contratado.
-
-2. PROGRAMACIÓN Y ASISTENCIA
-   - Las citas deben programarse con anticipación
-   - Se requiere llegar 10 minutos antes de la hora programada
-   - En caso de no asistir sin previo aviso, se considerará como sesión utilizada
-
-3. POLÍTICA DE CANCELACIÓN
-   - Las cancelaciones deben hacerse con al menos 24 horas de anticipación
-
-4. CUIDADOS Y RECOMENDACIONES
-   - Seguir todas las indicaciones del personal médico
-   - Informar sobre cualquier cambio en el estado de salud`,
+        terms,
       ],
     );
 
@@ -3761,6 +3984,461 @@ const rescheduleAdminAppointment: RequestHandler = async (req, res) => {
   } catch (error) {
     console.error("Error rescheduling appointment:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * POST /api/check-in/generate-token
+ * Generate a QR check-in token for an appointment (admin only)
+ */
+const generateCheckInToken: RequestHandler = async (req, res) => {
+  console.log("[CHECK-IN] Generate token request:", req.body);
+  try {
+    const { appointment_id } = req.body;
+
+    if (!appointment_id) {
+      console.log("[CHECK-IN] Missing appointment_id");
+      return res.status(400).json({
+        success: false,
+        message: "appointment_id es requerido",
+      });
+    }
+
+    // Verify appointment exists and is not already checked in
+    const [appointments] = await pool.query<any[]>(
+      `SELECT a.*, p.email as patient_email, 
+       CONCAT(p.first_name, ' ', p.last_name) as patient_name 
+       FROM appointments a 
+       JOIN patients p ON a.patient_id = p.id 
+       WHERE a.id = ?`,
+      [appointment_id],
+    );
+
+    if (!Array.isArray(appointments) || appointments.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Cita no encontrada",
+      });
+    }
+
+    const appointment = appointments[0];
+
+    if (appointment.check_in_at) {
+      return res.status(400).json({
+        success: false,
+        message: "Esta cita ya fue registrada",
+      });
+    }
+
+    // Generate unique token
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    // Update appointment with token
+    await pool.query(
+      `UPDATE appointments 
+       SET check_in_token = ?, 
+           check_in_token_expires_at = ? 
+       WHERE id = ?`,
+      [token, expiresAt, appointment_id],
+    );
+
+    // Log token generation
+    await pool.query(
+      `INSERT INTO check_in_logs 
+       (appointment_id, check_in_token, action, metadata) 
+       VALUES (?, ?, 'token_generated', ?)`,
+      [appointment_id, token, JSON.stringify({ expires_at: expiresAt })],
+    );
+
+    // Generate QR code URL
+    const checkInUrl = `${process.env.FRONTEND_URL || "https://beauty-hospital.vercel.app"}/check-in?token=${token}`;
+
+    res.json({
+      success: true,
+      message: "Token de check-in generado exitosamente",
+      data: {
+        token,
+        check_in_url: checkInUrl,
+        expires_at: expiresAt,
+      },
+    });
+  } catch (error) {
+    console.error("Error generating check-in token:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al generar token de check-in",
+    });
+  }
+};
+
+/**
+ * GET /api/check-in/validate/:token
+ * Validate check-in token and get appointment data (public)
+ */
+const validateCheckInToken: RequestHandler = async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: "Token inválido",
+      });
+    }
+
+    // Get appointment by token
+    const [appointments] = await pool.query<any[]>(
+      `SELECT 
+        a.id,
+        a.patient_id,
+        a.service_id,
+        a.scheduled_at,
+        a.duration_minutes,
+        a.status,
+        a.check_in_at,
+        a.check_in_token_expires_at,
+        CONCAT(p.first_name, ' ', p.last_name) as patient_name,
+        p.email as patient_email,
+        p.phone as patient_phone,
+        s.name as service_name,
+        s.price as service_price,
+        DATE(a.scheduled_at) as scheduled_date,
+        TIME(a.scheduled_at) as scheduled_time
+       FROM appointments a 
+       JOIN patients p ON a.patient_id = p.id 
+       JOIN services s ON a.service_id = s.id
+       WHERE a.check_in_token = ?`,
+      [token],
+    );
+
+    if (!Array.isArray(appointments) || appointments.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Token inválido o expirado",
+      });
+    }
+
+    const appointment = appointments[0];
+
+    // Check if token expired
+    if (
+      appointment.check_in_token_expires_at &&
+      new Date(appointment.check_in_token_expires_at) < new Date()
+    ) {
+      await pool.query(
+        `INSERT INTO check_in_logs 
+         (appointment_id, check_in_token, action, ip_address) 
+         VALUES (?, ?, 'token_expired', ?)`,
+        [appointment.id, token, req.ip],
+      );
+
+      return res.status(400).json({
+        success: false,
+        message: "El token ha expirado. Por favor, solicite uno nuevo.",
+      });
+    }
+
+    // Log QR scan
+    await pool.query(
+      `INSERT INTO check_in_logs 
+       (appointment_id, check_in_token, action, ip_address, user_agent) 
+       VALUES (?, ?, 'qr_scanned', ?, ?)`,
+      [appointment.id, token, req.ip, req.headers["user-agent"]],
+    );
+
+    // Get default contract terms from database
+    const [defaultTerms] = await pool.query<any[]>(
+      `SELECT setting_value FROM system_settings WHERE setting_key = 'default_contract_terms'`,
+    );
+
+    const contractTerms =
+      defaultTerms.length > 0
+        ? defaultTerms[0].setting_value
+        : "Términos y condiciones del servicio.";
+
+    res.json({
+      success: true,
+      data: {
+        appointment,
+        contract_terms: contractTerms,
+      },
+    });
+  } catch (error) {
+    console.error("Error validating check-in token:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al validar token",
+    });
+  }
+};
+
+/**
+ * POST /api/check-in/complete
+ * Complete check-in with signature (public)
+ */
+const completeCheckIn: RequestHandler = async (req, res) => {
+  try {
+    const { token, signature_data, terms_accepted, pdf_base64 } = req.body;
+
+    if (!token || !signature_data || !terms_accepted) {
+      return res.status(400).json({
+        success: false,
+        message: "Todos los campos son requeridos",
+      });
+    }
+
+    // Get appointment
+    const [appointments] = await pool.query<any[]>(
+      `SELECT 
+        a.*,
+        CONCAT(p.first_name, ' ', p.last_name) as patient_name,
+        p.email as patient_email,
+        s.name as service_name,
+        s.price as service_price
+       FROM appointments a 
+       JOIN patients p ON a.patient_id = p.id 
+       JOIN services s ON a.service_id = s.id
+       WHERE a.check_in_token = ?`,
+      [token],
+    );
+
+    if (!Array.isArray(appointments) || appointments.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Token inválido",
+      });
+    }
+
+    const appointment = appointments[0];
+
+    // Check if already checked in
+    if (appointment.check_in_at) {
+      return res.status(400).json({
+        success: false,
+        message: "Esta cita ya fue registrada",
+      });
+    }
+
+    const now = new Date();
+    const contractNumber = `CON-${Date.now()}-${appointment.patient_id}`;
+
+    // Convert base64 PDF to Buffer for email attachment
+    let pdfBuffer: Buffer | null = null;
+    if (pdf_base64) {
+      try {
+        // Remove data URL prefix if present (dataurlstring format)
+        const base64Data = pdf_base64.replace(/^data:.*?;base64,/, "");
+        pdfBuffer = Buffer.from(base64Data, "base64");
+      } catch (err) {
+        console.error("Error converting PDF base64 to buffer:", err);
+      }
+    }
+
+    // Update appointment with check-in info
+    await pool.query(
+      `UPDATE appointments 
+       SET check_in_at = ?,
+           signature_data_url = ?,
+           signed_contract_pdf_url = ?,
+           contract_signed_at = ?,
+           signature_ip_address = ?,
+           status = 'confirmed'
+       WHERE id = ?`,
+      [now, signature_data, contractNumber, now, req.ip, appointment.id],
+    );
+
+    // Create contract record
+    const contractTerms = `TÉRMINOS Y CONDICIONES DEL SERVICIO
+
+1. ALCANCE DEL SERVICIO
+   El presente contrato cubre las sesiones especificadas del servicio contratado.
+
+2. PROGRAMACIÓN Y ASISTENCIA
+   - Las citas deben programarse con anticipación
+   - Se requiere llegar 10 minutos antes de la hora programada
+   - En caso de no asistir sin previo aviso, se considerará como sesión utilizada
+
+3. POLÍTICA DE CANCELACIÓN
+   - Las cancelaciones deben hacerse con al menos 24 horas de anticipación
+
+4. CUIDADOS Y RECOMENDACIONES
+   - Seguir todas las indicaciones del personal médico
+   - Informar sobre cualquier cambio en el estado de salud`;
+
+    await pool.query(
+      `INSERT INTO contracts 
+       (patient_id, service_id, contract_number, status, total_amount, 
+        sessions_included, terms_and_conditions, signature_data, signed_at, 
+        signed_by, created_by, pdf_url, signature_canvas_data, signature_ip_address)
+       VALUES (?, ?, ?, 'signed', ?, 1, ?, ?, ?, ?, 1, ?, ?, ?)`,
+      [
+        appointment.patient_id,
+        appointment.service_id,
+        contractNumber,
+        appointment.service_price,
+        contractTerms,
+        signature_data,
+        now,
+        appointment.patient_id,
+        contractNumber,
+        signature_data,
+        req.ip,
+      ],
+    );
+
+    // Log signature completion
+    await pool.query(
+      `INSERT INTO check_in_logs 
+       (appointment_id, check_in_token, action, ip_address, user_agent) 
+       VALUES (?, ?, 'signature_completed', ?, ?)`,
+      [appointment.id, token, req.ip, req.headers["user-agent"]],
+    );
+
+    // Send email notification with PDF attachment
+    try {
+      // Skip email if SMTP not configured
+      if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+        console.log("SMTP not configured - skipping email");
+        await pool.query(
+          `INSERT INTO check_in_logs 
+           (appointment_id, check_in_token, action) 
+           VALUES (?, ?, 'email_skipped_no_smtp')`,
+          [appointment.id, token],
+        );
+      } else {
+        // Email transport configuration
+        const transportConfig: any = {
+          host: process.env.SMTP_HOST || "smtp.gmail.com",
+          port: parseInt(process.env.SMTP_PORT || "587"),
+          secure: process.env.SMTP_SECURE === "true",
+          auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+          },
+        };
+
+        const transporter = nodemailer.createTransport(transportConfig);
+
+        const emailBody = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px; }
+            .container { background-color: white; border-radius: 10px; padding: 30px; max-width: 600px; margin: 0 auto; }
+            .header { text-align: center; color: #C9A159; margin-bottom: 30px; }
+            .details { background-color: #f9f9f9; padding: 20px; border-radius: 5px; margin: 20px 0; }
+            .footer { color: #666; font-size: 12px; text-align: center; margin-top: 30px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>✓ Check-in Completado</h1>
+            </div>
+            <h2>Estimado/a ${appointment.patient_name},</h2>
+            <p>Su check-in ha sido completado exitosamente y su contrato ha sido firmado.</p>
+            <div class="details">
+              <h3>Detalles de la cita:</h3>
+              <ul>
+                <li><strong>Servicio:</strong> ${appointment.service_name}</li>
+                <li><strong>Fecha:</strong> ${new Date(appointment.scheduled_at).toLocaleDateString("es-MX")}</li>
+                <li><strong>Precio:</strong> $${appointment.service_price.toLocaleString("es-MX")}</li>
+                <li><strong>Número de Contrato:</strong> ${contractNumber}</li>
+              </ul>
+            </div>
+            <p>Adjuntamos su contrato firmado en formato PDF.</p>
+            <p>Gracias por su preferencia.</p>
+            <div class="footer">
+              <p>All Beauty Luxury & Wellness - Tu clínica de confianza</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+        const mailOptions: any = {
+          from:
+            process.env.SMTP_FROM ||
+            `"All Beauty Luxury & Wellness" <${process.env.SMTP_USER}>`,
+          to: appointment.patient_email,
+          subject: "Contrato Firmado - All Beauty Luxury & Wellness",
+          html: emailBody,
+        };
+
+        // Attach PDF if provided
+        if (pdfBuffer) {
+          mailOptions.attachments = [
+            {
+              filename: `${contractNumber}.pdf`,
+              content: pdfBuffer,
+              contentType: "application/pdf",
+            },
+          ];
+        }
+
+        await transporter.sendMail(mailOptions);
+
+        await pool.query(
+          `INSERT INTO check_in_logs 
+           (appointment_id, check_in_token, action) 
+           VALUES (?, ?, 'email_sent')`,
+          [appointment.id, token],
+        );
+
+        await pool.query(
+          `INSERT INTO contract_emails 
+           (appointment_id, patient_id, email_to, email_type, status, 
+            pdf_attachment_path, sent_at)
+           VALUES (?, ?, ?, 'signed_contract', 'sent', ?, ?)`,
+          [
+            appointment.id,
+            appointment.patient_id,
+            appointment.patient_email,
+            contractNumber,
+            now,
+          ],
+        );
+      }
+    } catch (emailError) {
+      console.error("Error sending email:", emailError);
+      // Don't fail check-in if email fails
+      await pool.query(
+        `INSERT INTO contract_emails 
+         (appointment_id, patient_id, email_to, email_type, status, error_message)
+         VALUES (?, ?, ?, 'signed_contract', 'failed', ?)`,
+        [
+          appointment.id,
+          appointment.patient_id,
+          appointment.patient_email,
+          (emailError as Error).message,
+        ],
+      );
+    }
+
+    // Log check-in completion
+    await pool.query(
+      `INSERT INTO check_in_logs 
+       (appointment_id, check_in_token, action) 
+       VALUES (?, ?, 'check_in_completed')`,
+      [appointment.id, token],
+    );
+
+    res.json({
+      success: true,
+      message: "Check-in completado exitosamente",
+      data: {
+        appointment_id: appointment.id,
+        contract_number: contractNumber,
+      },
+    });
+  } catch (error) {
+    console.error("Error completing check-in:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al completar check-in",
+    });
   }
 };
 
@@ -7229,8 +7907,8 @@ function createServer() {
 
   // Middleware
   expressApp.use(cors());
-  expressApp.use(express.json());
-  expressApp.use(express.urlencoded({ extended: true }));
+  expressApp.use(express.json({ limit: "10mb" })); // Increase limit for PDF base64
+  expressApp.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
   // Log requests
   expressApp.use((req, _res, next) => {
@@ -7305,6 +7983,14 @@ function createServer() {
   // Services routes
   expressApp.get("/api/services", handleGetServices);
   expressApp.get("/api/services/:id", handleGetServiceById);
+
+  // ==================== QR CHECK-IN ROUTES ====================
+  // Generate QR token (admin only - but no auth middleware in this pattern)
+  expressApp.post("/api/check-in/generate-token", generateCheckInToken);
+  // Validate token (public - for patient check-in page)
+  expressApp.get("/api/check-in/validate/:token", validateCheckInToken);
+  // Complete check-in with signature (public - for patient check-in page)
+  expressApp.post("/api/check-in/complete", completeCheckIn);
 
   // Auth routes
   expressApp.post("/api/auth/register", handleRegister);
@@ -7416,6 +8102,16 @@ function createServer() {
   expressApp.get("/api/admin/contracts/stats", getContractStats);
   expressApp.get("/api/admin/contracts/:id", getContractDetails);
   expressApp.get("/api/admin/contracts/:id/download", downloadContractPDF);
+
+  // Admin Settings - Default Contract Terms
+  expressApp.get(
+    "/api/admin/settings/default-contract-terms",
+    getDefaultContractTerms,
+  );
+  expressApp.put(
+    "/api/admin/settings/default-contract-terms",
+    updateDefaultContractTerms,
+  );
   expressApp.post("/api/admin/contracts/create", createContract);
   expressApp.post(
     "/api/admin/contracts/create-and-configure",

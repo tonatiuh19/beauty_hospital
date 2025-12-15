@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
 import axios from "@/lib/axios";
 import {
   format,
@@ -55,6 +56,7 @@ import { es } from "date-fns/locale";
 import { Calendar, dateFnsLocalizer, View } from "react-big-calendar";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import CheckInWithContract from "@/components/CheckInWithContract";
+import { QRCodeSVG } from "qrcode.react";
 
 // Setup the localizer for react-big-calendar
 const locales = {
@@ -128,6 +130,7 @@ const statusLabels = {
 };
 
 export default function AppointmentsCalendar() {
+  const { toast } = useToast();
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [view, setView] = useState<View>("month");
   const [appointments, setAppointments] = useState<CalendarAppointment[]>([]);
@@ -137,6 +140,8 @@ export default function AppointmentsCalendar() {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCheckInOpen, setIsCheckInOpen] = useState(false);
+  const [isQRModalOpen, setIsQRModalOpen] = useState(false);
+  const [checkInUrl, setCheckInUrl] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [loading, setLoading] = useState(true);
@@ -262,6 +267,38 @@ export default function AppointmentsCalendar() {
     setIsCheckInOpen(true);
   };
 
+  const handleGenerateQR = async (appointment: CalendarAppointment) => {
+    try {
+      const token = localStorage.getItem("adminAccessToken");
+      const response = await axios.post(
+        "/check-in/generate-token",
+        { appointment_id: appointment.id },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+
+      if (response.data.success) {
+        setCheckInUrl(response.data.data.check_in_url);
+        setSelectedAppointment(appointment);
+        setIsDetailsOpen(false);
+        setIsQRModalOpen(true);
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: response.data.message || "Error al generar código QR",
+        });
+      }
+    } catch (error: any) {
+      console.error("Error generating QR:", error);
+      toast({
+        variant: "destructive",
+        title: "Error al generar QR",
+        description:
+          error.response?.data?.message || "No se pudo generar el código QR",
+      });
+    }
+  };
+
   const handleCheckInSuccess = () => {
     fetchAppointments();
     setIsCheckInOpen(false);
@@ -283,7 +320,11 @@ export default function AppointmentsCalendar() {
         setIsDetailsOpen(false);
       }
     } catch (error: any) {
-      alert(error.response?.data?.message || "Error al cancelar cita");
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.response?.data?.message || "Error al cancelar cita",
+      });
     }
   };
 
@@ -302,10 +343,17 @@ export default function AppointmentsCalendar() {
         fetchAppointments();
         setIsCreateOpen(false);
         resetCreateForm();
-        alert("Cita creada exitosamente");
+        toast({
+          title: "Cita creada",
+          description: "La cita se creó exitosamente",
+        });
       }
     } catch (error: any) {
-      alert(error.response?.data?.message || "Error al crear cita");
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.response?.data?.message || "Error al crear cita",
+      });
     }
   };
 
@@ -655,17 +703,127 @@ export default function AppointmentsCalendar() {
               {!selectedAppointment.checked_in_at &&
                 selectedAppointment.status !== "cancelled" &&
                 selectedAppointment.status !== "completed" && (
-                  <div className="mt-4">
+                  <div className="mt-4 space-y-2">
+                    <Button
+                      onClick={() => handleGenerateQR(selectedAppointment)}
+                      className="w-full bg-gradient-to-r from-primary to-primary/80 hover:shadow-lg transition-all"
+                    >
+                      <svg
+                        className="w-4 h-4 mr-2"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"
+                        />
+                      </svg>
+                      Generar Código QR para Check-in
+                    </Button>
                     <Button
                       onClick={() => handleCheckIn(selectedAppointment)}
-                      className="w-full bg-primary hover:bg-primary/90"
+                      variant="outline"
+                      className="w-full"
                     >
                       <CheckCircle className="w-4 h-4 mr-2" />
-                      Registrar Check-in con Contrato
+                      Check-in Manual con Contrato
                     </Button>
                   </div>
                 )}
             </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* QR Code Modal */}
+      <Dialog open={isQRModalOpen} onOpenChange={setIsQRModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-center">
+              Código QR de Check-in
+            </DialogTitle>
+          </DialogHeader>
+          {selectedAppointment && checkInUrl && (
+            <div className="space-y-6">
+              <div className="text-center space-y-2">
+                <p className="text-sm text-gray-600">
+                  Paciente:{" "}
+                  <span className="font-semibold">
+                    {selectedAppointment.patient_name}
+                  </span>
+                </p>
+                <p className="text-sm text-gray-600">
+                  Servicio:{" "}
+                  <span className="font-semibold">
+                    {selectedAppointment.service_name}
+                  </span>
+                </p>
+              </div>
+
+              <div className="bg-white p-6 rounded-lg border-2 border-gray-200 flex justify-center">
+                <QRCodeSVG
+                  value={checkInUrl}
+                  size={256}
+                  level="H"
+                  includeMargin
+                />
+              </div>
+
+              <div className="space-y-3">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <p className="text-sm text-gray-700">
+                    <strong>Instrucciones:</strong>
+                  </p>
+                  <ol className="text-sm text-gray-600 mt-2 space-y-1 list-decimal list-inside">
+                    <li>
+                      El paciente escanea este código QR con el iPad o su
+                      teléfono
+                    </li>
+                    <li>Se abrirá la página de check-in automáticamente</li>
+                    <li>El paciente lee y firma el contrato</li>
+                    <li>Recibirá una copia por email</li>
+                  </ol>
+                </div>
+
+                <div className="text-xs text-gray-500 text-center">
+                  Este código QR es válido por 24 horas
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(checkInUrl);
+                      toast({
+                        title: "URL copiado",
+                        description: "El enlace se copió al portapapeles",
+                      });
+                    } catch (err) {
+                      toast({
+                        variant: "destructive",
+                        title: "Error",
+                        description: "No se pudo copiar el enlace",
+                      });
+                    }
+                  }}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Copiar URL
+                </Button>
+                <Button
+                  onClick={() => window.print()}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Imprimir QR
+                </Button>
+              </div>
+            </div>
           )}
         </DialogContent>
       </Dialog>

@@ -15,6 +15,7 @@ import ServicesManagement from "@/pages/admin/ServicesManagement";
 import BlockedDatesManagement from "@/pages/admin/BlockedDatesManagement";
 import UsersManagement from "@/pages/admin/UsersManagement";
 import MedicalRecordsManagement from "@/pages/admin/MedicalRecordsManagement";
+import PatientCheckIn from "@/pages/PatientCheckIn";
 import NotFound from "@/pages/NotFound";
 
 export function AppRoutes() {
@@ -23,6 +24,7 @@ export function AppRoutes() {
       <Route path="/" element={<Index />} />
       <Route path="/appointment" element={<AppointmentPage />} />
       <Route path="/my-appointments" element={<MyAppointments />} />
+      <Route path="/check-in" element={<PatientCheckIn />} />
       <Route path="/admin/login" element={<AdminLogin />} />
 
       {/* Admin Dashboard Routes */}
