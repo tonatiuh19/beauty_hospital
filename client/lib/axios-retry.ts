@@ -1,4 +1,5 @@
 import axios, { AxiosError } from "axios";
+import { logger } from "./logger";
 
 /**
  * Check if an error is a connection timeout error
@@ -98,7 +99,7 @@ export async function withRetry<T>(
         maxDelay,
       );
 
-      console.log(
+      logger.log(
         `Request failed (attempt ${attempt + 1}/${maxRetries + 1}). Retrying in ${delayMs}ms...`,
         error,
       );

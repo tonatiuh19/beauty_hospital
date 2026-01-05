@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, AlertCircle } from "lucide-react";
 import { useState } from "react";
 import type { BlockedDate } from "@shared/database";
+import { logger } from "@/lib/logger";
 
 interface SimpleCalendarProps {
   selected: string; // YYYY-MM-DD format
@@ -175,7 +176,7 @@ export function SimpleCalendar({
     const month = currentMonth.getMonth();
     const dateString = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 
-    console.log("Date clicked:", dateString);
+    logger.log("Date clicked:", dateString);
     onSelect(dateString);
   };
 

@@ -35,6 +35,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import axios from "@/lib/axios";
+import { logger } from "@/lib/logger";
 
 interface Service {
   id: number;
@@ -117,7 +118,7 @@ export default function ServicesManagement() {
         handleCloseDialog();
         fetchServices();
       } catch (error) {
-        console.error("Error saving service:", error);
+        logger.error("Error saving service:", error);
         toast({
           title: "Error",
           description: "No se pudo guardar el servicio",
@@ -154,7 +155,7 @@ export default function ServicesManagement() {
       });
       setServices(response.data.data || []);
     } catch (error) {
-      console.error("Error fetching services:", error);
+      logger.error("Error fetching services:", error);
       toast({
         title: "Error",
         description: "No se pudieron cargar los servicios",
@@ -207,7 +208,7 @@ export default function ServicesManagement() {
       setDeletingService(null);
       fetchServices();
     } catch (error) {
-      console.error("Error deleting service:", error);
+      logger.error("Error deleting service:", error);
       toast({
         title: "Error",
         description: "No se pudo eliminar el servicio",

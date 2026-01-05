@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Logo } from "@/components/Logo";
 import axios from "@/lib/axios";
+import { logger } from "@/lib/logger";
 
 export default function AdminLogin() {
   const navigate = useNavigate();
@@ -66,7 +67,7 @@ export default function AdminLogin() {
         );
       }
     } catch (err: any) {
-      console.error("Error:", err);
+      logger.error("Error:", err);
       setError(
         err.response?.data?.message ||
           "Error al procesar la solicitud. Por favor, intenta de nuevo.",
@@ -99,7 +100,7 @@ export default function AdminLogin() {
         setError(response.data.message || "Código inválido");
       }
     } catch (err: any) {
-      console.error("Error:", err);
+      logger.error("Error:", err);
       setError(
         err.response?.data?.message ||
           "Código inválido. Por favor, verifica e intenta de nuevo.",
@@ -121,10 +122,10 @@ export default function AdminLogin() {
           >
             {/* Logo */}
             <div className="flex items-center gap-3 mb-8">
-              <Logo 
-                className="gap-4" 
-                iconClassName="h-16 w-auto" 
-                textClassName="h-10 w-auto" 
+              <Logo
+                className="gap-4"
+                iconClassName="h-16 w-auto"
+                textClassName="h-10 w-auto"
               />
             </div>
 

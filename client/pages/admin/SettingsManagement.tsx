@@ -43,6 +43,7 @@ import { Switch } from "@/components/ui/switch";
 import axios from "@/lib/axios";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
+import { logger } from "@/lib/logger";
 
 interface Coupon {
   id: number;
@@ -136,7 +137,7 @@ export default function SettingsManagement() {
         setCoupons(response.data.data.items || []);
       }
     } catch (error) {
-      console.error("Error fetching coupons:", error);
+      logger.error("Error fetching coupons:", error);
       setCoupons([]);
     }
   };
@@ -204,7 +205,7 @@ export default function SettingsManagement() {
         setSettings(response.data.data || {});
       }
     } catch (error) {
-      console.error("Error fetching settings:", error);
+      logger.error("Error fetching settings:", error);
       setSettings({});
     }
   };
@@ -238,7 +239,7 @@ export default function SettingsManagement() {
         setContentPages(response.data.data || []);
       }
     } catch (error) {
-      console.error("Error fetching content pages:", error);
+      logger.error("Error fetching content pages:", error);
       setContentPages([]);
     }
   };

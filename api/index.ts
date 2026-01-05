@@ -3951,7 +3951,7 @@ const generateCheckInToken: RequestHandler = async (req, res) => {
     );
 
     // Generate QR code URL
-    const checkInUrl = `${process.env.FRONTEND_URL || "https://beauty-hospital.vercel.app"}/check-in?token=${token}`;
+    const checkInUrl = `${process.env.FRONTEND_URL || "https://allbeautyweb.com"}/check-in?token=${token}`;
 
     res.json({
       success: true,

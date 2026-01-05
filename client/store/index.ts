@@ -11,6 +11,7 @@ import usersReducer from "./slices/usersSlice";
 import medicalRecordsReducer from "./slices/medicalRecordsSlice";
 import contractsReducer from "./slices/contractsSlice";
 import patientAppointmentsReducer from "./slices/patientAppointmentsSlice";
+import configReducer from "./slices/configSlice";
 import { loadingMiddleware } from "./middleware/loadingMiddleware";
 
 // Configure the store
@@ -28,6 +29,7 @@ export const store = configureStore({
     medicalRecords: medicalRecordsReducer,
     contracts: contractsReducer,
     patientAppointments: patientAppointmentsReducer,
+    config: configReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

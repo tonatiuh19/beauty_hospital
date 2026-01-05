@@ -57,6 +57,7 @@ import { Calendar, dateFnsLocalizer, View } from "react-big-calendar";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import CheckInWithContract from "@/components/CheckInWithContract";
 import { QRCodeSVG } from "qrcode.react";
+import { logger } from "@/lib/logger";
 
 // Setup the localizer for react-big-calendar
 const locales = {
@@ -223,7 +224,7 @@ export default function AppointmentsCalendar() {
         setAppointments(response.data.data);
       }
     } catch (error) {
-      console.error("Error fetching appointments:", error);
+      logger.error("Error fetching appointments:", error);
     } finally {
       setLoading(false);
     }
@@ -236,7 +237,7 @@ export default function AppointmentsCalendar() {
         setServices(response.data.data);
       }
     } catch (error) {
-      console.error("Error fetching services:", error);
+      logger.error("Error fetching services:", error);
     }
   };
 
@@ -257,7 +258,7 @@ export default function AppointmentsCalendar() {
         setPatients(response.data.data.patients);
       }
     } catch (error) {
-      console.error("Error searching patients:", error);
+      logger.error("Error searching patients:", error);
     }
   };
 
@@ -289,7 +290,7 @@ export default function AppointmentsCalendar() {
         });
       }
     } catch (error: any) {
-      console.error("Error generating QR:", error);
+      logger.error("Error generating QR:", error);
       toast({
         variant: "destructive",
         title: "Error al generar QR",

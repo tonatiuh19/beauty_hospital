@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import axios from "@/lib/axios";
+import { logger } from "@/lib/logger";
 import {
   Line,
   LineChart,
@@ -89,7 +90,7 @@ export default function DashboardHome() {
         setMetrics(response.data.data);
       }
     } catch (error) {
-      console.error("Error fetching dashboard metrics:", error);
+      logger.error("Error fetching dashboard metrics:", error);
     } finally {
       setLoading(false);
     }
@@ -109,7 +110,7 @@ export default function DashboardHome() {
         setRevenueChart(response.data.data);
       }
     } catch (error) {
-      console.error("Error fetching revenue chart:", error);
+      logger.error("Error fetching revenue chart:", error);
     }
   };
 

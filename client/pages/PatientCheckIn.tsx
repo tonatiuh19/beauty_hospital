@@ -11,6 +11,7 @@ import axios from "@/lib/axios";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { jsPDF } from "jspdf";
+import { logger } from "@/lib/logger";
 import {
   CheckCircle,
   XCircle,
@@ -76,7 +77,7 @@ export default function PatientCheckIn() {
         setError(response.data.message || "No se pudo validar el token");
       }
     } catch (err: any) {
-      console.error("Error validating check-in token:", err);
+      logger.error("Error validating check-in token:", err);
       setError(
         err.response?.data?.message ||
           "Token expirado o inválido. Por favor, solicite un nuevo código QR.",
@@ -254,7 +255,7 @@ export default function PatientCheckIn() {
         pdf.addImage(compressedSignature, "JPEG", margin, yPosition, 60, 22.5);
         yPosition += 28;
       } catch (err) {
-        console.error("Error adding signature to PDF:", err);
+        logger.error("Error adding signature to PDF:", err);
         yPosition += 28;
       }
 
@@ -305,7 +306,7 @@ export default function PatientCheckIn() {
         });
       }
     } catch (err: any) {
-      console.error("Error completing check-in:", err);
+      logger.error("Error completing check-in:", err);
       toast({
         variant: "destructive",
         title: "Error al completar check-in",

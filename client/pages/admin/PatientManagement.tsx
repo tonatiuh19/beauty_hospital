@@ -48,6 +48,7 @@ import {
 import axios from "@/lib/axios";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
+import { logger } from "@/lib/logger";
 
 interface Patient {
   id: number;
@@ -156,7 +157,7 @@ export default function PatientManagement() {
         setTotalPages(response.data.pagination?.totalPages || 1);
       }
     } catch (error) {
-      console.error("Error fetching patients:", error);
+      logger.error("Error fetching patients:", error);
       setPatients([]); // Set empty array on error to prevent undefined
     } finally {
       setLoading(false);
@@ -183,7 +184,7 @@ export default function PatientManagement() {
         setIsDetailsOpen(true);
       }
     } catch (error) {
-      console.error("Error fetching patient details:", error);
+      logger.error("Error fetching patient details:", error);
     }
   };
 

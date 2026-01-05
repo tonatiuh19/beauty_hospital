@@ -12,6 +12,7 @@ import {
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements } from "@stripe/react-stripe-js";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { logger } from "@/lib/logger";
 import {
   fetchServices,
   selectService as selectServiceAction,
@@ -391,7 +392,7 @@ export function AppointmentWizard() {
           response.data.error ||
           response.data.message ||
           "Failed to create payment";
-        console.error("Payment creation failed:", response.data);
+        logger.error("Payment creation failed:", response.data);
         setErrorModalConfig({
           title: "Error al Procesar el Pago",
           message: errorMsg,
@@ -401,8 +402,8 @@ export function AppointmentWizard() {
         setShowErrorModal(true);
       }
     } catch (error: any) {
-      console.error("Payment creation error:", error);
-      console.error("Error response:", error.response?.data);
+      logger.error("Payment creation error:", error);
+      logger.error("Error response:", error.response?.data);
 
       // Handle specific error cases
       if (error.response?.status === 409) {
@@ -457,7 +458,7 @@ export function AppointmentWizard() {
         setShowConfirmationModal(true);
       }
     } catch (error: any) {
-      console.error("Payment confirmation error:", error);
+      logger.error("Payment confirmation error:", error);
 
       if (error.response?.status === 409) {
         // Slot was taken while user was completing payment
@@ -509,7 +510,7 @@ export function AppointmentWizard() {
 
   // Watch for step 4 (payment) and terms acceptance to create payment intent
   useEffect(() => {
-    console.log("Payment useEffect triggered:", {
+    logger.log("Payment useEffect triggered:", {
       step,
       acceptedTerms,
       acceptedPrivacy,
@@ -528,7 +529,7 @@ export function AppointmentWizard() {
       isAuthenticated &&
       user
     ) {
-      console.log("Creating payment intent...");
+      logger.log("Creating payment intent...");
       createPaymentIntent();
     }
   }, [step, acceptedTerms, acceptedPrivacy, isAuthenticated, user]);
@@ -537,7 +538,7 @@ export function AppointmentWizard() {
     // This function is no longer used for final submission
     // Payment is handled by the Stripe form
     // Just for backwards compatibility with navigation
-    console.log("Submit called - payment should be handled by Stripe form");
+    logger.log("Submit called - payment should be handled by Stripe form");
   };
 
   const getServiceName = (id: number | null) => {

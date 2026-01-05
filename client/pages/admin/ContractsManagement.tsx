@@ -54,6 +54,7 @@ import {
 import axios from "@/lib/axios";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
+import { logger } from "@/lib/logger";
 
 interface Contract {
   id: number;
@@ -170,7 +171,7 @@ export default function ContractsManagement() {
         setTotalPages(response.data.data.totalPages);
       }
     } catch (error) {
-      console.error("Error fetching contracts:", error);
+      logger.error("Error fetching contracts:", error);
       // Mock data for demonstration
       setContracts([]);
     } finally {
@@ -189,7 +190,7 @@ export default function ContractsManagement() {
         setStats(response.data.data);
       }
     } catch (error) {
-      console.error("Error fetching stats:", error);
+      logger.error("Error fetching stats:", error);
     }
   };
 
@@ -207,7 +208,7 @@ export default function ContractsManagement() {
         setContractSessions(response.data.data.sessions || []);
       }
     } catch (error) {
-      console.error("Error fetching contract details:", error);
+      logger.error("Error fetching contract details:", error);
       setIsDetailsOpen(false);
     } finally {
       setLoadingDetails(false);
@@ -236,7 +237,7 @@ export default function ContractsManagement() {
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      console.error("Error downloading contract PDF:", error);
+      logger.error("Error downloading contract PDF:", error);
       alert("Error al descargar el contrato");
     } finally {
       setDownloading(false);
@@ -271,7 +272,7 @@ export default function ContractsManagement() {
         setOriginalDefaultTerms(terms);
       }
     } catch (error) {
-      console.error("Error fetching default terms:", error);
+      logger.error("Error fetching default terms:", error);
       toast({
         title: "Error",
         description: "No se pudieron cargar los términos predeterminados",
@@ -308,7 +309,7 @@ export default function ContractsManagement() {
         });
       }
     } catch (error) {
-      console.error("Error saving default terms:", error);
+      logger.error("Error saving default terms:", error);
       toast({
         title: "Error",
         description: "No se pudieron guardar los términos",

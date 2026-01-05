@@ -1,4 +1,5 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
+import { logger } from "@/lib/logger";
 
 // Patient type (matching the backend Patient interface)
 export interface Patient {
@@ -59,7 +60,7 @@ const authSlice = createSlice({
           state.user = JSON.parse(storedUser);
           state.isAuthenticated = true;
         } catch (error) {
-          console.error("Error restoring user from localStorage:", error);
+          logger.error("Error restoring user from localStorage:", error);
           localStorage.removeItem("user");
         }
       }

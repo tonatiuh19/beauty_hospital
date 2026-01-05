@@ -44,6 +44,7 @@ import axios from "@/lib/axios";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
+import { logger } from "@/lib/logger";
 
 interface InvoiceRequest {
   id: number;
@@ -170,7 +171,7 @@ export default function InvoicesManagement() {
       setInvoices(response.data.data.items);
       setTotalPages(response.data.data.pagination.totalPages);
     } catch (error) {
-      console.error("Error fetching invoices:", error);
+      logger.error("Error fetching invoices:", error);
       toast({
         variant: "destructive",
         title: "Error",
@@ -186,7 +187,7 @@ export default function InvoicesManagement() {
       const response = await axios.get("/admin/invoices/stats");
       setStats(response.data.data);
     } catch (error) {
-      console.error("Error fetching invoice stats:", error);
+      logger.error("Error fetching invoice stats:", error);
     }
   };
 
@@ -240,7 +241,7 @@ export default function InvoicesManagement() {
       fetchInvoices();
       fetchStats();
     } catch (error) {
-      console.error("Error updating invoice:", error);
+      logger.error("Error updating invoice:", error);
       toast({
         variant: "destructive",
         title: "Error",
@@ -271,7 +272,7 @@ export default function InvoicesManagement() {
       fetchInvoices();
       fetchStats();
     } catch (error) {
-      console.error("Error updating status:", error);
+      logger.error("Error updating status:", error);
       toast({
         variant: "destructive",
         title: "Error",

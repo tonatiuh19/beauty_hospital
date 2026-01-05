@@ -28,6 +28,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import axios from "@/lib/axios";
+import { logger } from "@/lib/logger";
 
 interface CheckInWithContractProps {
   isOpen: boolean;
@@ -281,7 +282,7 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
         return status;
       }
     } catch (err: any) {
-      console.error("Error checking signature status:", err);
+      logger.error("Error checking signature status:", err);
     }
 
     return null;

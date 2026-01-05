@@ -44,6 +44,7 @@ import { Textarea } from "@/components/ui/textarea";
 import axios from "@/lib/axios";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
+import { logger } from "@/lib/logger";
 
 interface Payment {
   id: number;
@@ -159,7 +160,7 @@ export default function PaymentsManagement() {
         setTotalPages(response.data.pagination?.totalPages || 1);
       }
     } catch (error) {
-      console.error("Error fetching payments:", error);
+      logger.error("Error fetching payments:", error);
       setPayments([]); // Set empty array on error
     } finally {
       setLoading(false);
@@ -177,7 +178,7 @@ export default function PaymentsManagement() {
         setStats(response.data.data);
       }
     } catch (error) {
-      console.error("Error fetching stats:", error);
+      logger.error("Error fetching stats:", error);
     }
   };
 

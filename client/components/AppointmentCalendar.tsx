@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { AlertCircle } from "lucide-react";
 import type { BlockedDate } from "@shared/database";
 import { isDateBlocked } from "@/store/slices/blockedDatesSlice";
+import { logger } from "@/lib/logger";
 
 interface AppointmentCalendarProps {
   selected: Date | undefined;
@@ -33,7 +34,7 @@ export function AppointmentCalendar({
   };
 
   const handleSelect = (date: Date | undefined) => {
-    console.log("Calendar date selected:", date);
+    logger.log("Calendar date selected:", date);
     onSelect(date);
   };
 
