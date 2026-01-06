@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Service, ServiceCategory } from "@shared/database";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { fetchServices } from "@/store/slices/servicesSlice";
@@ -28,6 +29,7 @@ const categoryInfo: Record<
 
 export function ServicesSection() {
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const { services, loading, error } = useAppSelector(
     (state) => state.services,
   );
@@ -114,6 +116,7 @@ export function ServicesSection() {
               whileInView={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.6, delay: index * 0.05 }}
               viewport={{ once: true }}
+              onClick={() => navigate("/appointment")}
               className="group relative h-80 rounded-2xl overflow-hidden cursor-pointer"
             >
               {/* Background image */}

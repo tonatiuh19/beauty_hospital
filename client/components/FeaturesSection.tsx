@@ -125,6 +125,7 @@ export function FeaturesSection() {
                 whileInView={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.6, delay: index * 0.05 }}
                 viewport={{ once: true }}
+                onClick={() => navigate("/appointment")}
                 className="group relative h-48 rounded-xl overflow-hidden cursor-pointer"
               >
                 <img
