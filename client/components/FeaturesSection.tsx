@@ -6,50 +6,42 @@ const whyChooseUs = [
     title: "Certificación Internacional",
     description:
       "Todo nuestros equipos cuentan con certificación FDA, CE, Anvisa, Cofepris que garantizan la efectividad de cada tratamiento.",
-    image:
-      "https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?q=80&w=800",
+    image: "/ASSETS%20WEB%20ALL%20BEAUTY-10.jpg",
   },
   {
     title: "Profesionales Certificados",
     description:
       "Equipo de especialistas con amplia trayectoria y certificación internacional. Tecnología Venus Concept.",
-    image:
-      "https://images.unsplash.com/photo-1576091160550-2173dba999ef?q=80&w=800",
+    image: "/ASSETS%20WEB%20ALL%20BEAUTY-11.jpg",
   },
   {
     title: "Resultados Comprobados",
     description:
       "Miles de clientes satisfechos en más de 60 países respaldan la efectividad de nuestros tratamientos.",
-    image:
-      "https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?q=80&w=800",
+    image: "/ASSETS%20WEB%20ALL%20BEAUTY-12.jpg",
   },
 ];
 
 const concerns = [
   {
     title: "Arrugas",
-    image:
-      "https://images.unsplash.com/photo-1512290923902-8a9f81dc236c?q=80&w=400",
+    image: "/ASSETS%20WEBSITE%20ALL%20BEAUTY-03.jpg",
   },
   {
     title: "Celulitis",
-    image:
-      "https://images.unsplash.com/photo-1515377905703-c4788e51af15?q=80&w=400",
+    image: "/ASSETS%20WEBSITE%20ALL%20BEAUTY-04.jpg",
   },
   {
     title: "Flacidez Facial",
-    image:
-      "https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?q=80&w=400",
+    image: "/ASSETS%20WEBSITE%20ALL%20BEAUTY-05.jpg",
   },
   {
     title: "Grasa Corporal",
-    image:
-      "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?q=80&w=400",
+    image: "/ASSETS%20WEBSITE%20ALL%20BEAUTY-06.jpg",
   },
   {
     title: "Verrugas o lesiones Benignas",
-    image:
-      "https://images.unsplash.com/photo-1499209974431-9dddcece7f88?q=80&w=400",
+    image: "/ASSETS%20WEBSITE%20ALL%20BEAUTY-07.jpg",
   },
 ];
 

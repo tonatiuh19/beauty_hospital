@@ -133,7 +133,8 @@ export default {
         "fade-in-down": "fade-in-down 0.6s ease-out forwards",
       },
       fontFamily: {
-        sans: ["'Inter'", "sans-serif"],
+        sans: ["'Nunito Sans'", "sans-serif"],
+        heading: ["'Newsreader'", "serif"],
       },
     },
   },

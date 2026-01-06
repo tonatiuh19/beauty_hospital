@@ -32,8 +32,7 @@ export function HeroSection() {
       <div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
         style={{
-          backgroundImage:
-            "url('/client/assets/images/ASSETS WEBSITE ALL BEAUTY-02.jpg')",
+          backgroundImage: "url('/ASSETS%20WEBSITE%20ALL%20BEAUTY-02.jpg')",
         }}
       />
       {/* Social Media Icons */}
@@ -138,7 +137,7 @@ export function HeroSection() {
               }
             }}
           >
-            Vea Nuestros Servicios
+            Ver Servicios
           </button>
         </motion.div>
       </div>

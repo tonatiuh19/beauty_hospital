@@ -1,5 +1,5 @@
 import React from "react";
-import logo3 from "../assets/images/logos/logo3.png";
+import logoHeader from "../assets/images/logos/logo-header.png";
 
 interface LogoProps {
   variant?: "full" | "icon" | "text";
@@ -26,7 +26,7 @@ export const Logo: React.FC<LogoProps> = ({
   if (variant === "icon") {
     return (
       <img
-        src={logo3}
+        src={logoHeader}
         alt="All Beauty Luxury & Wellness Icon"
         className={`h-12 w-auto ${filterClass} ${iconClassName}`}
       />
@@ -37,7 +37,7 @@ export const Logo: React.FC<LogoProps> = ({
   return (
     <div className={`flex items-center gap-4 ${className}`}>
       <img
-        src={logo3}
+        src={logoHeader}
         alt="All Beauty Icon"
         className={`h-20 w-auto ${filterClass} ${iconClassName}`}
       />

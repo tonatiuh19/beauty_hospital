@@ -14,8 +14,7 @@ export function CTASection() {
       <div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
         style={{
-          backgroundImage:
-            "url('/client/assets/images/ASSETS%20WEB%20ALL%20BEAUTY-20.jpg')",
+          backgroundImage: "url('/ASSETS%20WEB%20ALL%20BEAUTY-20.jpg')",
         }}
       />
 

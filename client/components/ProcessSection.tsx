@@ -5,7 +5,7 @@ const devices = [
   {
     name: "VENUS BLISS MAX",
     subtitle: "La Revolución en Medicina Corporal",
-    image: "/client/assets/images/ASSETS%20WEB%20ALL%20BEAUTY-13.jpg",
+    image: "/ASSETS%20WEB%20ALL%20BEAUTY-13.jpg",
     features: [
       "Tecnología dual clínica de alt mercado",
       "6 Licitros laser gran performance de grasa",
@@ -18,7 +18,7 @@ const devices = [
   {
     name: "VENUS LEGACY",
     subtitle: "El Mejor Aliado Contra Celulitis y Flacidez",
-    image: "/client/assets/images/ASSETS%20WEB%20ALL%20BEAUTY-14.jpg",
+    image: "/ASSETS%20WEB%20ALL%20BEAUTY-14.jpg",
     features: [
       "Combina",
       "Radiofrecuencia multipolar (Elo)",
@@ -32,7 +32,7 @@ const devices = [
   {
     name: "VENUS GLOW",
     subtitle: "Hidrodermobrasión de Nueva Generación",
-    image: "/client/assets/images/ASSETS%20WEB%20ALL%20BEAUTY-15.jpg",
+    image: "/ASSETS%20WEB%20ALL%20BEAUTY-15.jpg",
     features: [
       "Características:",
       "Limpieza profunda con seción controlada",
@@ -46,7 +46,7 @@ const devices = [
   {
     name: "VENUS VELOCITY",
     subtitle: "Depilación Láser de Alta Precisión",
-    image: "/client/assets/images/ASSETS%20WEB%20ALL%20BEAUTY-16.jpg",
+    image: "/ASSETS%20WEB%20ALL%20BEAUTY-16.jpg",
     features: [
       "Beneficios:",
       "Tecnología láser de diodo",
