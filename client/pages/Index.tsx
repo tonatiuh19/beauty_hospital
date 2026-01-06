@@ -6,6 +6,7 @@ import { ServicesSection } from "@/components/ServicesSection";
 import { ProcessSection } from "@/components/ProcessSection";
 import { TestimonialsSection } from "@/components/TestimonialsSection";
 import { CTASection } from "@/components/CTASection";
+import { FAQSection } from "@/components/FAQSection";
 import { Footer } from "@/components/Footer";
 import { MetaHelmet } from "@/components/MetaHelmet";
 import { useAppDispatch } from "@/store/hooks";
@@ -28,11 +29,12 @@ export default function Index() {
       />
       <Header />
       <HeroSection />
-      <FeaturesSection />
       <ServicesSection />
+      <FeaturesSection />
       <ProcessSection />
       <TestimonialsSection />
       <CTASection />
+      <FAQSection />
       <Footer />
     </div>
   );

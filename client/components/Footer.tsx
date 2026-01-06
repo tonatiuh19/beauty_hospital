@@ -35,238 +35,302 @@ export function Footer() {
   };
 
   return (
-    <footer className="bg-gradient-to-b from-gray-900 to-black border-t border-gray-800">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        <div className="grid md:grid-cols-4 gap-8 mb-12">
-          {/* Brand column */}
+    <footer className="bg-black border-t border-gray-800">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="grid md:grid-cols-5 gap-8 mb-8">
+          {/* Brand column with logo, button and phone */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
             viewport={{ once: true }}
           >
-            <div className="mb-4">
+            <div className="mb-6">
               <Logo
-                className="gap-3"
-                iconClassName="h-12 w-auto"
-                textClassName="h-12 w-auto"
+                className="gap-2"
+                iconClassName="h-10 w-auto"
+                textClassName="h-10 w-auto"
               />
             </div>
-            <p className="text-gray-400 text-sm leading-relaxed">
-              Tratamientos de depilación y bienestar premium para personas
-              modernas.
-            </p>
+            <button className="w-full bg-primary hover:bg-primary/90 text-white px-6 py-3 rounded-full text-sm font-semibold mb-4 transition-all">
+              RESERVAR UNA CITA
+            </button>
+            <a
+              href="tel:1233457890"
+              className="block text-white border-2 border-white hover:bg-white hover:text-black px-6 py-3 rounded-full text-center text-sm font-semibold transition-all"
+            >
+              123-345-7890
+            </a>
           </motion.div>
 
-          {/* Quick links */}
+          {/* Menú Rápido */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.1 }}
             viewport={{ once: true }}
           >
-            <h4 className="font-bold text-white mb-4">Enlaces Rápidos</h4>
-            <ul className="space-y-3">
+            <h4 className="font-bold text-white mb-4 text-sm">Menú Rápido</h4>
+            <ul className="space-y-2">
+              <li>
+                <a
+                  href="/"
+                  className="text-gray-400 hover:text-primary transition-colors text-sm block"
+                >
+                  • Inicio
+                </a>
+              </li>
               <li>
                 <a
                   href="#features"
                   onClick={(e) => handleSectionClick(e, "#features")}
-                  className="text-gray-400 hover:text-primary transition-colors text-sm cursor-pointer inline-flex items-center gap-2 group"
+                  className="text-gray-400 hover:text-primary transition-colors text-sm cursor-pointer block"
                 >
-                  <span className="w-1 h-1 rounded-full bg-gray-600 group-hover:bg-primary transition-colors"></span>
-                  Características
+                  • Sobre Nosotros
                 </a>
               </li>
               <li>
                 <a
                   href="#services"
                   onClick={(e) => handleSectionClick(e, "#services")}
-                  className="text-gray-400 hover:text-primary transition-colors text-sm cursor-pointer inline-flex items-center gap-2 group"
+                  className="text-gray-400 hover:text-primary transition-colors text-sm cursor-pointer block"
                 >
-                  <span className="w-1 h-1 rounded-full bg-gray-600 group-hover:bg-primary transition-colors"></span>
-                  Servicios
+                  • Tratamientos
                 </a>
               </li>
               <li>
                 <a
-                  href="#testimonials"
-                  onClick={(e) => handleSectionClick(e, "#testimonials")}
-                  className="text-gray-400 hover:text-primary transition-colors text-sm cursor-pointer inline-flex items-center gap-2 group"
+                  href="#process"
+                  onClick={(e) => handleSectionClick(e, "#process")}
+                  className="text-gray-400 hover:text-primary transition-colors text-sm cursor-pointer block"
                 >
-                  <span className="w-1 h-1 rounded-full bg-gray-600 group-hover:bg-primary transition-colors"></span>
-                  Testimonios
+                  • Tecnología
                 </a>
               </li>
               <li>
                 <a
-                  href="#contact"
-                  onClick={(e) => handleSectionClick(e, "#contact")}
-                  className="text-gray-400 hover:text-primary transition-colors text-sm cursor-pointer inline-flex items-center gap-2 group"
+                  href="#faq"
+                  onClick={(e) => handleSectionClick(e, "#faq")}
+                  className="text-gray-400 hover:text-primary transition-colors text-sm cursor-pointer block"
                 >
-                  <span className="w-1 h-1 rounded-full bg-gray-600 group-hover:bg-primary transition-colors"></span>
-                  Contacto
+                  • Preguntas Frecuentes
+                </a>
+              </li>
+              <li>
+                <a
+                  href="#cta"
+                  onClick={(e) => handleSectionClick(e, "#cta")}
+                  className="text-gray-400 hover:text-primary transition-colors text-sm cursor-pointer block"
+                >
+                  • Contacto
+                </a>
+              </li>
+              <li>
+                <a
+                  href="#"
+                  className="text-gray-400 hover:text-primary transition-colors text-sm block"
+                >
+                  • Descargar Aplicación
+                </a>
+              </li>
+              <li>
+                <a
+                  href="#"
+                  className="text-gray-400 hover:text-primary transition-colors text-sm block"
+                >
+                  • Promociones
                 </a>
               </li>
               <li>
                 <a
                   href="/admin/login"
-                  className="text-gray-400 hover:text-primary transition-colors text-sm inline-flex items-center gap-2 group"
+                  className="text-gray-400 hover:text-primary transition-colors text-sm block"
                 >
-                  <span className="w-1 h-1 rounded-full bg-gray-600 group-hover:bg-primary transition-colors"></span>
-                  Panel de Administración
+                  • Panel de Administración
                 </a>
               </li>
             </ul>
           </motion.div>
 
-          {/* Services */}
+          {/* Tratamientos Populares */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.2 }}
             viewport={{ once: true }}
           >
-            <h4 className="font-bold text-white mb-4">Servicios</h4>
-            <ul className="space-y-3">
+            <h4 className="font-bold text-white mb-4 text-sm">
+              Tratamientos Populares
+            </h4>
+            <ul className="space-y-2">
               <li>
                 <a
-                  href="#"
-                  className="text-gray-400 hover:text-primary transition-colors text-sm inline-flex items-center gap-2 group"
+                  href="#services"
+                  onClick={(e) => handleSectionClick(e, "#services")}
+                  className="text-gray-400 hover:text-primary transition-colors text-sm cursor-pointer block"
                 >
-                  <span className="w-1 h-1 rounded-full bg-gray-600 group-hover:bg-primary transition-colors"></span>
-                  Depilación Láser
+                  • Reducción de Grasa
                 </a>
               </li>
               <li>
                 <a
-                  href="#"
-                  className="text-gray-400 hover:text-primary transition-colors text-sm inline-flex items-center gap-2 group"
+                  href="#services"
+                  onClick={(e) => handleSectionClick(e, "#services")}
+                  className="text-gray-400 hover:text-primary transition-colors text-sm cursor-pointer block"
                 >
-                  <span className="w-1 h-1 rounded-full bg-gray-600 group-hover:bg-primary transition-colors"></span>
-                  Tratamientos Médicos
+                  • Tonificación Muscular
                 </a>
               </li>
               <li>
                 <a
-                  href="#"
-                  className="text-gray-400 hover:text-primary transition-colors text-sm inline-flex items-center gap-2 group"
+                  href="#services"
+                  onClick={(e) => handleSectionClick(e, "#services")}
+                  className="text-gray-400 hover:text-primary transition-colors text-sm cursor-pointer block"
                 >
-                  <span className="w-1 h-1 rounded-full bg-gray-600 group-hover:bg-primary transition-colors"></span>
-                  Cuidado de Piel
+                  • Rejuvenecimiento Facial
                 </a>
               </li>
               <li>
                 <a
-                  href="#"
-                  className="text-gray-400 hover:text-primary transition-colors text-sm inline-flex items-center gap-2 group"
+                  href="#services"
+                  onClick={(e) => handleSectionClick(e, "#services")}
+                  className="text-gray-400 hover:text-primary transition-colors text-sm cursor-pointer block"
                 >
-                  <span className="w-1 h-1 rounded-full bg-gray-600 group-hover:bg-primary transition-colors"></span>
-                  Tratamientos Especiales
+                  • Eliminación de Celulitis
                 </a>
               </li>
             </ul>
           </motion.div>
 
-          {/* Connect */}
+          {/* Contacto */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
             viewport={{ once: true }}
           >
-            <h4 className="font-bold text-white mb-4">Síguenos</h4>
-            <ul className="space-y-3">
+            <h4 className="font-bold text-white mb-4 text-sm">Contacto</h4>
+            <ul className="space-y-2">
+              <li>
+                <a
+                  href="tel:+525551234"
+                  className="text-gray-400 hover:text-primary transition-colors text-sm block"
+                >
+                  • +52 555 1234
+                </a>
+              </li>
+              <li>
+                <p className="text-gray-400 text-sm">
+                  • Tabasco, Mexico Av 123
+                </p>
+              </li>
+              <li>
+                <a
+                  href="mailto:info@allbeauty"
+                  className="text-gray-400 hover:text-primary transition-colors text-sm block"
+                >
+                  • info@allbeauty
+                </a>
+              </li>
+              <li>
+                <a
+                  href="https://center.com"
+                  className="text-gray-400 hover:text-primary transition-colors text-sm block"
+                >
+                  • center.com
+                </a>
+              </li>
+              <li>
+                <p className="text-gray-400 text-sm">• Horario: Lun - Sáb</p>
+              </li>
+              <li>
+                <p className="text-gray-400 text-sm">
+                  • 09:00 a.m. - 06:00 p.m.
+                </p>
+              </li>
+            </ul>
+          </motion.div>
+
+          {/* Síguenos */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.4 }}
+            viewport={{ once: true }}
+          >
+            <h4 className="font-bold text-white mb-4 text-sm">Síguenos</h4>
+            <ul className="space-y-2">
               <li>
                 <a
                   href="#"
-                  className="text-gray-400 hover:text-primary transition-colors text-sm inline-flex items-center gap-2 group"
+                  className="text-gray-400 hover:text-primary transition-colors text-sm block"
                 >
-                  <span className="w-1 h-1 rounded-full bg-gray-600 group-hover:bg-primary transition-colors"></span>
-                  Instagram
+                  • Facebook
                 </a>
               </li>
               <li>
                 <a
                   href="#"
-                  className="text-gray-400 hover:text-primary transition-colors text-sm inline-flex items-center gap-2 group"
+                  className="text-gray-400 hover:text-primary transition-colors text-sm block"
                 >
-                  <span className="w-1 h-1 rounded-full bg-gray-600 group-hover:bg-primary transition-colors"></span>
-                  Facebook
+                  • Instagram
                 </a>
               </li>
               <li>
                 <a
                   href="#"
-                  className="text-gray-400 hover:text-primary transition-colors text-sm inline-flex items-center gap-2 group"
+                  className="text-gray-400 hover:text-primary transition-colors text-sm block"
                 >
-                  <span className="w-1 h-1 rounded-full bg-gray-600 group-hover:bg-primary transition-colors"></span>
-                  TikTok
+                  • TikTok
                 </a>
               </li>
               <li>
                 <a
                   href="#"
-                  className="text-gray-400 hover:text-primary transition-colors text-sm inline-flex items-center gap-2 group"
+                  className="text-gray-400 hover:text-primary transition-colors text-sm block"
                 >
-                  <span className="w-1 h-1 rounded-full bg-gray-600 group-hover:bg-primary transition-colors"></span>
-                  YouTube
+                  • Youtube
                 </a>
               </li>
             </ul>
           </motion.div>
         </div>
 
-        {/* Divider */}
-        <div className="border-t border-gray-800 pt-8">
-          {/* Legal links */}
-          <div className="flex flex-col sm:flex-row justify-center items-center gap-4 sm:gap-6 mb-6">
-            <a
-              href="#"
-              className="text-sm text-gray-400 hover:text-primary transition-colors"
-            >
-              Política de Privacidad
-            </a>
-            <span className="hidden sm:inline text-gray-400">•</span>
-            <a
-              href="#"
-              className="text-sm text-gray-400 hover:text-primary transition-colors"
-            >
-              Términos de Servicio
-            </a>
-          </div>
-
-          {/* Copyright */}
-          <div className="text-center text-sm text-gray-400 flex items-center justify-center gap-2">
-            <span>© {currentYear} Hospital de Depilación. Hecho con</span>
-            <Heart
-              size={14}
-              className="fill-primary text-primary animate-pulse"
-            />
-            <span>para tu belleza.</span>
+        {/* Bottom section */}
+        <div className="border-t border-gray-800 pt-6">
+          {/* Aviso Legal */}
+          <div className="text-center mb-4">
+            <h5 className="text-white font-semibold text-sm mb-2">
+              Aviso Legal
+            </h5>
+            <p className="text-gray-400 text-xs mb-2">
+              Todos los tratamientos son realizados con equipos certificados FDA
+              y COFEPRIS.
+            </p>
+            <p className="text-gray-400 text-xs">
+              Los resultados pueden variar según cada persona. © {currentYear}{" "}
+              ALL BEAUTY Luxury and Wellness Todos los derechos reservados.
+            </p>
           </div>
         </div>
 
-        {/* Developer credit - After all content, subtle but accessible */}
-        <div className="text-center pt-4 pb-2">
+        {/* Developer credit - Very bottom */}
+        {/*  <div className="text-center pt-8 pb-4">
           <a
             href="https://disruptinglabs.com"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-gray-400 hover:text-primary transition-all duration-300 inline-flex items-center gap-1.5 opacity-30 hover:opacity-100 group"
+            className="text-xs text-gray-600 hover:text-primary transition-all duration-300 inline-flex items-center gap-1.5 opacity-40 hover:opacity-100"
             aria-label="Website developed by DisruptingLabs.com"
           >
-            <span>Developed by</span>
-            <span className="font-semibold group-hover:underline">
-              DisruptingLabs.com
+            <span>Developed with</span>
+            <Heart size={10} className="fill-red-500 text-red-500" />
+            <span>by</span>
+            <span className="font-semibold hover:underline">
+              disruptinglabs.com
             </span>
-            <span>with</span>
-            <Heart
-              size={10}
-              className="fill-red-500 text-red-500 animate-pulse"
-            />
-            <span>in Mexico</span>
           </a>
-        </div>
+        </div> */}
       </div>
     </footer>
   );

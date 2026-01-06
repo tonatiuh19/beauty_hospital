@@ -84,12 +84,8 @@ export function ServicesSection() {
   return (
     <section
       id="services"
-      className="py-20 md:py-32 bg-gradient-to-b from-gray-50 to-white relative overflow-hidden"
+      className="py-20 md:py-32 bg-white relative overflow-hidden"
     >
-      {/* Background elements */}
-      <div className="absolute top-20 right-0 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
-      <div className="absolute bottom-0 left-1/4 w-80 h-80 bg-secondary/5 rounded-full blur-3xl" />
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         {/* Section header */}
         <motion.div
@@ -97,75 +93,86 @@ export function ServicesSection() {
           whileInView={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8 }}
           viewport={{ once: true }}
-          className="text-center mb-16"
+          className="text-center mb-12"
         >
           <h2 className="text-4xl md:text-5xl font-bold mb-4 text-foreground">
-            Nuestros <span className="text-gradient">Servicios</span> Premium
+            Nuestros Mejores Servicios
           </h2>
-          <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-            Soluciones completas de depilación y bienestar para cada necesidad
+          <p className="text-base text-gray-700 max-w-3xl mx-auto">
+            En All Beauty te ofrecemos una amplia gama de tratamientos estéticos
+            no quirúrgicos diseñados para realzar tu belleza natural y ayudarte
+            a verte y sentirte lo mejor posible.
           </p>
         </motion.div>
 
-        {/* Services grid */}
-        <div className="grid md:grid-cols-2 gap-8">
-          {services.map((service, index) => {
-            const categoryData =
-              categoryInfo[service.category] ||
-              categoryInfo[ServiceCategory.OTHER];
+        {/* Services grid - 4 columns on desktop */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+          {services.slice(0, 8).map((service, index) => (
+            <motion.div
+              key={service.id}
+              initial={{ opacity: 0, scale: 0.95 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.6, delay: index * 0.05 }}
+              viewport={{ once: true }}
+              className="group relative h-80 rounded-2xl overflow-hidden cursor-pointer"
+            >
+              {/* Background image */}
+              <div
+                className="absolute inset-0 bg-cover bg-center group-hover:scale-110 transition-transform duration-500"
+                style={{
+                  backgroundImage: service.image_url
+                    ? `url('${service.image_url}')`
+                    : `url('https://images.unsplash.com/photo-1540555700478-4be289fbecef?q=80&w=800')`,
+                }}
+              />
 
-            return (
-              <motion.div
-                key={service.id}
-                initial={{ opacity: 0, scale: 0.95 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.6, delay: index * 0.1 }}
-                viewport={{ once: true }}
-                className="group relative bg-white rounded-2xl overflow-hidden border border-gray-200 hover:border-primary/30 transition-all hover:shadow-2xl"
-              >
-                {/* Card header with gradient background */}
-                <div className="bg-gradient-to-r from-primary/10 via-secondary/10 to-accent/10 h-24 flex items-center justify-center group-hover:from-primary/20 group-hover:via-secondary/20 group-hover:to-accent/20 transition-colors">
-                  <span className="text-5xl group-hover:scale-125 transition-transform">
-                    {categoryData.emoji}
-                  </span>
-                </div>
+              {/* Dark overlay (default state) */}
+              <div className="absolute inset-0 bg-gradient-to-b from-black/40 to-black/60 group-hover:opacity-0 transition-opacity duration-300" />
 
-                {/* Card content */}
-                <div className="p-8">
-                  <h3 className="text-2xl font-bold mb-2 text-foreground">
+              {/* Light overlay (hover state) */}
+              <div className="absolute inset-0 bg-luxury-cream-light opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+
+              {/* Content overlay */}
+              <div className="relative z-10 h-full flex flex-col justify-between p-6">
+                {/* Title - always visible */}
+                <div>
+                  <h3 className="text-xl font-bold text-white group-hover:text-primary leading-tight mb-2 transition-colors duration-300">
                     {service.name}
                   </h3>
-                  <p className="text-gray-600 mb-6 leading-relaxed">
-                    {service.description || "Servicio profesional de calidad"}
-                  </p>
 
-                  {/* Service details */}
-                  <ul className="space-y-2 mb-6">
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <div className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-primary to-secondary" />
-                      Duración: {service.duration_minutes} minutos
-                    </li>
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <div className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-primary to-secondary" />
-                      Categoría: {categoryData.displayName}
-                    </li>
-                  </ul>
-
-                  {/* Price and CTA */}
-                  <div className="flex items-center justify-between pt-6 border-t border-gray-200 group-hover:border-primary/20 transition-colors">
-                    <span className="font-bold text-primary">
-                      ${service.price.toFixed(2)}
-                    </span>
-                    <button className="px-4 py-2 bg-gradient-to-r from-primary to-secondary text-white rounded-lg text-sm font-semibold hover:shadow-lg hover:shadow-primary/50 transition-all group-hover:translate-x-1 flex items-center gap-2">
-                      <span>Reservar</span>
-                      <ArrowRight size={16} />
-                    </button>
+                  {/* Additional info - visible on hover */}
+                  <div className="max-h-0 opacity-0 group-hover:max-h-96 group-hover:opacity-100 overflow-hidden transition-all duration-300">
+                    {service.description && (
+                      <p className="text-sm text-primary mb-3 leading-relaxed font-medium">
+                        {service.description}
+                      </p>
+                    )}
                   </div>
                 </div>
-              </motion.div>
-            );
-          })}
+
+                {/* Arrow button */}
+                <div className="flex justify-end">
+                  <button className="w-12 h-12 bg-primary hover:bg-primary/90 rounded-full flex items-center justify-center transition-all hover:scale-110 shadow-lg">
+                    <ArrowRight size={20} className="text-white" />
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          ))}
         </div>
+
+        {/* View all button */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.3 }}
+          viewport={{ once: true }}
+          className="text-center"
+        >
+          <button className="px-8 py-4 bg-primary hover:bg-primary/90 text-white rounded-full font-semibold hover:shadow-lg hover:shadow-primary/50 transition-all hover:scale-105 uppercase tracking-wide text-sm">
+            Ver Todos Lo Servicios
+          </button>
+        </motion.div>
       </div>
     </section>
   );

@@ -56,6 +56,7 @@ const handleGetServices: RequestHandler = async (req, res) => {
         id, 
         name, 
         description, 
+        image_url,
         category, 
         price, 
         duration_minutes, 

@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { ArrowRight, Sparkles } from "lucide-react";
+import { Facebook, Instagram, Youtube } from "lucide-react";
 import type { Variants } from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -26,108 +26,120 @@ export function HeroSection() {
   };
 
   return (
-    <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-br from-white via-luxury-cream-light/50 to-luxury-cream-dark/50">
-      {/* Decorative elements */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary/10 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 -left-40 w-80 h-80 bg-secondary/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-accent/10 rounded-full blur-3xl" />
+    <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
+      {/* Background image overlay */}
+      <div className="absolute inset-0 bg-black/40 z-10" />
+      <div
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+        style={{
+          backgroundImage:
+            "url('/client/assets/images/ASSETS WEBSITE ALL BEAUTY-02.jpg')",
+        }}
+      />
+      {/* Social Media Icons */}
+      <div className="absolute right-4 sm:right-6 lg:right-8 top-1/2 -translate-y-1/2 z-30 flex flex-col gap-6">
+        <a
+          href="https://facebook.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-12 h-12 flex items-center justify-center transition-all hover:scale-110"
+        >
+          <Facebook size={24} className="text-white" />
+        </a>
+        <a
+          href="https://instagram.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-12 h-12 flex items-center justify-center transition-all hover:scale-110"
+        >
+          <Instagram size={24} className="text-white" />
+        </a>
+        <a
+          href="https://tiktok.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-12 h-12 flex items-center justify-center transition-all hover:scale-110"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="24"
+            height="24"
+            className="fill-white"
+          >
+            <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z" />
+          </svg>
+        </a>
+        <a
+          href="https://youtube.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-12 h-12 flex items-center justify-center transition-all hover:scale-110"
+        >
+          <Youtube size={24} className="text-white" />
+        </a>
       </div>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+      <div className="relative z-20 w-full px-4 sm:px-6 lg:px-16 py-20 min-h-screen flex flex-col justify-between">
+        {/* Main content - centered vertically on left */}
+        <div className="flex-1 flex items-center">
+          <motion.div
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+            className="text-left max-w-2xl"
+          >
+            {/* Main heading */}
+            <motion.h1
+              variants={itemVariants}
+              className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 text-white leading-tight"
+            >
+              Centro de Belleza
+              <br />y Cuidado Personal
+            </motion.h1>
+
+            {/* Subheading */}
+            <motion.p
+              variants={itemVariants}
+              className="text-base md:text-lg text-white/90 mb-10 max-w-lg leading-relaxed"
+            >
+              Tu espacio de confianza para cuidados de belleza avanzados y
+              atención profesional.
+            </motion.p>
+          </motion.div>
+        </div>
+
+        {/* CTA Buttons - bottom right */}
         <motion.div
-          variants={containerVariants}
+          variants={itemVariants}
           initial="hidden"
           animate="visible"
-          className="text-center"
+          className="flex flex-col sm:flex-row gap-4 items-center justify-center sm:justify-end pb-8"
         >
-          {/* Badge */}
-          <motion.div
-            variants={itemVariants}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-full shadow-sm hover:shadow-md transition-shadow mb-8"
+          <button
+            className="px-8 py-4 bg-primary hover:bg-primary/90 text-white rounded-full font-semibold hover:shadow-lg hover:shadow-primary/50 transition-all hover:scale-105 uppercase tracking-wide text-sm"
+            onClick={() => {
+              navigate("/appointment");
+            }}
           >
-            <Sparkles size={16} className="text-primary" />
-            <span className="text-sm font-medium text-gray-700">
-              Bienvenido al Hospital de Depilación
-            </span>
-          </motion.div>
-
-          {/* Main heading */}
-          <motion.h1
-            variants={itemVariants}
-            className="text-5xl md:text-7xl font-bold mb-6 text-gradient"
-          >
-            Radiante y Hermosa
-          </motion.h1>
-
-          {/* Subheading */}
-          <motion.p
-            variants={itemVariants}
-            className="text-xl md:text-2xl text-gray-600 mb-8 max-w-3xl mx-auto leading-relaxed"
-          >
-            Descubre nuestros tratamientos de depilación premium y servicios de
-            bienestar diseñados para realzar tu belleza natural y aumentar tu
-            confianza.
-          </motion.p>
-
-          {/* CTA Buttons */}
-          <motion.div
-            variants={itemVariants}
-            className="flex flex-col sm:flex-row gap-4 justify-center items-center"
-          >
-            <button
-              className="px-8 py-4 bg-gradient-to-r from-primary to-secondary text-white rounded-xl font-semibold hover:shadow-lg hover:shadow-primary/50 transition-all hover:scale-105 flex items-center gap-2 group"
-              onClick={() => {
-                navigate("/appointment");
-              }}
-            >
-              Reservar Tratamiento
-              <ArrowRight
-                size={20}
-                className="group-hover:translate-x-1 transition-transform"
-              />
-            </button>
-            <button
-              className="px-8 py-4 border-2 border-primary text-primary rounded-xl font-semibold hover:bg-primary hover:text-white transition-all hover:scale-105"
-              onClick={() => {
-                if (location.pathname !== "/") {
-                  navigate("/");
-                  setTimeout(() => {
-                    const el = document.querySelector("#services");
-                    if (el) el.scrollIntoView({ behavior: "smooth" });
-                  }, 100);
-                } else {
+            Reservar una Cita
+          </button>
+          <button
+            className="px-8 py-4 border-2 border-white text-white rounded-full font-semibold hover:bg-white hover:text-gray-900 transition-all hover:scale-105 uppercase tracking-wide text-sm"
+            onClick={() => {
+              if (location.pathname !== "/") {
+                navigate("/");
+                setTimeout(() => {
                   const el = document.querySelector("#services");
                   if (el) el.scrollIntoView({ behavior: "smooth" });
-                }
-              }}
-            >
-              Ver Servicios
-            </button>
-          </motion.div>
-
-          {/* Trust indicators */}
-          <motion.div
-            variants={itemVariants}
-            className="mt-12 flex flex-col sm:flex-row gap-8 justify-center items-center text-center"
+                }, 100);
+              } else {
+                const el = document.querySelector("#services");
+                if (el) el.scrollIntoView({ behavior: "smooth" });
+              }
+            }}
           >
-            <div>
-              <div className="text-3xl font-bold text-primary">5000+</div>
-              <p className="text-gray-600 text-sm">Clientes Felices</p>
-            </div>
-            <div className="hidden sm:block h-12 w-px bg-gradient-to-b from-transparent via-gray-300 to-transparent" />
-            <div>
-              <div className="text-3xl font-bold text-secondary">15+</div>
-              <p className="text-gray-600 text-sm">
-                Especialistas Certificados
-              </p>
-            </div>
-            <div className="hidden sm:block h-12 w-px bg-gradient-to-b from-transparent via-gray-300 to-transparent" />
-            <div>
-              <div className="text-3xl font-bold text-accent">4.9★</div>
-              <p className="text-gray-600 text-sm">Calificación Promedio</p>
-            </div>
-          </motion.div>
+            Vea Nuestros Servicios
+          </button>
         </motion.div>
       </div>
     </section>

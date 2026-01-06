@@ -69,7 +69,7 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-200">
+    <header className="sticky top-0 z-50 bg-black/90 backdrop-blur-sm border-b border-gray-800">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
@@ -108,24 +108,24 @@ export function Header() {
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-8">
             <motion.a
-              href="#features"
+              href="#services"
               onClick={(e) => handleSectionClick(e, "#features")}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.1 }}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+              className="text-sm text-gray-300 hover:text-primary transition-colors cursor-pointer"
             >
-              Características
+              Tratamientos
             </motion.a>
             <motion.a
-              href="#services"
+              href="#features"
               onClick={(e) => handleSectionClick(e, "#services")}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.2 }}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+              className="text-sm text-gray-300 hover:text-primary transition-colors cursor-pointer"
             >
-              Servicios
+              Sobre Nostros
             </motion.a>
             <motion.a
               href="#process"
@@ -133,9 +133,9 @@ export function Header() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.3 }}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+              className="text-sm text-gray-300 hover:text-primary transition-colors cursor-pointer"
             >
-              Proceso
+              Tecnología
             </motion.a>
             <motion.a
               href="#testimonials"
@@ -143,7 +143,7 @@ export function Header() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.4 }}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+              className="text-sm text-gray-300 hover:text-primary transition-colors cursor-pointer"
             >
               Testimonios
             </motion.a>
@@ -204,7 +204,7 @@ export function Header() {
                   <Button
                     variant="ghost"
                     onClick={() => setAuthModalOpen(true)}
-                    className="text-sm"
+                    className="text-sm text-white hover:text-white"
                   >
                     Iniciar Sesión
                   </Button>
@@ -228,7 +228,10 @@ export function Header() {
           </nav>
 
           {/* Mobile Menu Button */}
-          <button className="md:hidden" onClick={() => setIsOpen(!isOpen)}>
+          <button
+            className="md:hidden text-white"
+            onClick={() => setIsOpen(!isOpen)}
+          >
             {isOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
         </div>
@@ -243,28 +246,28 @@ export function Header() {
             <a
               href="#features"
               onClick={(e) => handleSectionClick(e, "#features")}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+              className="text-sm text-gray-300 hover:text-primary transition-colors cursor-pointer"
             >
               Características
             </a>
             <a
               href="#services"
               onClick={(e) => handleSectionClick(e, "#services")}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+              className="text-sm text-gray-300 hover:text-primary transition-colors cursor-pointer"
             >
               Servicios
             </a>
             <a
               href="#process"
               onClick={(e) => handleSectionClick(e, "#process")}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+              className="text-sm text-gray-300 hover:text-primary transition-colors cursor-pointer"
             >
               Proceso
             </a>
             <a
               href="#testimonials"
               onClick={(e) => handleSectionClick(e, "#testimonials")}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+              className="text-sm text-gray-300 hover:text-primary transition-colors cursor-pointer"
             >
               Testimonios
             </a>
@@ -272,13 +275,11 @@ export function Header() {
             {/* Auth Section - Mobile */}
             {isAuthenticated && user ? (
               <>
-                <div className="pt-2 border-t border-gray-200">
-                  <p className="text-sm font-medium mb-2">
+                <div className="pt-2 border-t border-gray-700">
+                  <p className="text-sm font-medium mb-2 text-white">
                     {user.first_name} {user.last_name}
                   </p>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    {user.email}
-                  </p>
+                  <p className="text-xs text-gray-400 mb-3">{user.email}</p>
                 </div>
                 <Button
                   variant="outline"
