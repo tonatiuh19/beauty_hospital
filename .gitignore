@@ -57,7 +57,12 @@ temp/
 *.sqlite
 *.db
 
-# Markdown files (except README)
+# Markdown files (except README, docs/, and github config)
 *.md
 !README.md
+!.github/copilot-instructions.md
+!.github/copilot-instructions-client-template.md
+!scripts/README.md
+!docs/
+!docs/*.md
 .vercel
