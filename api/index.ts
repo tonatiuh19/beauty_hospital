@@ -8,6 +8,7 @@ import type { DemoResponse } from "../shared/api";
 import nodemailer from "nodemailer";
 import Stripe from "stripe";
 import crypto from "crypto";
+import jwt from "jsonwebtoken";
 
 // Database connection
 const pool = mysql.createPool({
@@ -796,31 +797,81 @@ async function sendVerificationEmail(
     console.log("✅ SMTP connection verified!");
 
     // Email template
-    const emailBody = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px; }
-          .container { background-color: white; border-radius: 10px; padding: 30px; max-width: 600px; margin: 0 auto; }
-          .code { font-size: 32px; font-weight: bold; color: #C9A159; text-align: center; padding: 20px; background-color: #f0f0f0; border-radius: 5px; margin: 20px 0; }
-          .footer { color: #666; font-size: 12px; text-align: center; margin-top: 30px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <h1>Hola ${userName},</h1>
-          <p>Tu código de verificación para All Beauty Luxury & Wellness es:</p>
-          <div class="code">${code}</div>
-          <p>Este código expirará en 10 minutos.</p>
-          <p>Si no solicitaste este código, puedes ignorar este mensaje.</p>
-          <div class="footer">
-            <p>All Beauty Luxury & Wellness - Tu clínica de confianza</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
+    const emailBody = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Codigo de Verificacion - All Beauty Luxury &amp; Wellness</title>
+</head>
+<body style="margin:0;padding:0;background-color:#F5F0E8;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#F5F0E8;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.12);">
+
+        <!-- Logo Header -->
+        <tr>
+          <td style="background-color:#111111;padding:28px 40px;text-align:center;">
+            <img src="https://disruptinglabs.com/data/beauty/assets/images/logo-header.png" alt="All Beauty Luxury &amp; Wellness" style="height:52px;width:auto;display:inline-block;" />
+          </td>
+        </tr>
+
+        <!-- Hero Band -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#C9A159 0%,#E8C580 60%,#B8903D 100%);padding:36px 40px;text-align:center;">
+            <table cellpadding="0" cellspacing="0" style="margin:0 auto 16px;">
+              <tr><td style="width:64px;height:64px;background-color:rgba(255,255,255,0.25);border-radius:50%;text-align:center;vertical-align:middle;">
+                <span style="font-size:30px;line-height:64px;">&#9679;</span>
+              </td></tr>
+            </table>
+            <h1 style="margin:0 0 8px;font-size:26px;font-weight:700;color:#FFFFFF;letter-spacing:-0.5px;">Codigo de Verificacion</h1>
+            <p style="margin:0;font-size:15px;color:rgba(255,255,255,0.9);">Verifica tu identidad para continuar</p>
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="padding:40px;">
+            <p style="margin:0 0 12px;font-size:16px;color:#1A1A1A;">Hola <strong>${userName}</strong>,</p>
+            <p style="margin:0 0 28px;font-size:15px;color:#4B4B4B;line-height:1.7;">
+              Tu codigo de verificacion para <strong>All Beauty Luxury &amp; Wellness</strong> es:
+            </p>
+
+            <!-- Code Box -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+              <tr>
+                <td style="background-color:#F5F0E8;border:2px solid #C9A159;border-radius:12px;padding:24px;text-align:center;">
+                  <span style="font-size:48px;font-weight:700;letter-spacing:12px;color:#C9A159;font-family:Georgia,serif;">${code}</span>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Expiry Notice -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+              <tr>
+                <td style="background-color:#FFF8EC;border-left:4px solid #C9A159;border-radius:0 8px 8px 0;padding:16px 20px;">
+                  <p style="margin:0;font-size:14px;color:#7A5C1E;line-height:1.6;">
+                    <strong>&#9888; Importante:</strong> Este codigo expirara en <strong>10 minutos</strong>. Si no solicitaste este codigo, puedes ignorar este mensaje.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="background-color:#111111;padding:24px 40px;text-align:center;">
+            <p style="margin:0 0 6px;font-size:13px;color:#C9A159;font-weight:600;letter-spacing:0.5px;">ALL BEAUTY LUXURY &amp; WELLNESS</p>
+            <p style="margin:0;font-size:12px;color:#666666;">Este es un correo automatico, por favor no respondas directamente a este mensaje.</p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
 
     console.log("📤 Sending email to:", email);
     console.log(
@@ -945,271 +996,128 @@ async function sendAppointmentConfirmationEmail(
       day: "numeric",
     });
 
-    // Email template without emojis - using HTML/CSS for better compatibility
-    const emailBody = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-          * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-          }
-          body { 
-            font-family: 'Arial', 'Helvetica', sans-serif; 
-            background-color: #f4f7fa; 
-            padding: 20px; 
-            line-height: 1.6;
-          }
-          .container { 
-            background-color: #ffffff; 
-            border-radius: 12px; 
-            padding: 40px; 
-            max-width: 600px; 
-            margin: 0 auto; 
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-          }
-          .header {
-            background: linear-gradient(135deg, #C9A159 0%, #E8C580 100%);
-            color: white;
-            padding: 30px;
-            border-radius: 8px;
-            text-align: center;
-            margin-bottom: 30px;
-          }
-          .header h1 {
-            margin: 10px 0 0 0;
-            font-size: 28px;
-            font-weight: bold;
-          }
-          .success-icon {
-            width: 60px;
-            height: 60px;
-            background-color: #10b981;
-            border-radius: 50%;
-            margin: 0 auto 15px;
-            position: relative;
-          }
-          .success-icon::after {
-            content: '';
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
-            width: 20px;
-            height: 35px;
-            border: solid white;
-            border-width: 0 4px 4px 0;
-            transform: translate(-50%, -60%) rotate(45deg);
-          }
-          .header p {
-            margin: 10px 0 0 0;
-            font-size: 16px;
-            opacity: 0.95;
-          }
-          .greeting {
-            font-size: 16px;
-            color: #374151;
-            margin-bottom: 15px;
-          }
-          .message {
-            color: #374151;
-            margin-bottom: 25px;
-          }
-          .details {
-            background-color: #f9fafb;
-            border-left: 4px solid #C9A159;
-            padding: 20px;
-            margin: 20px 0;
-            border-radius: 4px;
-          }
-          .detail-row {
-            display: table;
-            width: 100%;
-            padding: 12px 0;
-            border-bottom: 1px solid #e5e7eb;
-          }
-          .detail-row:last-child {
-            border-bottom: none;
-          }
-          .detail-label {
-            display: table-cell;
-            font-weight: bold;
-            color: #374151;
-            width: 40%;
-          }
-          .detail-value {
-            display: table-cell;
-            color: #C9A159;
-            font-weight: 600;
-            text-align: right;
-          }
-          .icon-box {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            background-color: #C9A159;
-            border-radius: 3px;
-            margin-right: 8px;
-            vertical-align: middle;
-          }
-          .amount-section {
-            background-color: #ecfdf5;
-            border: 2px solid #10b981;
-            border-radius: 8px;
-            padding: 20px;
-            text-align: center;
-            margin: 25px 0;
-          }
-          .amount-label {
-            font-size: 14px;
-            color: #059669;
-            font-weight: 600;
-            margin-bottom: 5px;
-          }
-          .amount {
-            font-size: 32px;
-            color: #059669;
-            font-weight: bold;
-          }
-          .info-box {
-            background-color: #eff6ff;
-            border: 1px solid #bfdbfe;
-            border-radius: 8px;
-            padding: 20px;
-            margin: 25px 0;
-          }
-          .info-box h3 {
-            color: #1e40af;
-            margin: 0 0 15px 0;
-            font-size: 18px;
-          }
-          .info-box p {
-            color: #1e3a8a;
-            margin: 10px 0;
-          }
-          .info-icon {
-            display: inline-block;
-            width: 18px;
-            height: 18px;
-            background-color: #3b82f6;
-            border-radius: 50%;
-            margin-right: 8px;
-            vertical-align: middle;
-            position: relative;
-          }
-          .info-icon::after {
-            content: 'i';
-            position: absolute;
-            color: white;
-            font-weight: bold;
-            font-size: 12px;
-            left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
-          }
-          .contact-info {
-            background-color: #f9fafb;
-            border-radius: 8px;
-            padding: 20px;
-            margin: 25px 0;
-          }
-          .contact-info h3 {
-            color: #374151;
-            text-align: center;
-            margin-bottom: 15px;
-            font-size: 18px;
-          }
-          .contact-item {
-            color: #374151;
-            margin: 10px 0;
-            text-align: center;
-          }
-          .contact-item strong {
-            color: #C9A159;
-          }
-          .footer { 
-            color: #6b7280; 
-            font-size: 14px; 
-            text-align: center; 
-            margin-top: 40px; 
-            padding-top: 20px;
-            border-top: 1px solid #e5e7eb;
-          }
-          .footer p {
-            margin: 8px 0;
-          }
-          .footer-note {
-            font-size: 12px;
-            color: #9ca3af;
-            margin-top: 15px;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <div class="success-icon"></div>
-            <h1>Cita Confirmada</h1>
-            <p>Tu pago ha sido procesado exitosamente</p>
-          </div>
-          
-          <p class="greeting">Hola <strong>${patientName}</strong>,</p>
-          
-          <p class="message">
-            Nos complace confirmar que tu cita ha sido agendada exitosamente. Tu pago ha sido procesado y tu reserva está confirmada.
-          </p>
+    const emailBody = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cita Confirmada - All Beauty Luxury &amp; Wellness</title>
+</head>
+<body style="margin:0;padding:0;background-color:#F5F0E8;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#F5F0E8;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.12);">
 
-          <div class="details">
-            <div class="detail-row">
-              <span class="detail-label"><span class="icon-box"></span> Servicio</span>
-              <span class="detail-value">${appointmentDetails.serviceName}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label"><span class="icon-box"></span> Fecha</span>
-              <span class="detail-value">${formattedDate}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label"><span class="icon-box"></span> Hora</span>
-              <span class="detail-value">${appointmentDetails.time}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label"><span class="icon-box"></span> Duracion</span>
-              <span class="detail-value">${appointmentDetails.duration} minutos</span>
-            </div>
-          </div>
+        <!-- Logo Header -->
+        <tr>
+          <td style="background-color:#111111;padding:28px 40px;text-align:center;">
+            <img src="https://disruptinglabs.com/data/beauty/assets/images/logo-header.png" alt="All Beauty Luxury &amp; Wellness" style="height:52px;width:auto;display:inline-block;" />
+          </td>
+        </tr>
 
-          <div class="amount-section">
-            <div class="amount-label">MONTO PAGADO</div>
-            <div class="amount">$${appointmentDetails.amount.toFixed(2)} MXN</div>
-          </div>
+        <!-- Hero Band -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#C9A159 0%,#E8C580 60%,#B8903D 100%);padding:36px 40px;text-align:center;">
+            <table cellpadding="0" cellspacing="0" style="margin:0 auto 16px;">
+              <tr><td style="width:64px;height:64px;background-color:rgba(255,255,255,0.2);border-radius:50%;text-align:center;vertical-align:middle;">
+                <span style="font-size:28px;line-height:64px;color:#FFFFFF;">&#10003;</span>
+              </td></tr>
+            </table>
+            <h1 style="margin:0 0 8px;font-size:26px;font-weight:700;color:#FFFFFF;letter-spacing:-0.5px;">Cita Confirmada</h1>
+            <p style="margin:0;font-size:15px;color:rgba(255,255,255,0.9);">Tu pago ha sido procesado exitosamente</p>
+          </td>
+        </tr>
 
-          <div class="info-box">
-            <h3><span class="info-icon"></span> Informacion Importante</h3>
-            <p><strong>Por favor llega 10 minutos antes</strong> de tu cita para completar el registro.</p>
-            <p>Si necesitas cancelar o reprogramar tu cita, por favor contactanos con al menos 24 horas de anticipacion.</p>
-          </div>
-
-          <div class="contact-info">
-            <h3>Necesitas ayuda?</h3>
-            <div class="contact-item">Telefono: <strong>+52 1234567890</strong></div>
-            <div class="contact-item">Email: <strong>info@hospital.mx</strong></div>
-          </div>
-
-          <div class="footer">
-            <p><strong>All Beauty Luxury & Wellness</strong></p>
-            <p>Tu clinica de confianza para tratamientos de belleza y estetica</p>
-            <p class="footer-note">
-              Este es un correo automatico, por favor no respondas directamente a este mensaje.
+        <!-- Body -->
+        <tr>
+          <td style="padding:40px;">
+            <p style="margin:0 0 12px;font-size:16px;color:#1A1A1A;">Hola <strong>${patientName}</strong>,</p>
+            <p style="margin:0 0 28px;font-size:15px;color:#4B4B4B;line-height:1.7;">
+              Nos complace confirmar que tu cita ha sido agendada exitosamente en <strong>All Beauty Luxury &amp; Wellness</strong>. Tu pago ha sido procesado y tu reserva esta confirmada.
             </p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
+
+            <!-- Details Card -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;border:1px solid #EDE8DF;border-radius:12px;overflow:hidden;">
+              <tr><td style="background-color:#FAF7F2;padding:14px 20px;border-bottom:1px solid #EDE8DF;">
+                <span style="font-size:13px;font-weight:700;color:#C9A159;letter-spacing:1px;text-transform:uppercase;">Detalles de tu Cita</span>
+              </td></tr>
+              <tr><td style="padding:0 20px;">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr><td style="padding:14px 0;border-bottom:1px solid #F0EBE3;">
+                    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td style="font-size:14px;color:#6B7280;font-weight:600;">Servicio</td>
+                      <td style="font-size:14px;color:#1A1A1A;font-weight:700;text-align:right;">${appointmentDetails.serviceName}</td>
+                    </tr></table>
+                  </td></tr>
+                  <tr><td style="padding:14px 0;border-bottom:1px solid #F0EBE3;">
+                    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td style="font-size:14px;color:#6B7280;font-weight:600;">Fecha</td>
+                      <td style="font-size:14px;color:#1A1A1A;font-weight:700;text-align:right;">${formattedDate}</td>
+                    </tr></table>
+                  </td></tr>
+                  <tr><td style="padding:14px 0;border-bottom:1px solid #F0EBE3;">
+                    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td style="font-size:14px;color:#6B7280;font-weight:600;">Hora</td>
+                      <td style="font-size:14px;color:#C9A159;font-weight:700;text-align:right;">${appointmentDetails.time}</td>
+                    </tr></table>
+                  </td></tr>
+                  <tr><td style="padding:14px 0;">
+                    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td style="font-size:14px;color:#6B7280;font-weight:600;">Duracion</td>
+                      <td style="font-size:14px;color:#1A1A1A;font-weight:700;text-align:right;">${appointmentDetails.duration} minutos</td>
+                    </tr></table>
+                  </td></tr>
+                </table>
+              </td></tr>
+            </table>
+
+            <!-- Amount -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+              <tr>
+                <td style="background:linear-gradient(135deg,#C9A159 0%,#E8C580 100%);border-radius:12px;padding:24px;text-align:center;">
+                  <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:rgba(255,255,255,0.8);letter-spacing:1.5px;text-transform:uppercase;">Monto Pagado</p>
+                  <p style="margin:0;font-size:36px;font-weight:700;color:#FFFFFF;font-family:Georgia,serif;">$${appointmentDetails.amount.toFixed(2)} <span style="font-size:18px;">MXN</span></p>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Info Box -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+              <tr>
+                <td style="background-color:#FAF7F2;border-left:4px solid #C9A159;border-radius:0 8px 8px 0;padding:18px 20px;">
+                  <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#7A5C1E;">Informacion Importante</p>
+                  <p style="margin:0 0 6px;font-size:14px;color:#5A4A2E;line-height:1.6;">&#8226; <strong>Por favor llega 10 minutos antes</strong> de tu cita para completar el registro.</p>
+                  <p style="margin:0;font-size:14px;color:#5A4A2E;line-height:1.6;">&#8226; Si necesitas cancelar o reprogramar, contactanos con al menos 24 horas de anticipacion.</p>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Contact -->
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="background-color:#F8F8F8;border-radius:10px;padding:20px;text-align:center;">
+                  <p style="margin:0 0 12px;font-size:14px;font-weight:700;color:#1A1A1A;">&#63; Necesitas ayuda?</p>
+                  <p style="margin:0 0 4px;font-size:14px;color:#4B4B4B;">Telefono: <strong style="color:#C9A159;">+52 1234567890</strong></p>
+                  <p style="margin:0;font-size:14px;color:#4B4B4B;">Email: <strong style="color:#C9A159;">info@allbeautyluxury.mx</strong></p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="background-color:#111111;padding:24px 40px;text-align:center;">
+            <p style="margin:0 0 6px;font-size:13px;color:#C9A159;font-weight:600;letter-spacing:0.5px;">ALL BEAUTY LUXURY &amp; WELLNESS</p>
+            <p style="margin:0;font-size:12px;color:#666666;">Este es un correo automatico, por favor no respondas directamente a este mensaje.</p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
 
     console.log("Sending confirmation email to:", email);
 
@@ -1248,6 +1156,609 @@ async function sendAppointmentConfirmationEmail(
     if (error instanceof Error) {
       console.error("   Error message:", error.message);
     }
+    return false;
+  }
+}
+
+/**
+ * Helper function to send appointment cancellation notification email
+ */
+async function sendAppointmentCancellationEmail(
+  email: string,
+  patientName: string,
+  appointmentDetails: {
+    serviceName: string;
+    date: string;
+    time: string;
+    reason?: string;
+  },
+): Promise<boolean> {
+  try {
+    let transportConfig: any;
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      const testAccount = await nodemailer.createTestAccount();
+      transportConfig = {
+        host: testAccount.smtp.host,
+        port: testAccount.smtp.port,
+        secure: testAccount.smtp.secure,
+        auth: { user: testAccount.user, pass: testAccount.pass },
+      };
+    } else {
+      transportConfig = {
+        host: process.env.SMTP_HOST || "mail.garbrix.com",
+        port: parseInt(process.env.SMTP_PORT || "465"),
+        secure: process.env.SMTP_SECURE === "true",
+        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      };
+    }
+    const transporter = nodemailer.createTransport(transportConfig);
+    await transporter.verify();
+
+    const formattedDate = new Date(appointmentDetails.date).toLocaleDateString(
+      "es-MX",
+      { weekday: "long", year: "numeric", month: "long", day: "numeric" },
+    );
+
+    const emailBody = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cancelacion de Cita - All Beauty Luxury &amp; Wellness</title>
+</head>
+<body style="margin:0;padding:0;background-color:#F5F0E8;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#F5F0E8;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.12);">
+
+        <!-- Logo Header -->
+        <tr>
+          <td style="background-color:#111111;padding:28px 40px;text-align:center;">
+            <img src="https://disruptinglabs.com/data/beauty/assets/images/logo-header.png" alt="All Beauty Luxury &amp; Wellness" style="height:52px;width:auto;display:inline-block;" />
+          </td>
+        </tr>
+
+        <!-- Hero Band (red for cancellation) -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#DC2626 0%,#EF4444 60%,#C01C1C 100%);padding:36px 40px;text-align:center;">
+            <table cellpadding="0" cellspacing="0" style="margin:0 auto 16px;">
+              <tr><td style="width:64px;height:64px;background-color:rgba(255,255,255,0.2);border-radius:50%;text-align:center;vertical-align:middle;">
+                <span style="font-size:28px;line-height:64px;color:#FFFFFF;">&#10005;</span>
+              </td></tr>
+            </table>
+            <h1 style="margin:0 0 8px;font-size:26px;font-weight:700;color:#FFFFFF;letter-spacing:-0.5px;">Cita Cancelada</h1>
+            <p style="margin:0;font-size:15px;color:rgba(255,255,255,0.9);">Tu cita ha sido cancelada</p>
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="padding:40px;">
+            <p style="margin:0 0 12px;font-size:16px;color:#1A1A1A;">Hola <strong>${patientName}</strong>,</p>
+            <p style="margin:0 0 28px;font-size:15px;color:#4B4B4B;line-height:1.7;">
+              Te informamos que tu cita en <strong>All Beauty Luxury &amp; Wellness</strong> ha sido cancelada. A continuacion encontraras los detalles de la cita cancelada.
+            </p>
+
+            <!-- Details Card -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;border:1px solid #EDE8DF;border-radius:12px;overflow:hidden;">
+              <tr><td style="background-color:#FEF2F2;padding:14px 20px;border-bottom:1px solid #FECACA;">
+                <span style="font-size:13px;font-weight:700;color:#DC2626;letter-spacing:1px;text-transform:uppercase;">Cita Cancelada</span>
+              </td></tr>
+              <tr><td style="padding:0 20px;">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr><td style="padding:14px 0;border-bottom:1px solid #F0EBE3;">
+                    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td style="font-size:14px;color:#6B7280;font-weight:600;">Servicio</td>
+                      <td style="font-size:14px;color:#1A1A1A;font-weight:700;text-align:right;">${appointmentDetails.serviceName}</td>
+                    </tr></table>
+                  </td></tr>
+                  <tr><td style="padding:14px 0;border-bottom:1px solid #F0EBE3;">
+                    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td style="font-size:14px;color:#6B7280;font-weight:600;">Fecha</td>
+                      <td style="font-size:14px;color:#1A1A1A;font-weight:700;text-align:right;">${formattedDate}</td>
+                    </tr></table>
+                  </td></tr>
+                  <tr><td style="padding:14px 0;">
+                    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td style="font-size:14px;color:#6B7280;font-weight:600;">Hora</td>
+                      <td style="font-size:14px;color:#DC2626;font-weight:700;text-align:right;">${appointmentDetails.time}</td>
+                    </tr></table>
+                  </td></tr>
+                </table>
+              </td></tr>
+            </table>
+
+            ${
+              appointmentDetails.reason
+                ? `<!-- Reason Box -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+              <tr>
+                <td style="background-color:#FEF2F2;border-left:4px solid #DC2626;border-radius:0 8px 8px 0;padding:18px 20px;">
+                  <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#DC2626;letter-spacing:0.5px;text-transform:uppercase;">Motivo de Cancelacion</p>
+                  <p style="margin:0;font-size:14px;color:#7F1D1D;line-height:1.6;">${appointmentDetails.reason}</p>
+                </td>
+              </tr>
+            </table>`
+                : ""
+            }
+
+            <!-- Info Box -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+              <tr>
+                <td style="background-color:#FAF7F2;border-left:4px solid #C9A159;border-radius:0 8px 8px 0;padding:18px 20px;">
+                  <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#7A5C1E;">Deseas reagendar?</p>
+                  <p style="margin:0;font-size:14px;color:#5A4A2E;line-height:1.6;">Si deseas agendar una nueva cita, puedes hacerlo a traves de nuestro sitio web o contactandonos directamente.</p>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Contact -->
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="background-color:#F8F8F8;border-radius:10px;padding:20px;text-align:center;">
+                  <p style="margin:0 0 12px;font-size:14px;font-weight:700;color:#1A1A1A;">&#63; Contactanos</p>
+                  <p style="margin:0 0 4px;font-size:14px;color:#4B4B4B;">Telefono: <strong style="color:#C9A159;">+52 1234567890</strong></p>
+                  <p style="margin:0;font-size:14px;color:#4B4B4B;">Email: <strong style="color:#C9A159;">info@allbeautyluxury.mx</strong></p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="background-color:#111111;padding:24px 40px;text-align:center;">
+            <p style="margin:0 0 6px;font-size:13px;color:#C9A159;font-weight:600;letter-spacing:0.5px;">ALL BEAUTY LUXURY &amp; WELLNESS</p>
+            <p style="margin:0;font-size:12px;color:#666666;">Este es un correo automatico, por favor no respondas directamente a este mensaje.</p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+    const info = await transporter.sendMail({
+      from:
+        process.env.SMTP_FROM ||
+        `"All Beauty Luxury & Wellness" <${process.env.SMTP_USER}>`,
+      to: email,
+      subject: "Cancelacion de Cita - All Beauty Luxury & Wellness",
+      html: emailBody,
+    });
+
+    console.log(
+      "Cancellation email sent to:",
+      email,
+      "| Message ID:",
+      info.messageId,
+    );
+    return true;
+  } catch (error) {
+    console.error("Error sending cancellation email:", error);
+    return false;
+  }
+}
+
+/**
+ * Helper function to send appointment reschedule notification email
+ */
+async function sendAppointmentRescheduleEmail(
+  email: string,
+  patientName: string,
+  appointmentDetails: {
+    serviceName: string;
+    oldDate: string;
+    oldTime: string;
+    newDate: string;
+    newTime: string;
+    notes?: string;
+  },
+): Promise<boolean> {
+  try {
+    let transportConfig: any;
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      const testAccount = await nodemailer.createTestAccount();
+      transportConfig = {
+        host: testAccount.smtp.host,
+        port: testAccount.smtp.port,
+        secure: testAccount.smtp.secure,
+        auth: { user: testAccount.user, pass: testAccount.pass },
+      };
+    } else {
+      transportConfig = {
+        host: process.env.SMTP_HOST || "mail.garbrix.com",
+        port: parseInt(process.env.SMTP_PORT || "465"),
+        secure: process.env.SMTP_SECURE === "true",
+        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      };
+    }
+    const transporter = nodemailer.createTransport(transportConfig);
+    await transporter.verify();
+
+    const formattedOldDate = new Date(
+      appointmentDetails.oldDate,
+    ).toLocaleDateString("es-MX", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    const formattedNewDate = new Date(
+      appointmentDetails.newDate,
+    ).toLocaleDateString("es-MX", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+
+    const emailBody = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cita Reprogramada - All Beauty Luxury &amp; Wellness</title>
+</head>
+<body style="margin:0;padding:0;background-color:#F5F0E8;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#F5F0E8;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.12);">
+
+        <!-- Logo Header -->
+        <tr>
+          <td style="background-color:#111111;padding:28px 40px;text-align:center;">
+            <img src="https://disruptinglabs.com/data/beauty/assets/images/logo-header.png" alt="All Beauty Luxury &amp; Wellness" style="height:52px;width:auto;display:inline-block;" />
+          </td>
+        </tr>
+
+        <!-- Hero Band -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#C9A159 0%,#E8C580 60%,#B8903D 100%);padding:36px 40px;text-align:center;">
+            <table cellpadding="0" cellspacing="0" style="margin:0 auto 16px;">
+              <tr><td style="width:64px;height:64px;background-color:rgba(255,255,255,0.2);border-radius:50%;text-align:center;vertical-align:middle;">
+                <span style="font-size:26px;line-height:64px;color:#FFFFFF;">&#8635;</span>
+              </td></tr>
+            </table>
+            <h1 style="margin:0 0 8px;font-size:26px;font-weight:700;color:#FFFFFF;letter-spacing:-0.5px;">Cita Reprogramada</h1>
+            <p style="margin:0;font-size:15px;color:rgba(255,255,255,0.9);">Tu cita ha sido actualizada — toma nota de la nueva fecha</p>
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="padding:40px;">
+            <p style="margin:0 0 12px;font-size:16px;color:#1A1A1A;">Hola <strong>${patientName}</strong>,</p>
+            <p style="margin:0 0 28px;font-size:15px;color:#4B4B4B;line-height:1.7;">
+              Te informamos que tu cita en <strong>All Beauty Luxury &amp; Wellness</strong> ha sido reprogramada. Por favor toma nota de la nueva fecha y hora.
+            </p>
+
+            <!-- Old Date Card -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;border:1px solid #FECACA;border-radius:12px;overflow:hidden;">
+              <tr><td style="background-color:#FEF2F2;padding:12px 20px;border-bottom:1px solid #FECACA;">
+                <span style="font-size:12px;font-weight:700;color:#DC2626;letter-spacing:1px;text-transform:uppercase;">&#10005; &nbsp;Fecha Anterior (Cancelada)</span>
+              </td></tr>
+              <tr><td style="padding:0 20px;">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr><td style="padding:12px 0;border-bottom:1px solid #F5CBCB;">
+                    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td style="font-size:14px;color:#6B7280;">Servicio</td>
+                      <td style="font-size:14px;color:#B91C1C;font-weight:600;text-align:right;text-decoration:line-through;">${appointmentDetails.serviceName}</td>
+                    </tr></table>
+                  </td></tr>
+                  <tr><td style="padding:12px 0;border-bottom:1px solid #F5CBCB;">
+                    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td style="font-size:14px;color:#6B7280;">Fecha</td>
+                      <td style="font-size:14px;color:#B91C1C;font-weight:600;text-align:right;text-decoration:line-through;">${formattedOldDate}</td>
+                    </tr></table>
+                  </td></tr>
+                  <tr><td style="padding:12px 0;">
+                    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td style="font-size:14px;color:#6B7280;">Hora</td>
+                      <td style="font-size:14px;color:#B91C1C;font-weight:600;text-align:right;text-decoration:line-through;">${appointmentDetails.oldTime}</td>
+                    </tr></table>
+                  </td></tr>
+                </table>
+              </td></tr>
+            </table>
+
+            <!-- Arrow -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
+              <tr><td style="text-align:center;padding:4px 0;">
+                <span style="font-size:22px;color:#C9A159;">&#8595;</span>
+              </td></tr>
+            </table>
+
+            <!-- New Date Card -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;border:1px solid #BBF7D0;border-radius:12px;overflow:hidden;">
+              <tr><td style="background-color:#F0FDF4;padding:12px 20px;border-bottom:1px solid #BBF7D0;">
+                <span style="font-size:12px;font-weight:700;color:#16A34A;letter-spacing:1px;text-transform:uppercase;">&#10003; &nbsp;Nueva Fecha Confirmada</span>
+              </td></tr>
+              <tr><td style="padding:0 20px;">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr><td style="padding:12px 0;border-bottom:1px solid #D1FAE5;">
+                    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td style="font-size:14px;color:#6B7280;">Servicio</td>
+                      <td style="font-size:14px;color:#1A1A1A;font-weight:700;text-align:right;">${appointmentDetails.serviceName}</td>
+                    </tr></table>
+                  </td></tr>
+                  <tr><td style="padding:12px 0;border-bottom:1px solid #D1FAE5;">
+                    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td style="font-size:14px;color:#6B7280;">Fecha</td>
+                      <td style="font-size:14px;color:#1A1A1A;font-weight:700;text-align:right;">${formattedNewDate}</td>
+                    </tr></table>
+                  </td></tr>
+                  <tr><td style="padding:12px 0;">
+                    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td style="font-size:14px;color:#6B7280;">Hora</td>
+                      <td style="font-size:14px;color:#16A34A;font-weight:700;text-align:right;">${appointmentDetails.newTime}</td>
+                    </tr></table>
+                  </td></tr>
+                </table>
+              </td></tr>
+            </table>
+
+            <!-- Info Box -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+              <tr>
+                <td style="background-color:#FAF7F2;border-left:4px solid #C9A159;border-radius:0 8px 8px 0;padding:18px 20px;">
+                  <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#7A5C1E;">Informacion Importante</p>
+                  <p style="margin:0 0 6px;font-size:14px;color:#5A4A2E;line-height:1.6;">&#8226; <strong>Por favor llega 10 minutos antes</strong> de tu nueva cita para completar el registro.</p>
+                  <p style="margin:0;font-size:14px;color:#5A4A2E;line-height:1.6;">&#8226; Si necesitas volver a cancelar o reprogramar, contactanos con al menos 24 horas de anticipacion.</p>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Contact -->
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="background-color:#F8F8F8;border-radius:10px;padding:20px;text-align:center;">
+                  <p style="margin:0 0 12px;font-size:14px;font-weight:700;color:#1A1A1A;">&#63; Necesitas ayuda?</p>
+                  <p style="margin:0 0 4px;font-size:14px;color:#4B4B4B;">Telefono: <strong style="color:#C9A159;">+52 1234567890</strong></p>
+                  <p style="margin:0;font-size:14px;color:#4B4B4B;">Email: <strong style="color:#C9A159;">info@allbeautyluxury.mx</strong></p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="background-color:#111111;padding:24px 40px;text-align:center;">
+            <p style="margin:0 0 6px;font-size:13px;color:#C9A159;font-weight:600;letter-spacing:0.5px;">ALL BEAUTY LUXURY &amp; WELLNESS</p>
+            <p style="margin:0;font-size:12px;color:#666666;">Este es un correo automatico, por favor no respondas directamente a este mensaje.</p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+    const info = await transporter.sendMail({
+      from:
+        process.env.SMTP_FROM ||
+        `"All Beauty Luxury & Wellness" <${process.env.SMTP_USER}>`,
+      to: email,
+      subject: "Cita Reprogramada - All Beauty Luxury & Wellness",
+      html: emailBody,
+    });
+
+    console.log(
+      "Reschedule email sent to:",
+      email,
+      "| Message ID:",
+      info.messageId,
+    );
+    return true;
+  } catch (error) {
+    console.error("Error sending reschedule email:", error);
+    return false;
+  }
+}
+
+/**
+ * Helper function to send manual appointment booked notification email
+ */
+async function sendManualAppointmentEmail(
+  email: string,
+  patientName: string,
+  appointmentDetails: {
+    serviceName: string;
+    date: string;
+    time: string;
+    duration: number;
+    amount: number;
+    paymentMethod: string;
+  },
+): Promise<boolean> {
+  try {
+    let transportConfig: any;
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      const testAccount = await nodemailer.createTestAccount();
+      transportConfig = {
+        host: testAccount.smtp.host,
+        port: testAccount.smtp.port,
+        secure: testAccount.smtp.secure,
+        auth: { user: testAccount.user, pass: testAccount.pass },
+      };
+    } else {
+      transportConfig = {
+        host: process.env.SMTP_HOST || "mail.garbrix.com",
+        port: parseInt(process.env.SMTP_PORT || "465"),
+        secure: process.env.SMTP_SECURE === "true",
+        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      };
+    }
+    const transporter = nodemailer.createTransport(transportConfig);
+    await transporter.verify();
+
+    const formattedDate = new Date(appointmentDetails.date).toLocaleDateString(
+      "es-MX",
+      { weekday: "long", year: "numeric", month: "long", day: "numeric" },
+    );
+    const paymentMethodLabels: Record<string, string> = {
+      cash: "Efectivo",
+      card: "Tarjeta",
+      transfer: "Transferencia",
+    };
+    const paymentLabel =
+      paymentMethodLabels[appointmentDetails.paymentMethod] ||
+      appointmentDetails.paymentMethod;
+
+    const emailBody = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cita Agendada - All Beauty Luxury &amp; Wellness</title>
+</head>
+<body style="margin:0;padding:0;background-color:#F5F0E8;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#F5F0E8;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.12);">
+
+        <!-- Logo Header -->
+        <tr>
+          <td style="background-color:#111111;padding:28px 40px;text-align:center;">
+            <img src="https://disruptinglabs.com/data/beauty/assets/images/logo-header.png" alt="All Beauty Luxury &amp; Wellness" style="height:52px;width:auto;display:inline-block;" />
+          </td>
+        </tr>
+
+        <!-- Hero Band -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#C9A159 0%,#E8C580 60%,#B8903D 100%);padding:36px 40px;text-align:center;">
+            <table cellpadding="0" cellspacing="0" style="margin:0 auto 16px;">
+              <tr><td style="width:64px;height:64px;background-color:rgba(255,255,255,0.2);border-radius:50%;text-align:center;vertical-align:middle;">
+                <span style="font-size:28px;line-height:64px;color:#FFFFFF;">&#10003;</span>
+              </td></tr>
+            </table>
+            <h1 style="margin:0 0 8px;font-size:26px;font-weight:700;color:#FFFFFF;letter-spacing:-0.5px;">Cita Agendada</h1>
+            <p style="margin:0;font-size:15px;color:rgba(255,255,255,0.9);">Tu cita ha sido registrada exitosamente</p>
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="padding:40px;">
+            <p style="margin:0 0 12px;font-size:16px;color:#1A1A1A;">Hola <strong>${patientName}</strong>,</p>
+            <p style="margin:0 0 28px;font-size:15px;color:#4B4B4B;line-height:1.7;">
+              Nos complace confirmar que tu cita en <strong>All Beauty Luxury &amp; Wellness</strong> ha sido agendada. A continuacion encontraras los detalles de tu cita.
+            </p>
+
+            <!-- Details Card -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;border:1px solid #EDE8DF;border-radius:12px;overflow:hidden;">
+              <tr><td style="background-color:#FAF7F2;padding:14px 20px;border-bottom:1px solid #EDE8DF;">
+                <span style="font-size:13px;font-weight:700;color:#C9A159;letter-spacing:1px;text-transform:uppercase;">Detalles de tu Cita</span>
+              </td></tr>
+              <tr><td style="padding:0 20px;">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr><td style="padding:14px 0;border-bottom:1px solid #F0EBE3;">
+                    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td style="font-size:14px;color:#6B7280;font-weight:600;">Servicio</td>
+                      <td style="font-size:14px;color:#1A1A1A;font-weight:700;text-align:right;">${appointmentDetails.serviceName}</td>
+                    </tr></table>
+                  </td></tr>
+                  <tr><td style="padding:14px 0;border-bottom:1px solid #F0EBE3;">
+                    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td style="font-size:14px;color:#6B7280;font-weight:600;">Fecha</td>
+                      <td style="font-size:14px;color:#1A1A1A;font-weight:700;text-align:right;">${formattedDate}</td>
+                    </tr></table>
+                  </td></tr>
+                  <tr><td style="padding:14px 0;border-bottom:1px solid #F0EBE3;">
+                    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td style="font-size:14px;color:#6B7280;font-weight:600;">Hora</td>
+                      <td style="font-size:14px;color:#C9A159;font-weight:700;text-align:right;">${appointmentDetails.time}</td>
+                    </tr></table>
+                  </td></tr>
+                  <tr><td style="padding:14px 0;border-bottom:1px solid #F0EBE3;">
+                    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td style="font-size:14px;color:#6B7280;font-weight:600;">Duracion</td>
+                      <td style="font-size:14px;color:#1A1A1A;font-weight:700;text-align:right;">${appointmentDetails.duration} minutos</td>
+                    </tr></table>
+                  </td></tr>
+                  <tr><td style="padding:14px 0;">
+                    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                      <td style="font-size:14px;color:#6B7280;font-weight:600;">Metodo de Pago</td>
+                      <td style="font-size:14px;color:#C9A159;font-weight:700;text-align:right;">${paymentLabel}</td>
+                    </tr></table>
+                  </td></tr>
+                </table>
+              </td></tr>
+            </table>
+
+            ${
+              appointmentDetails.amount > 0
+                ? `<!-- Amount -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+              <tr>
+                <td style="background:linear-gradient(135deg,#C9A159 0%,#E8C580 100%);border-radius:12px;padding:24px;text-align:center;">
+                  <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:rgba(255,255,255,0.8);letter-spacing:1.5px;text-transform:uppercase;">Monto</p>
+                  <p style="margin:0;font-size:36px;font-weight:700;color:#FFFFFF;font-family:Georgia,serif;">$${appointmentDetails.amount.toFixed(2)} <span style="font-size:18px;">MXN</span></p>
+                </td>
+              </tr>
+            </table>`
+                : ""
+            }
+
+            <!-- Info Box -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+              <tr>
+                <td style="background-color:#FAF7F2;border-left:4px solid #C9A159;border-radius:0 8px 8px 0;padding:18px 20px;">
+                  <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#7A5C1E;">Informacion Importante</p>
+                  <p style="margin:0 0 6px;font-size:14px;color:#5A4A2E;line-height:1.6;">&#8226; <strong>Por favor llega 10 minutos antes</strong> de tu cita para completar el registro.</p>
+                  <p style="margin:0;font-size:14px;color:#5A4A2E;line-height:1.6;">&#8226; Si necesitas cancelar o reprogramar, contactanos con al menos 24 horas de anticipacion.</p>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Contact -->
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="background-color:#F8F8F8;border-radius:10px;padding:20px;text-align:center;">
+                  <p style="margin:0 0 12px;font-size:14px;font-weight:700;color:#1A1A1A;">&#63; Necesitas ayuda?</p>
+                  <p style="margin:0 0 4px;font-size:14px;color:#4B4B4B;">Telefono: <strong style="color:#C9A159;">+52 1234567890</strong></p>
+                  <p style="margin:0;font-size:14px;color:#4B4B4B;">Email: <strong style="color:#C9A159;">info@allbeautyluxury.mx</strong></p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="background-color:#111111;padding:24px 40px;text-align:center;">
+            <p style="margin:0 0 6px;font-size:13px;color:#C9A159;font-weight:600;letter-spacing:0.5px;">ALL BEAUTY LUXURY &amp; WELLNESS</p>
+            <p style="margin:0;font-size:12px;color:#666666;">Este es un correo automatico, por favor no respondas directamente a este mensaje.</p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+    const info = await transporter.sendMail({
+      from:
+        process.env.SMTP_FROM ||
+        `"All Beauty Luxury & Wellness" <${process.env.SMTP_USER}>`,
+      to: email,
+      subject: "Confirmacion de Cita - All Beauty Luxury & Wellness",
+      html: emailBody,
+    });
+
+    console.log(
+      "Manual appointment email sent to:",
+      email,
+      "| Message ID:",
+      info.messageId,
+    );
+    return true;
+  } catch (error) {
+    console.error("Error sending manual appointment email:", error);
     return false;
   }
 }
@@ -1323,50 +1834,83 @@ async function sendAdminVerificationEmail(
     await transporter.verify();
     console.log("✅ SMTP connection verified!");
 
-    // Admin email template (simplified for better deliverability)
-    const emailBody = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>All Beauty Luxury & Wellness - Acceso Administrativo</title>
-      </head>
-      <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px;">
-        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
-          <tr>
-            <td style="padding: 20px; border: 1px solid #ddd;">
-              <h1 style="color: #d32f2f; text-align: center; margin-bottom: 20px;">ACCESO ADMINISTRATIVO</h1>
-              
-              <p>Hola <strong>${adminName}</strong>,</p>
-              
-              <p>Se ha solicitado acceso al panel administrativo de All Beauty Luxury & Wellness.</p>
-              
-              <p><strong>Tu codigo de verificacion es:</strong></p>
-              
-              <table width="100%" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td style="text-align: center; padding: 20px;">
-                    <div style="font-size: 28px; font-weight: bold; color: #d32f2f; background-color: #f5f5f5; padding: 15px; border: 2px solid #d32f2f; display: inline-block;">${code}</div>
-                  </td>
-                </tr>
-              </table>
-              
-              <p style="color: #d32f2f; font-weight: bold;">IMPORTANTE: Este codigo expirara en 10 minutos</p>
-              
-              <p>Si no solicitaste este acceso, contacta inmediatamente al administrador del sistema.</p>
-              
-              <hr style="border: 1px solid #eee; margin: 30px 0;">
-              
-              <p style="font-size: 12px; color: #666; text-align: center;">
-                All Beauty Luxury & Wellness - Panel Administrativo<br>
-                Este es un mensaje automatico del sistema - No responder
-              </p>
-            </td>
-          </tr>
-        </table>
-      </body>
-      </html>
-    `;
+    // Admin email template
+    const emailBody = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Acceso Administrativo - All Beauty Luxury &amp; Wellness</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0D0D0D;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0D0D0D;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#1A1A1A;border-radius:16px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.6);">
+
+        <!-- Logo Header -->
+        <tr>
+          <td style="background-color:#111111;padding:28px 40px;text-align:center;border-bottom:1px solid #2A2A2A;">
+            <img src="https://disruptinglabs.com/data/beauty/assets/images/logo-header.png" alt="All Beauty Luxury &amp; Wellness" style="height:52px;width:auto;display:inline-block;" />
+          </td>
+        </tr>
+
+        <!-- Hero Band (dark gold for admin) -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#111111 0%,#1E1A0E 50%,#111111 100%);padding:36px 40px;text-align:center;border-bottom:1px solid #C9A15933;">
+            <table cellpadding="0" cellspacing="0" style="margin:0 auto 16px;">
+              <tr><td style="width:64px;height:64px;background-color:#C9A15920;border:2px solid #C9A15966;border-radius:50%;text-align:center;vertical-align:middle;">
+                <span style="font-size:26px;line-height:60px;color:#C9A159;">&#128274;</span>
+              </td></tr>
+            </table>
+            <h1 style="margin:0 0 8px;font-size:24px;font-weight:700;color:#C9A159;letter-spacing:2px;text-transform:uppercase;">Acceso Administrativo</h1>
+            <p style="margin:0;font-size:14px;color:#888888;letter-spacing:0.5px;">Panel de Control — All Beauty Luxury &amp; Wellness</p>
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="padding:40px;">
+            <p style="margin:0 0 12px;font-size:16px;color:#E0E0E0;">Hola <strong style="color:#FFFFFF;">${adminName}</strong>,</p>
+            <p style="margin:0 0 28px;font-size:15px;color:#9A9A9A;line-height:1.7;">
+              Se ha solicitado acceso al panel administrativo. Utiliza el siguiente codigo para verificar tu identidad.
+            </p>
+
+            <!-- Code Box -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+              <tr>
+                <td style="background-color:#111111;border:2px solid #C9A159;border-radius:12px;padding:28px;text-align:center;">
+                  <p style="margin:0 0 8px;font-size:11px;font-weight:700;color:#C9A159;letter-spacing:3px;text-transform:uppercase;">Codigo de Verificacion</p>
+                  <span style="font-size:52px;font-weight:700;letter-spacing:14px;color:#C9A159;font-family:Georgia,serif;">${code}</span>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Warning Box -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+              <tr>
+                <td style="background-color:#1F1200;border-left:4px solid #C9A159;border-radius:0 8px 8px 0;padding:16px 20px;">
+                  <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#C9A159;letter-spacing:0.5px;">&#9888; IMPORTANTE</p>
+                  <p style="margin:0 0 4px;font-size:14px;color:#A89060;line-height:1.6;">Este codigo expirara en <strong style="color:#E8C580;">10 minutos</strong>.</p>
+                  <p style="margin:0;font-size:14px;color:#A89060;line-height:1.6;">Si no solicitaste este acceso, contacta inmediatamente al administrador del sistema.</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="background-color:#0D0D0D;padding:24px 40px;text-align:center;border-top:1px solid #2A2A2A;">
+            <p style="margin:0 0 6px;font-size:13px;color:#C9A159;font-weight:600;letter-spacing:0.5px;">ALL BEAUTY LUXURY &amp; WELLNESS — PANEL ADMINISTRATIVO</p>
+            <p style="margin:0;font-size:12px;color:#555555;">Este es un mensaje automatico del sistema — No responder</p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
 
     console.log("📤 Sending admin email to:", email);
     console.log(
@@ -3991,7 +4535,7 @@ const createManualAppointment: RequestHandler = async (req, res) => {
 
     // Validate service exists
     const [services] = await pool.query<any[]>(
-      "SELECT id, duration_minutes, price FROM services WHERE id = ?",
+      "SELECT id, name, duration_minutes, price FROM services WHERE id = ?",
       [service_id],
     );
     if (services.length === 0) {
@@ -4033,6 +4577,26 @@ const createManualAppointment: RequestHandler = async (req, res) => {
           payment_method || "cash",
           created_by,
         ],
+      );
+    }
+
+    // Fetch patient and service data for email notification
+    const [patientRows] = await pool.query<any[]>(
+      `SELECT p.email, CONCAT(p.first_name, ' ', p.last_name) AS full_name
+       FROM patients p WHERE p.id = ?`,
+      [patient_id],
+    );
+    if (patientRows.length > 0) {
+      const patient = patientRows[0];
+      sendManualAppointmentEmail(patient.email, patient.full_name, {
+        serviceName: services[0].name || "",
+        date: scheduled_date,
+        time: scheduled_time,
+        duration: service.duration_minutes,
+        amount: payment_amount ? parseFloat(payment_amount) : 0,
+        paymentMethod: payment_method || "cash",
+      }).catch((err) =>
+        console.error("Failed to send manual appointment email:", err),
       );
     }
 
@@ -4161,10 +4725,99 @@ const handleDocuSignWebhook: RequestHandler = async (req, res) => {
  */
 const cancelAdminAppointment: RequestHandler = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { cancellation_reason } = req.body;
+    // ── Role check: only 'admin' (super admin) may cancel ──────────────────────
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Authentication required" });
+    }
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      return res
+        .status(500)
+        .json({ success: false, message: "Server configuration error" });
+    }
+    let callerRole: string;
+    try {
+      const decoded = jwt.verify(authHeader.substring(7), jwtSecret) as any;
+      callerRole = decoded.role;
+    } catch {
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid or expired token" });
+    }
+    if (callerRole !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Solo el super administrador puede cancelar citas",
+      });
+    }
 
-    // Update appointment
+    const { id } = req.params;
+    const { cancellation_reason, refund } = req.body;
+
+    // Fetch appointment details + Stripe payment info for email & refund
+    const [appointmentRows] = await pool.query<any[]>(
+      `SELECT a.scheduled_at, s.name AS service_name,
+              p.email AS patient_email,
+              CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
+              pay.stripe_payment_intent_id, pay.amount AS paid_amount, pay.id AS payment_id
+       FROM appointments a
+       JOIN services s ON a.service_id = s.id
+       JOIN patients p ON a.patient_id = p.id
+       LEFT JOIN payments pay ON a.id = pay.appointment_id
+         AND pay.payment_status = 'completed'
+         AND pay.stripe_payment_intent_id IS NOT NULL
+       WHERE a.id = ?
+       ORDER BY pay.id DESC
+       LIMIT 1`,
+      [id],
+    );
+
+    if (appointmentRows.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Appointment not found" });
+    }
+
+    const appt = appointmentRows[0];
+    const scheduledDate = new Date(appt.scheduled_at);
+    const dateStr = scheduledDate.toISOString().split("T")[0];
+    const timeStr = scheduledDate.toTimeString().slice(0, 5);
+
+    // Issue Stripe refund if requested
+    let refundIssued = false;
+    if (refund === true && appt.stripe_payment_intent_id) {
+      try {
+        await stripe.refunds.create({
+          payment_intent: appt.stripe_payment_intent_id,
+          reason: "requested_by_customer",
+        });
+        refundIssued = true;
+        console.log(
+          `[cancel] Refund issued for PI ${appt.stripe_payment_intent_id}`,
+        );
+        // Mark payment as refunded in DB
+        await pool.query(
+          `UPDATE payments
+           SET payment_status = 'refunded',
+               refund_amount = amount,
+               refund_reason = ?,
+               refunded_at = NOW()
+           WHERE id = ?`,
+          [cancellation_reason || "Cancelled by admin", appt.payment_id],
+        );
+      } catch (stripeErr: any) {
+        console.error("[cancel] Stripe refund failed:", stripeErr.message);
+        return res.status(502).json({
+          success: false,
+          message: `No se pudo procesar el reembolso: ${stripeErr.message}`,
+        });
+      }
+    }
+
+    // Update appointment status
     const [result] = await pool.query<any>(
       `UPDATE appointments 
        SET status = 'cancelled', 
@@ -4182,12 +4835,52 @@ const cancelAdminAppointment: RequestHandler = async (req, res) => {
         .json({ success: false, message: "Appointment not found" });
     }
 
+    // Send cancellation email (non-blocking)
+    sendAppointmentCancellationEmail(appt.patient_email, appt.patient_name, {
+      serviceName: appt.service_name,
+      date: dateStr,
+      time: timeStr,
+      reason: cancellation_reason || undefined,
+    }).catch((err) => console.error("Failed to send cancellation email:", err));
+
     res.json({
       success: true,
       message: "Appointment cancelled successfully",
+      refund_issued: refundIssued,
     });
   } catch (error) {
     console.error("Error cancelling appointment:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * GET /api/admin/appointments/:id/payment-info
+ * Returns Stripe payment info for the appointment (used to show refund option on cancel)
+ */
+const getAppointmentPaymentInfo: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [rows] = await pool.query<any[]>(
+      `SELECT pay.stripe_payment_intent_id, pay.amount, pay.payment_status
+       FROM payments pay
+       WHERE pay.appointment_id = ?
+         AND pay.payment_status = 'completed'
+         AND pay.stripe_payment_intent_id IS NOT NULL
+       ORDER BY pay.id DESC
+       LIMIT 1`,
+      [id],
+    );
+    if (rows.length === 0) {
+      return res.json({ success: true, has_stripe_payment: false });
+    }
+    return res.json({
+      success: true,
+      has_stripe_payment: true,
+      amount: rows[0].amount,
+    });
+  } catch (error) {
+    console.error("Error fetching payment info:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
@@ -4207,6 +4900,29 @@ const rescheduleAdminAppointment: RequestHandler = async (req, res) => {
         message: "New appointment date and time are required",
       });
     }
+
+    // Fetch appointment details for email notification
+    const [appointmentRows] = await pool.query<any[]>(
+      `SELECT a.scheduled_at, s.name AS service_name,
+              p.email AS patient_email,
+              CONCAT(p.first_name, ' ', p.last_name) AS patient_name
+       FROM appointments a
+       JOIN services s ON a.service_id = s.id
+       JOIN patients p ON a.patient_id = p.id
+       WHERE a.id = ?`,
+      [id],
+    );
+
+    if (appointmentRows.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Appointment not found" });
+    }
+
+    const appt = appointmentRows[0];
+    const oldScheduledDate = new Date(appt.scheduled_at);
+    const oldDateStr = oldScheduledDate.toISOString().split("T")[0];
+    const oldTimeStr = oldScheduledDate.toTimeString().slice(0, 5);
 
     // Combine date and time into timestamp
     const newScheduledAt = `${appointment_date} ${appointment_time}:00`;
@@ -4241,6 +4957,16 @@ const rescheduleAdminAppointment: RequestHandler = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Appointment not found" });
     }
+
+    // Send reschedule email (non-blocking)
+    sendAppointmentRescheduleEmail(appt.patient_email, appt.patient_name, {
+      serviceName: appt.service_name,
+      oldDate: oldDateStr,
+      oldTime: oldTimeStr,
+      newDate: appointment_date,
+      newTime: appointment_time,
+      notes: notes || undefined,
+    }).catch((err) => console.error("Failed to send reschedule email:", err));
 
     res.json({
       success: true,
@@ -8588,6 +9314,10 @@ function createServer() {
 
   // Admin Appointment Management
   expressApp.get("/api/admin/appointments", getAllAdminAppointments);
+  expressApp.get(
+    "/api/admin/appointments/:id/payment-info",
+    getAppointmentPaymentInfo,
+  );
   expressApp.post("/api/admin/appointments/manual", createManualAppointment);
   expressApp.patch(
     "/api/admin/appointments/:id/status",

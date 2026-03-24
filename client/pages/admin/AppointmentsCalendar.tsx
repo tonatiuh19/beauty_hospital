@@ -155,6 +155,25 @@ export default function AppointmentsCalendar() {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCheckInOpen, setIsCheckInOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editMode, setEditMode] = useState<"reschedule" | "cancel" | null>(
+    null,
+  );
+  const [editForm, setEditForm] = useState({
+    appointment_date: "",
+    appointment_time: "",
+    notes: "",
+    cancellation_reason: "",
+  });
+  const [editLoading, setEditLoading] = useState(false);
+  // Cancel confirmation & Stripe refund state
+  const [cancelConfirming, setCancelConfirming] = useState(false);
+  const [stripePaymentInfo, setStripePaymentInfo] = useState<{
+    has_stripe_payment: boolean;
+    amount?: number;
+  } | null>(null);
+  const [offerRefund, setOfferRefund] = useState(false);
+  const [loadingPaymentInfo, setLoadingPaymentInfo] = useState(false);
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
   const [checkInUrl, setCheckInUrl] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -164,6 +183,10 @@ export default function AppointmentsCalendar() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [patientSearch, setPatientSearch] = useState("");
   const [patientComboOpen, setPatientComboOpen] = useState(false);
+
+  // Super-admin check (role === 'admin' is the top role)
+  const adminUser = JSON.parse(localStorage.getItem("adminUser") || "{}");
+  const isSuperAdmin = adminUser?.role === "admin";
 
   // Create appointment form
   const [newAppointment, setNewAppointment] = useState({
@@ -290,6 +313,115 @@ export default function AppointmentsCalendar() {
     setIsCheckInOpen(true);
   };
 
+  const handleOpenEdit = (appointment: CalendarAppointment) => {
+    setSelectedAppointment(appointment);
+    setEditMode(null);
+    setCancelConfirming(false);
+    setStripePaymentInfo(null);
+    setOfferRefund(false);
+    setEditForm({
+      appointment_date: appointment.scheduled_date.split("T")[0],
+      appointment_time: appointment.scheduled_time,
+      notes: "",
+      cancellation_reason: "",
+    });
+    setIsDetailsOpen(false);
+    setIsEditOpen(true);
+  };
+
+  const handleSelectCancelMode = async (appointmentId: number) => {
+    setEditMode("cancel");
+    setCancelConfirming(false);
+    setStripePaymentInfo(null);
+    setOfferRefund(false);
+    setLoadingPaymentInfo(true);
+    try {
+      const token = localStorage.getItem("adminAccessToken");
+      const response = await axios.get(
+        `/admin/appointments/${appointmentId}/payment-info`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (response.data.success) {
+        setStripePaymentInfo(response.data);
+        if (response.data.has_stripe_payment) setOfferRefund(true);
+      }
+    } catch {
+      // non-critical, proceed without refund info
+    } finally {
+      setLoadingPaymentInfo(false);
+    }
+  };
+
+  const handleEditSubmit = async () => {
+    if (!selectedAppointment) return;
+    setEditLoading(true);
+    try {
+      const token = localStorage.getItem("adminAccessToken");
+      if (editMode === "reschedule") {
+        const response = await axios.post(
+          `/admin/appointments/${selectedAppointment.id}/reschedule`,
+          {
+            appointment_date: editForm.appointment_date,
+            appointment_time: editForm.appointment_time,
+            notes: editForm.notes || undefined,
+          },
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (response.data.success) {
+          toast({
+            title: "Cita reprogramada",
+            description:
+              "La cita fue reprogramada y el paciente fue notificado por email.",
+          });
+          fetchAppointments();
+          setIsEditOpen(false);
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description:
+              response.data.message || "No se pudo reprogramar la cita.",
+          });
+        }
+      } else if (editMode === "cancel") {
+        const response = await axios.post(
+          `/admin/appointments/${selectedAppointment.id}/cancel`,
+          {
+            cancellation_reason: editForm.cancellation_reason || undefined,
+            refund: offerRefund && stripePaymentInfo?.has_stripe_payment,
+          },
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (response.data.success) {
+          const refundMsg = response.data.refund_issued
+            ? " Se procesó el reembolso al paciente."
+            : "";
+          toast({
+            title: "Cita cancelada",
+            description: `La cita fue cancelada y el paciente fue notificado por email.${refundMsg}`,
+          });
+          fetchAppointments();
+          setIsEditOpen(false);
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description:
+              response.data.message || "No se pudo cancelar la cita.",
+          });
+        }
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.response?.data?.message || "Ocurrió un error.",
+      });
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
   const handleGenerateQR = async (appointment: CalendarAppointment) => {
     try {
       const token = localStorage.getItem("adminAccessToken");
@@ -325,30 +457,6 @@ export default function AppointmentsCalendar() {
   const handleCheckInSuccess = () => {
     fetchAppointments();
     setIsCheckInOpen(false);
-  };
-
-  const handleCancel = async (appointmentId: number, reason: string) => {
-    try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.post(
-        `/admin/appointments/${appointmentId}/cancel`,
-        { cancelled_reason: reason },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-
-      if (response.data.success) {
-        fetchAppointments();
-        setIsDetailsOpen(false);
-      }
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.response?.data?.message || "Error al cancelar cita",
-      });
-    }
   };
 
   const handleCreateAppointment = async () => {
@@ -734,6 +842,25 @@ export default function AppointmentsCalendar() {
                 selectedAppointment.status !== "completed" && (
                   <div className="mt-4 space-y-2">
                     <Button
+                      onClick={() => handleOpenEdit(selectedAppointment)}
+                      className="w-full bg-gradient-to-r from-luxury-gold-dark to-luxury-gold-light hover:shadow-lg transition-all text-white font-semibold"
+                    >
+                      <svg
+                        className="w-4 h-4 mr-2"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                        />
+                      </svg>
+                      Editar Cita
+                    </Button>
+                    <Button
                       onClick={() => handleGenerateQR(selectedAppointment)}
                       className="w-full bg-gradient-to-r from-primary to-primary/80 hover:shadow-lg transition-all"
                     >
@@ -755,6 +882,388 @@ export default function AppointmentsCalendar() {
                   </div>
                 )}
             </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Appointment Modal */}
+      <Dialog
+        open={isEditOpen}
+        onOpenChange={(open) => {
+          setIsEditOpen(open);
+          if (!open) {
+            setEditMode(null);
+            setCancelConfirming(false);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar Cita</DialogTitle>
+          </DialogHeader>
+          {selectedAppointment && (
+            <div className="space-y-4">
+              {/* Patient & service summary */}
+              <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
+                <p className="font-semibold text-gray-800">
+                  {selectedAppointment.patient_name}
+                </p>
+                <p className="text-gray-500">
+                  {selectedAppointment.service_name}
+                </p>
+                <p className="text-gray-500">
+                  {selectedAppointment.scheduled_date.split("T")[0]} ·{" "}
+                  {selectedAppointment.scheduled_time}
+                </p>
+              </div>
+
+              {/* Action selector */}
+              {!editMode && (
+                <div
+                  className={`grid gap-3 ${isSuperAdmin ? "grid-cols-2" : "grid-cols-1"}`}
+                >
+                  <button
+                    onClick={() => setEditMode("reschedule")}
+                    className="flex flex-col items-center gap-2 p-4 border-2 border-gray-200 rounded-xl hover:border-primary hover:bg-primary/5 transition-all group"
+                  >
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                      <svg
+                        className="w-5 h-5 text-primary"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                        />
+                      </svg>
+                    </div>
+                    <span className="text-sm font-medium text-gray-700 group-hover:text-primary">
+                      Reprogramar
+                    </span>
+                  </button>
+                  {isSuperAdmin ? (
+                    <button
+                      onClick={() =>
+                        handleSelectCancelMode(selectedAppointment.id)
+                      }
+                      className="flex flex-col items-center gap-2 p-4 border-2 border-gray-200 rounded-xl hover:border-red-400 hover:bg-red-50 transition-all group"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center group-hover:bg-red-100 transition-colors">
+                        <svg
+                          className="w-5 h-5 text-red-500"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </div>
+                      <span className="text-sm font-medium text-gray-700 group-hover:text-red-500">
+                        Cancelar Cita
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 p-4 border-2 border-dashed border-gray-200 rounded-xl opacity-50 cursor-not-allowed">
+                      <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+                        <svg
+                          className="w-5 h-5 text-gray-400"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                          />
+                        </svg>
+                      </div>
+                      <span className="text-xs font-medium text-gray-400 text-center leading-tight">
+                        Solo super admin
+                        <br />
+                        puede cancelar
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Reschedule form */}
+              {editMode === "reschedule" && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="space-y-3"
+                >
+                  <button
+                    onClick={() => setEditMode(null)}
+                    className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+                  >
+                    <svg
+                      className="w-3 h-3"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M15 19l-7-7 7-7"
+                      />
+                    </svg>
+                    Volver
+                  </button>
+                  <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 text-xs text-primary font-medium">
+                    El paciente recibirá un email con la nueva fecha y hora.
+                  </div>
+                  <div>
+                    <Label>Nueva Fecha *</Label>
+                    <Input
+                      type="date"
+                      value={editForm.appointment_date}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          appointment_date: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label>Nueva Hora *</Label>
+                    <Input
+                      type="time"
+                      value={editForm.appointment_time}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          appointment_time: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label>Notas (opcional)</Label>
+                    <Textarea
+                      value={editForm.notes}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, notes: e.target.value })
+                      }
+                      placeholder="Motivo del cambio..."
+                      rows={2}
+                    />
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Cancel form — step 1: reason & refund choice */}
+              {editMode === "cancel" && !cancelConfirming && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="space-y-3"
+                >
+                  <button
+                    onClick={() => setEditMode(null)}
+                    className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+                  >
+                    <svg
+                      className="w-3 h-3"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M15 19l-7-7 7-7"
+                      />
+                    </svg>
+                    Volver
+                  </button>
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700 font-medium">
+                    El paciente recibirá un email notificando la cancelación.
+                  </div>
+                  <div>
+                    <Label>Motivo de cancelación (opcional)</Label>
+                    <Textarea
+                      value={editForm.cancellation_reason}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          cancellation_reason: e.target.value,
+                        })
+                      }
+                      placeholder="Ej: Reagendado por el médico, emergencia, etc."
+                      rows={2}
+                    />
+                  </div>
+
+                  {/* Stripe refund toggle */}
+                  {loadingPaymentInfo ? (
+                    <div className="flex items-center gap-2 text-xs text-gray-400">
+                      <div className="w-3 h-3 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" />
+                      Verificando pago...
+                    </div>
+                  ) : stripePaymentInfo?.has_stripe_payment ? (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+                      <p className="text-xs font-semibold text-amber-800">
+                        Pago detectado: $
+                        {Number(stripePaymentInfo.amount).toFixed(2)} MXN vía
+                        Stripe
+                      </p>
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <div
+                          onClick={() => setOfferRefund(!offerRefund)}
+                          className={`w-10 h-5 rounded-full transition-colors relative flex-shrink-0 ${offerRefund ? "bg-green-500" : "bg-gray-300"}`}
+                        >
+                          <div
+                            className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${offerRefund ? "translate-x-5" : "translate-x-0.5"}`}
+                          />
+                        </div>
+                        <span className="text-xs text-amber-800 font-medium">
+                          {offerRefund
+                            ? "Reembolsar al paciente"
+                            : "No reembolsar"}
+                        </span>
+                      </label>
+                    </div>
+                  ) : stripePaymentInfo &&
+                    !stripePaymentInfo.has_stripe_payment ? (
+                    <p className="text-xs text-gray-400">
+                      Sin pago por Stripe — no aplica reembolso.
+                    </p>
+                  ) : null}
+                </motion.div>
+              )}
+
+              {/* Cancel form — step 2: final confirmation */}
+              {editMode === "cancel" && cancelConfirming && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.97 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="space-y-4"
+                >
+                  <div className="rounded-xl border-2 border-red-200 bg-red-50 p-4 text-center space-y-2">
+                    <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto">
+                      <svg
+                        className="w-6 h-6 text-red-600"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2.5}
+                          d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+                        />
+                      </svg>
+                    </div>
+                    <p className="text-sm font-bold text-red-800">
+                      ¿Confirmar cancelación?
+                    </p>
+                    <p className="text-xs text-red-600">
+                      Se cancelará la cita de{" "}
+                      <strong>{selectedAppointment.patient_name}</strong> y se
+                      notificará por email.
+                    </p>
+                    {offerRefund && stripePaymentInfo?.has_stripe_payment && (
+                      <p className="text-xs font-semibold text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-1">
+                        Se procesará un reembolso de $
+                        {Number(stripePaymentInfo.amount).toFixed(2)} MXN
+                      </p>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </div>
+          )}
+
+          {/* Footer */}
+          {editMode === "reschedule" && (
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setEditMode(null)}
+                disabled={editLoading}
+              >
+                Atrás
+              </Button>
+              <Button
+                onClick={handleEditSubmit}
+                disabled={
+                  editLoading ||
+                  !editForm.appointment_date ||
+                  !editForm.appointment_time
+                }
+                className="bg-primary hover:bg-primary/90"
+              >
+                {editLoading ? (
+                  <span className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Procesando...
+                  </span>
+                ) : (
+                  "Reprogramar y Notificar"
+                )}
+              </Button>
+            </DialogFooter>
+          )}
+          {editMode === "cancel" && !cancelConfirming && (
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setEditMode(null)}
+                disabled={editLoading}
+              >
+                Atrás
+              </Button>
+              <Button
+                onClick={() => setCancelConfirming(true)}
+                disabled={loadingPaymentInfo}
+                className="bg-red-500 hover:bg-red-600 text-white"
+              >
+                Continuar
+              </Button>
+            </DialogFooter>
+          )}
+          {editMode === "cancel" && cancelConfirming && (
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setCancelConfirming(false)}
+                disabled={editLoading}
+              >
+                Atrás
+              </Button>
+              <Button
+                onClick={handleEditSubmit}
+                disabled={editLoading}
+                className="bg-red-600 hover:bg-red-700 text-white font-semibold"
+              >
+                {editLoading ? (
+                  <span className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Cancelando...
+                  </span>
+                ) : (
+                  "Sí, cancelar y notificar"
+                )}
+              </Button>
+            </DialogFooter>
           )}
         </DialogContent>
       </Dialog>
