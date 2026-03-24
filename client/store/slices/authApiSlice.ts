@@ -26,8 +26,8 @@ interface VerifyCodeResponse {
 
 interface CreatePatientResponse {
   success: boolean;
-  exists: boolean;
-  patient: Patient;
+  message?: string;
+  data?: Patient;
 }
 
 // Check if patient exists by email
@@ -119,13 +119,13 @@ export const createNewUser = createAsyncThunk<
       patientData,
     );
 
-    if (response.data.success && response.data.patient) {
+    if (response.data.success && response.data.data) {
       // Don't set patient yet, wait for verification code
       dispatch(setLoading(false));
-      return response.data.patient;
+      return response.data.data;
     }
 
-    throw new Error("Invalid response from server");
+    throw new Error(response.data.message || "Invalid response from server");
   } catch (error: any) {
     dispatch(setLoading(false));
     return rejectWithValue(

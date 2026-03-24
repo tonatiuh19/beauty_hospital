@@ -145,7 +145,7 @@ export const deleteMedicalRecord = createAsyncThunk(
   "medicalRecords/deleteMedicalRecord",
   async (id: number, { rejectWithValue }) => {
     try {
-      await axios.delete(`/api/admin/medical-records/${id}`);
+      await axios.delete(`/admin/medical-records/${id}`);
       return id;
     } catch (error: any) {
       return rejectWithValue(

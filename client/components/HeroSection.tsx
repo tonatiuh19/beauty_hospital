@@ -35,8 +35,8 @@ export function HeroSection() {
           backgroundImage: "url('/ASSETS%20WEBSITE%20ALL%20BEAUTY-02.jpg')",
         }}
       />
-      {/* Social Media Icons */}
-      <div className="absolute right-4 sm:right-6 lg:right-8 top-1/2 -translate-y-1/2 z-30 flex flex-col gap-6">
+      {/* Social Media Icons - hidden on small screens to prevent text overlap */}
+      <div className="hidden sm:flex absolute right-4 sm:right-6 lg:right-8 top-1/2 -translate-y-1/2 z-30 flex-col gap-6">
         <a
           href="https://facebook.com"
           target="_blank"
@@ -85,7 +85,7 @@ export function HeroSection() {
             variants={containerVariants}
             initial="hidden"
             animate="visible"
-            className="text-left max-w-2xl"
+            className="text-left max-w-2xl sm:pr-14 lg:pr-0"
           >
             {/* Main heading */}
             <motion.h1

@@ -266,15 +266,10 @@ export default function AdminDashboardLayout() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="flex items-center gap-3"
+                className="flex flex-col items-center gap-0.5"
               >
                 <Logo variant="icon" iconClassName="h-8" />
-                <div>
-                  <p className="text-sm font-bold text-white">
-                    All Beauty Luxury & Wellness
-                  </p>
-                  <p className="text-xs text-gray-400">Admin Panel</p>
-                </div>
+                {/* <p className="text-xs text-white">Admin Panel</p> */}
               </motion.div>
             ) : (
               <motion.div
@@ -428,7 +423,7 @@ export default function AdminDashboardLayout() {
               animate={{ x: 0 }}
               exit={{ x: -280 }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="lg:hidden fixed left-0 top-0 bottom-0 w-280 bg-white z-50 flex flex-col"
+              className="lg:hidden fixed left-0 top-0 bottom-0 w-[280px] bg-white z-50 flex flex-col"
             >
               <div className="h-16 border-b border-gray-200 flex items-center justify-between px-4">
                 <div className="flex items-center gap-3">

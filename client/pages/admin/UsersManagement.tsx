@@ -373,99 +373,101 @@ export default function UsersManagement() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Usuario</TableHead>
-                <TableHead>Rol</TableHead>
-                <TableHead>ID Empleado</TableHead>
-                <TableHead>Especialización</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
-                    Cargando usuarios...
-                  </TableCell>
+                  <TableHead>Usuario</TableHead>
+                  <TableHead>Rol</TableHead>
+                  <TableHead>ID Empleado</TableHead>
+                  <TableHead>Especialización</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
-              ) : filteredUsers.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
-                    No se encontraron usuarios
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredUsers.map((user) => {
-                  const roleConfig = getRoleBadge(user.role);
-                  const RoleIcon = roleConfig.icon;
-                  return (
-                    <TableRow key={user.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <Avatar>
-                            <AvatarImage src={user.profile_picture_url} />
-                            <AvatarFallback>
-                              {user.first_name[0]}
-                              {user.last_name[0]}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <p className="font-medium">
-                              {user.first_name} {user.last_name}
-                            </p>
-                            <p className="text-sm text-gray-500">
-                              {user.email}
-                            </p>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8">
+                      Cargando usuarios...
+                    </TableCell>
+                  </TableRow>
+                ) : filteredUsers.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8">
+                      No se encontraron usuarios
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredUsers.map((user) => {
+                    const roleConfig = getRoleBadge(user.role);
+                    const RoleIcon = roleConfig.icon;
+                    return (
+                      <TableRow key={user.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <Avatar>
+                              <AvatarImage src={user.profile_picture_url} />
+                              <AvatarFallback>
+                                {user.first_name[0]}
+                                {user.last_name[0]}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="font-medium">
+                                {user.first_name} {user.last_name}
+                              </p>
+                              <p className="text-sm text-gray-500">
+                                {user.email}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={cn("gap-1.5", roleConfig.color)}>
-                          <RoleIcon className="w-3.5 h-3.5" />
-                          {roleConfig.label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <code className="text-xs bg-gray-100 px-2 py-1 rounded">
-                          {user.employee_id || "N/A"}
-                        </code>
-                      </TableCell>
-                      <TableCell>{user.specialization || "-"}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={user.is_active ? "default" : "secondary"}
-                        >
-                          {user.is_active ? "Activo" : "Inactivo"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openEditModal(user)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={cn("gap-1.5", roleConfig.color)}>
+                            <RoleIcon className="w-3.5 h-3.5" />
+                            {roleConfig.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                            {user.employee_id || "N/A"}
+                          </code>
+                        </TableCell>
+                        <TableCell>{user.specialization || "-"}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={user.is_active ? "default" : "secondary"}
                           >
-                            <MdOutlineEdit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openDeleteModal(user)}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <MdOutlineDelete className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
+                            {user.is_active ? "Activo" : "Inactivo"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openEditModal(user)}
+                            >
+                              <MdOutlineEdit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openDeleteModal(user)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              <MdOutlineDelete className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -480,7 +482,7 @@ export default function UsersManagement() {
           </DialogHeader>
           <form onSubmit={createFormik.handleSubmit}>
             <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="first_name">
                     Nombre <span className="text-red-500">*</span>
@@ -553,7 +555,7 @@ export default function UsersManagement() {
                   </p>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="role">
                     Rol <span className="text-red-500">*</span>
@@ -595,7 +597,7 @@ export default function UsersManagement() {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="phone">Teléfono</Label>
                   <Input
@@ -663,7 +665,7 @@ export default function UsersManagement() {
           </DialogHeader>
           <form onSubmit={editFormik.handleSubmit}>
             <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit_first_name">
                     Nombre <span className="text-red-500">*</span>
@@ -736,7 +738,7 @@ export default function UsersManagement() {
                   </p>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit_role">
                     Rol <span className="text-red-500">*</span>
@@ -778,7 +780,7 @@ export default function UsersManagement() {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit_phone">Teléfono</Label>
                   <Input

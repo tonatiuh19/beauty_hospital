@@ -81,53 +81,51 @@ export function TestimonialsSection() {
 
         {/* Testimonials carousel */}
         <div className="relative">
-          {/* Left arrow */}
+          {/* Left arrow - visible on all sizes */}
           <button
             onClick={prevSlide}
-            className="hidden md:inline-flex absolute left-0 top-1/2 -translate-y-1/2 -translate-x-8 lg:-translate-x-16 z-10 w-12 h-12 bg-primary hover:bg-primary/90 rounded-full items-center justify-center transition-all hover:scale-110 shadow-lg"
+            className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-4 sm:-translate-x-8 lg:-translate-x-16 z-10 w-10 h-10 md:w-12 md:h-12 bg-primary hover:bg-primary/90 rounded-full flex items-center justify-center transition-all hover:scale-110 shadow-lg"
             aria-label="Previous testimonial"
           >
-            <ChevronLeft size={20} className="text-white" />
+            <ChevronLeft size={18} className="text-white" />
           </button>
 
-          {/* Right arrow */}
+          {/* Right arrow - visible on all sizes */}
           <button
             onClick={nextSlide}
-            className="hidden md:inline-flex absolute right-0 top-1/2 -translate-y-1/2 translate-x-8 lg:translate-x-16 z-10 w-12 h-12 bg-primary hover:bg-primary/90 rounded-full items-center justify-center transition-all hover:scale-110 shadow-lg"
+            className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-4 sm:translate-x-8 lg:translate-x-16 z-10 w-10 h-10 md:w-12 md:h-12 bg-primary hover:bg-primary/90 rounded-full flex items-center justify-center transition-all hover:scale-110 shadow-lg"
             aria-label="Next testimonial"
           >
-            <ChevronRight size={20} className="text-white" />
+            <ChevronRight size={18} className="text-white" />
           </button>
 
           {/* Testimonials grid */}
-          <div className="grid md:grid-cols-3 gap-8 mb-12">
-            {visibleTestimonials.map((testimonial, index) => (
+          <div className="px-8 sm:px-10 lg:px-0">
+            {/* Mobile: single card */}
+            <div className="block md:hidden mb-12">
               <motion.div
-                key={`${currentIndex}-${index}`}
+                key={`mobile-${currentIndex}`}
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.5, delay: index * 0.1 }}
-                className="bg-white rounded-2xl p-8 shadow-lg hover:shadow-xl transition-shadow"
+                transition={{ duration: 0.4 }}
+                className="bg-white rounded-2xl p-8 shadow-lg"
               >
-                {/* Profile image */}
                 <div className="flex justify-center mb-6">
                   <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-primary/20">
                     <img
-                      src={testimonial.image}
-                      alt={testimonial.name}
+                      src={testimonials[currentIndex].image}
+                      alt={testimonials[currentIndex].name}
                       className="w-full h-full object-cover"
                     />
                   </div>
                 </div>
-
-                {/* Name */}
                 <h3 className="text-xl font-bold text-center mb-4 text-foreground">
-                  {testimonial.name}
+                  {testimonials[currentIndex].name}
                 </h3>
-
-                {/* Stars */}
                 <div className="flex justify-center gap-1 mb-4">
-                  {Array.from({ length: testimonial.rating }).map((_, i) => (
+                  {Array.from({
+                    length: testimonials[currentIndex].rating,
+                  }).map((_, i) => (
                     <Star
                       key={i}
                       size={20}
@@ -135,13 +133,60 @@ export function TestimonialsSection() {
                     />
                   ))}
                 </div>
-
-                {/* Testimonial text */}
                 <p className="text-gray-700 text-center leading-relaxed text-sm">
-                  {testimonial.text}
+                  {testimonials[currentIndex].text}
                 </p>
               </motion.div>
-            ))}
+              {/* Pagination dots for mobile */}
+              <div className="flex justify-center gap-2 mt-4">
+                {testimonials.map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setCurrentIndex(i)}
+                    className={`w-2 h-2 rounded-full transition-all ${i === currentIndex ? "bg-primary w-4" : "bg-gray-300"}`}
+                    aria-label={`Testimonial ${i + 1}`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Desktop: 3-card grid */}
+            <div className="hidden md:grid md:grid-cols-3 gap-8 mb-12">
+              {visibleTestimonials.map((testimonial, index) => (
+                <motion.div
+                  key={`${currentIndex}-${index}`}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.5, delay: index * 0.1 }}
+                  className="bg-white rounded-2xl p-8 shadow-lg hover:shadow-xl transition-shadow"
+                >
+                  <div className="flex justify-center mb-6">
+                    <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-primary/20">
+                      <img
+                        src={testimonial.image}
+                        alt={testimonial.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  </div>
+                  <h3 className="text-xl font-bold text-center mb-4 text-foreground">
+                    {testimonial.name}
+                  </h3>
+                  <div className="flex justify-center gap-1 mb-4">
+                    {Array.from({ length: testimonial.rating }).map((_, i) => (
+                      <Star
+                        key={i}
+                        size={20}
+                        className="fill-primary text-primary"
+                      />
+                    ))}
+                  </div>
+                  <p className="text-gray-700 text-center leading-relaxed text-sm">
+                    {testimonial.text}
+                  </p>
+                </motion.div>
+              ))}
+            </div>
           </div>
         </div>
 

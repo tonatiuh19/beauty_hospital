@@ -48,7 +48,7 @@ import { logger } from "@/lib/logger";
 interface Coupon {
   id: number;
   code: string;
-  discount_type: "percentage" | "fixed";
+  discount_type: "percentage" | "fixed_amount";
   discount_value: number;
   min_purchase_amount: number | null;
   max_discount_amount: number | null;
@@ -88,7 +88,7 @@ export default function SettingsManagement() {
   const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null);
   const [couponForm, setCouponForm] = useState({
     code: "",
-    discount_type: "percentage" as "percentage" | "fixed",
+    discount_type: "" as "" | "percentage" | "fixed_amount",
     discount_value: 0,
     min_purchase_amount: 0,
     max_discount_amount: 0,
@@ -145,14 +145,16 @@ export default function SettingsManagement() {
   const handleSaveCoupon = async () => {
     try {
       const token = localStorage.getItem("adminAccessToken");
+      const adminUser = JSON.parse(localStorage.getItem("adminUser") || "{}");
+      const payload = { ...couponForm, created_by: adminUser?.id || null };
       if (editingCoupon) {
         await axios.put(
-          `/api/admin/settings/coupons/${editingCoupon.id}`,
-          couponForm,
+          `/admin/settings/coupons/${editingCoupon.id}`,
+          payload,
           { headers: { Authorization: `Bearer ${token}` } },
         );
       } else {
-        await axios.post("/admin/settings/coupons", couponForm, {
+        await axios.post("/admin/settings/coupons", payload, {
           headers: { Authorization: `Bearer ${token}` },
         });
       }
@@ -182,7 +184,7 @@ export default function SettingsManagement() {
   const resetCouponForm = () => {
     setCouponForm({
       code: "",
-      discount_type: "percentage",
+      discount_type: "",
       discount_value: 0,
       min_purchase_amount: 0,
       max_discount_amount: 0,
@@ -335,100 +337,110 @@ export default function SettingsManagement() {
 
           <Card>
             <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Código</TableHead>
-                    <TableHead>Descuento</TableHead>
-                    <TableHead>Uso</TableHead>
-                    <TableHead>Válido Desde</TableHead>
-                    <TableHead>Válido Hasta</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {coupons.length === 0 ? (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8">
-                        No hay cupones creados
-                      </TableCell>
+                      <TableHead>Código</TableHead>
+                      <TableHead>Descuento</TableHead>
+                      <TableHead>Uso</TableHead>
+                      <TableHead>Válido Desde</TableHead>
+                      <TableHead>Válido Hasta</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
                     </TableRow>
-                  ) : (
-                    coupons.map((coupon) => (
-                      <TableRow key={coupon.id}>
-                        <TableCell className="font-mono font-medium">
-                          {coupon.code}
-                        </TableCell>
-                        <TableCell>
-                          {coupon.discount_type === "percentage"
-                            ? `${coupon.discount_value}%`
-                            : `$${coupon.discount_value}`}
-                        </TableCell>
-                        <TableCell>
-                          {coupon.usage_count} / {coupon.usage_limit || "∞"}
-                        </TableCell>
-                        <TableCell>
-                          {format(parseISO(coupon.valid_from), "dd/MM/yyyy")}
-                        </TableCell>
-                        <TableCell>
-                          {coupon.valid_until
-                            ? format(parseISO(coupon.valid_until), "dd/MM/yyyy")
-                            : "Sin límite"}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={coupon.is_active ? "default" : "secondary"}
-                            className={
-                              coupon.is_active
-                                ? "bg-green-100 text-green-700"
-                                : "bg-gray-100 text-gray-700"
-                            }
-                          >
-                            {coupon.is_active ? "Activo" : "Inactivo"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setEditingCoupon(coupon);
-                                setCouponForm({
-                                  code: coupon.code,
-                                  discount_type: coupon.discount_type,
-                                  discount_value: coupon.discount_value,
-                                  min_purchase_amount:
-                                    coupon.min_purchase_amount || 0,
-                                  max_discount_amount:
-                                    coupon.max_discount_amount || 0,
-                                  usage_limit: coupon.usage_limit || 0,
-                                  valid_from: coupon.valid_from.split("T")[0],
-                                  valid_until: coupon.valid_until
-                                    ? coupon.valid_until.split("T")[0]
-                                    : "",
-                                  is_active: coupon.is_active,
-                                });
-                                setIsCouponModalOpen(true);
-                              }}
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDeleteCoupon(coupon.id)}
-                            >
-                              <Trash2 className="w-4 h-4 text-red-600" />
-                            </Button>
-                          </div>
+                  </TableHeader>
+                  <TableBody>
+                    {coupons.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-8">
+                          No hay cupones creados
                         </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+                    ) : (
+                      coupons.map((coupon) => (
+                        <TableRow key={coupon.id}>
+                          <TableCell className="font-mono font-medium">
+                            {coupon.code}
+                          </TableCell>
+                          <TableCell>
+                            {coupon.discount_type === "percentage"
+                              ? `${coupon.discount_value}%`
+                              : `$${coupon.discount_value}`}
+                          </TableCell>
+                          <TableCell>
+                            {coupon.usage_count} / {coupon.usage_limit || "∞"}
+                          </TableCell>
+                          <TableCell>
+                            {format(parseISO(coupon.valid_from), "dd/MM/yyyy")}
+                          </TableCell>
+                          <TableCell>
+                            {coupon.valid_until
+                              ? format(
+                                  parseISO(coupon.valid_until),
+                                  "dd/MM/yyyy",
+                                )
+                              : "Sin límite"}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                coupon.is_active ? "default" : "secondary"
+                              }
+                              className={
+                                coupon.is_active
+                                  ? "bg-green-100 text-green-700"
+                                  : "bg-gray-100 text-gray-700"
+                              }
+                            >
+                              {coupon.is_active ? "Activo" : "Inactivo"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setEditingCoupon(coupon);
+                                  setCouponForm({
+                                    code: coupon.code,
+                                    discount_type: coupon.discount_type as
+                                      | ""
+                                      | "percentage"
+                                      | "fixed_amount",
+                                    discount_value: coupon.discount_value,
+                                    min_purchase_amount:
+                                      coupon.min_purchase_amount || 0,
+                                    max_discount_amount:
+                                      coupon.max_discount_amount || 0,
+                                    usage_limit: coupon.usage_limit || 0,
+                                    valid_from: coupon.valid_from.split("T")[0],
+                                    valid_until: coupon.valid_until
+                                      ? coupon.valid_until.split("T")[0]
+                                      : "",
+                                    is_active: coupon.is_active,
+                                  });
+                                  setIsCouponModalOpen(true);
+                                }}
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteCoupon(coupon.id)}
+                              >
+                                <Trash2 className="w-4 h-4 text-red-600" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -605,7 +617,7 @@ export default function SettingsManagement() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>Código *</Label>
                 <Input
@@ -623,7 +635,7 @@ export default function SettingsManagement() {
                 <Label>Tipo de Descuento *</Label>
                 <Select
                   value={couponForm.discount_type}
-                  onValueChange={(value: "percentage" | "fixed") =>
+                  onValueChange={(value: "percentage" | "fixed_amount") =>
                     setCouponForm({ ...couponForm, discount_type: value })
                   }
                 >
@@ -632,88 +644,97 @@ export default function SettingsManagement() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="percentage">Porcentaje</SelectItem>
-                    <SelectItem value="fixed">Monto Fijo</SelectItem>
+                    <SelectItem value="fixed_amount">Monto Fijo</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label>Valor del Descuento *</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={couponForm.discount_value}
-                  onChange={(e) =>
-                    setCouponForm({
-                      ...couponForm,
-                      discount_value: parseFloat(e.target.value),
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <Label>Compra Mínima</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={couponForm.min_purchase_amount}
-                  onChange={(e) =>
-                    setCouponForm({
-                      ...couponForm,
-                      min_purchase_amount: parseFloat(e.target.value),
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <Label>Descuento Máximo</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={couponForm.max_discount_amount}
-                  onChange={(e) =>
-                    setCouponForm({
-                      ...couponForm,
-                      max_discount_amount: parseFloat(e.target.value),
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <Label>Límite de Uso</Label>
-                <Input
-                  type="number"
-                  value={couponForm.usage_limit}
-                  onChange={(e) =>
-                    setCouponForm({
-                      ...couponForm,
-                      usage_limit: parseInt(e.target.value),
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <Label>Válido Desde *</Label>
-                <Input
-                  type="date"
-                  value={couponForm.valid_from}
-                  onChange={(e) =>
-                    setCouponForm({ ...couponForm, valid_from: e.target.value })
-                  }
-                />
-              </div>
-              <div>
-                <Label>Válido Hasta</Label>
-                <Input
-                  type="date"
-                  value={couponForm.valid_until}
-                  onChange={(e) =>
-                    setCouponForm({
-                      ...couponForm,
-                      valid_until: e.target.value,
-                    })
-                  }
-                />
-              </div>
+              {couponForm.discount_type && (
+                <>
+                  <div>
+                    <Label>Valor del Descuento *</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={couponForm.discount_value}
+                      onChange={(e) =>
+                        setCouponForm({
+                          ...couponForm,
+                          discount_value: parseFloat(e.target.value),
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label>Compra Mínima</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={couponForm.min_purchase_amount}
+                      onChange={(e) =>
+                        setCouponForm({
+                          ...couponForm,
+                          min_purchase_amount: parseFloat(e.target.value),
+                        })
+                      }
+                    />
+                  </div>
+                  {couponForm.discount_type === "percentage" && (
+                    <div>
+                      <Label>Descuento Máximo</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={couponForm.max_discount_amount}
+                        onChange={(e) =>
+                          setCouponForm({
+                            ...couponForm,
+                            max_discount_amount: parseFloat(e.target.value),
+                          })
+                        }
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <Label>Límite de Uso</Label>
+                    <Input
+                      type="number"
+                      value={couponForm.usage_limit}
+                      onChange={(e) =>
+                        setCouponForm({
+                          ...couponForm,
+                          usage_limit: parseInt(e.target.value),
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label>Válido Desde *</Label>
+                    <Input
+                      type="date"
+                      value={couponForm.valid_from}
+                      onChange={(e) =>
+                        setCouponForm({
+                          ...couponForm,
+                          valid_from: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label>Válido Hasta</Label>
+                    <Input
+                      type="date"
+                      value={couponForm.valid_until}
+                      onChange={(e) =>
+                        setCouponForm({
+                          ...couponForm,
+                          valid_until: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </>
+              )}
               <div className="col-span-2 flex items-center gap-2">
                 <Switch
                   checked={couponForm.is_active}

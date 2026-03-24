@@ -523,7 +523,7 @@ export default function InvoicesManagement() {
           </DialogHeader>
           {selectedInvoice && (
             <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label className="text-sm text-gray-500">Folio</Label>
                   <p className="font-medium">
@@ -542,7 +542,7 @@ export default function InvoicesManagement() {
 
               <div className="border-t pt-4">
                 <h3 className="font-semibold mb-3">Información del Paciente</h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label className="text-sm text-gray-500">Nombre</Label>
                     <p>
@@ -563,7 +563,7 @@ export default function InvoicesManagement() {
 
               <div className="border-t pt-4">
                 <h3 className="font-semibold mb-3">Datos Fiscales</h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label className="text-sm text-gray-500">RFC</Label>
                     <p className="font-mono">{selectedInvoice.rfc}</p>
@@ -612,7 +612,7 @@ export default function InvoicesManagement() {
 
               <div className="border-t pt-4">
                 <h3 className="font-semibold mb-3">Información del Servicio</h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label className="text-sm text-gray-500">Servicio</Label>
                     <p>{selectedInvoice.service_name}</p>

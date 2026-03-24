@@ -460,121 +460,123 @@ export default function ContractsManagement() {
       {/* Contracts Table */}
       <Card>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Paciente</TableHead>
-                <TableHead>Servicio</TableHead>
-                <TableHead>Sesiones</TableHead>
-                <TableHead>Progreso</TableHead>
-                <TableHead>Monto Total</TableHead>
-                <TableHead>Pendiente</TableHead>
-                <TableHead>Inicio</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8">
-                    Cargando...
-                  </TableCell>
+                  <TableHead>Paciente</TableHead>
+                  <TableHead>Servicio</TableHead>
+                  <TableHead>Sesiones</TableHead>
+                  <TableHead>Progreso</TableHead>
+                  <TableHead>Monto Total</TableHead>
+                  <TableHead>Pendiente</TableHead>
+                  <TableHead>Inicio</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
-              ) : contracts.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8">
-                    <div className="text-center">
-                      <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                      <p className="text-gray-500 font-medium">
-                        No se encontraron contratos
-                      </p>
-                      <p className="text-sm text-gray-400 mt-1">
-                        Los contratos aparecerán aquí cuando se generen
-                      </p>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                contracts.map((contract) => (
-                  <TableRow key={contract.id}>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium">{contract.patient_name}</p>
-                        <p className="text-xs text-gray-500">
-                          {contract.patient_email}
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-8">
+                      Cargando...
+                    </TableCell>
+                  </TableRow>
+                ) : contracts.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-8">
+                      <div className="text-center">
+                        <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                        <p className="text-gray-500 font-medium">
+                          No se encontraron contratos
+                        </p>
+                        <p className="text-sm text-gray-400 mt-1">
+                          Los contratos aparecerán aquí cuando se generen
                         </p>
                       </div>
                     </TableCell>
-                    <TableCell>{contract.service_name}</TableCell>
-                    <TableCell>
-                      <div className="text-sm">
-                        <span className="font-medium">
-                          {contract.completed_sessions}
-                        </span>
-                        <span className="text-gray-500">
-                          {" "}
-                          / {contract.total_sessions}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="w-24">
-                        <Progress
-                          value={calculateProgress(
-                            contract.completed_sessions,
-                            contract.total_sessions,
-                          )}
-                          className="h-2"
-                        />
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      {formatCurrency(contract.total_amount)}
-                    </TableCell>
-                    <TableCell className="text-orange-600 font-medium">
-                      {formatCurrency(contract.amount_pending)}
-                    </TableCell>
-                    <TableCell>
-                      {format(parseISO(contract.start_date), "dd/MM/yyyy")}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="secondary"
-                        className={statusColors[contract.status]}
-                      >
-                        {statusLabels[contract.status]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => fetchContractDetails(contract.id)}
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => downloadContractPDF(contract.id)}
-                          title="Descargar PDF firmado"
-                          disabled={downloading}
-                        >
-                          {downloading ? (
-                            <div className="w-4 h-4 border-2 border-gray-300 border-t-primary rounded-full animate-spin" />
-                          ) : (
-                            <Download className="w-4 h-4" />
-                          )}
-                        </Button>
-                      </div>
-                    </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : (
+                  contracts.map((contract) => (
+                    <TableRow key={contract.id}>
+                      <TableCell>
+                        <div>
+                          <p className="font-medium">{contract.patient_name}</p>
+                          <p className="text-xs text-gray-500">
+                            {contract.patient_email}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>{contract.service_name}</TableCell>
+                      <TableCell>
+                        <div className="text-sm">
+                          <span className="font-medium">
+                            {contract.completed_sessions}
+                          </span>
+                          <span className="text-gray-500">
+                            {" "}
+                            / {contract.total_sessions}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="w-24">
+                          <Progress
+                            value={calculateProgress(
+                              contract.completed_sessions,
+                              contract.total_sessions,
+                            )}
+                            className="h-2"
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {formatCurrency(contract.total_amount)}
+                      </TableCell>
+                      <TableCell className="text-orange-600 font-medium">
+                        {formatCurrency(contract.amount_pending)}
+                      </TableCell>
+                      <TableCell>
+                        {format(parseISO(contract.start_date), "dd/MM/yyyy")}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="secondary"
+                          className={statusColors[contract.status]}
+                        >
+                          {statusLabels[contract.status]}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => fetchContractDetails(contract.id)}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => downloadContractPDF(contract.id)}
+                            title="Descargar PDF firmado"
+                            disabled={downloading}
+                          >
+                            {downloading ? (
+                              <div className="w-4 h-4 border-2 border-gray-300 border-t-primary rounded-full animate-spin" />
+                            ) : (
+                              <Download className="w-4 h-4" />
+                            )}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
 
           {/* Pagination */}
           {totalPages > 1 && (
@@ -623,7 +625,7 @@ export default function ContractsManagement() {
             selectedContract && (
               <div className="space-y-6">
                 {/* Contract Info */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label className="text-gray-500">Paciente</Label>
                     <p className="font-medium">

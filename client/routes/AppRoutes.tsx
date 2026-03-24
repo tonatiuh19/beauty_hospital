@@ -1,4 +1,13 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, useLocation } from "react-router-dom";
+import { useEffect } from "react";
+
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [pathname]);
+  return null;
+}
 import Index from "@/pages/Index";
 import AppointmentPage from "@/pages/Appointment";
 import MyAppointments from "@/pages/MyAppointments";
@@ -16,35 +25,45 @@ import BlockedDatesManagement from "@/pages/admin/BlockedDatesManagement";
 import UsersManagement from "@/pages/admin/UsersManagement";
 import MedicalRecordsManagement from "@/pages/admin/MedicalRecordsManagement";
 import PatientCheckIn from "@/pages/PatientCheckIn";
+import PaymentSuccess from "@/pages/PaymentSuccess";
+import PaymentFailed from "@/pages/PaymentFailed";
 import NotFound from "@/pages/NotFound";
 
 export function AppRoutes() {
   return (
-    <Routes>
-      <Route path="/" element={<Index />} />
-      <Route path="/appointment" element={<AppointmentPage />} />
-      <Route path="/my-appointments" element={<MyAppointments />} />
-      <Route path="/check-in" element={<PatientCheckIn />} />
-      <Route path="/admin/login" element={<AdminLogin />} />
+    <>
+      <ScrollToTop />
+      <Routes>
+        <Route path="/" element={<Index />} />
+        <Route path="/appointment" element={<AppointmentPage />} />
+        <Route path="/appointment/success" element={<PaymentSuccess />} />
+        <Route path="/appointment/failed" element={<PaymentFailed />} />
+        <Route path="/my-appointments" element={<MyAppointments />} />
+        <Route path="/check-in" element={<PatientCheckIn />} />
+        <Route path="/admin/login" element={<AdminLogin />} />
 
-      {/* Admin Dashboard Routes */}
-      <Route path="/admin" element={<DashboardLayout />}>
-        <Route index element={<DashboardHome />} />
-        <Route path="dashboard" element={<DashboardHome />} />
-        <Route path="appointments" element={<AppointmentsCalendar />} />
-        <Route path="patients" element={<PatientManagement />} />
-        <Route path="contracts" element={<ContractsManagement />} />
-        <Route path="payments" element={<PaymentsManagement />} />
-        <Route path="invoices" element={<InvoicesManagement />} />
-        <Route path="services" element={<ServicesManagement />} />
-        <Route path="blocked-dates" element={<BlockedDatesManagement />} />
-        <Route path="users" element={<UsersManagement />} />
-        <Route path="medical-records" element={<MedicalRecordsManagement />} />
-        <Route path="settings" element={<SettingsManagement />} />
-      </Route>
+        {/* Admin Dashboard Routes */}
+        <Route path="/admin" element={<DashboardLayout />}>
+          <Route index element={<DashboardHome />} />
+          <Route path="dashboard" element={<DashboardHome />} />
+          <Route path="appointments" element={<AppointmentsCalendar />} />
+          <Route path="patients" element={<PatientManagement />} />
+          <Route path="contracts" element={<ContractsManagement />} />
+          <Route path="payments" element={<PaymentsManagement />} />
+          <Route path="invoices" element={<InvoicesManagement />} />
+          <Route path="services" element={<ServicesManagement />} />
+          <Route path="blocked-dates" element={<BlockedDatesManagement />} />
+          <Route path="users" element={<UsersManagement />} />
+          <Route
+            path="medical-records"
+            element={<MedicalRecordsManagement />}
+          />
+          <Route path="settings" element={<SettingsManagement />} />
+        </Route>
 
-      {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-      <Route path="*" element={<NotFound />} />
-    </Routes>
+        {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </>
   );
 }

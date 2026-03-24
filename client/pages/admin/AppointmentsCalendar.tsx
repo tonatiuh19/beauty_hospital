@@ -40,6 +40,20 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { ChevronsUpDown, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import axios from "@/lib/axios";
 import {
@@ -148,6 +162,8 @@ export default function AppointmentsCalendar() {
   const [loading, setLoading] = useState(true);
   const [services, setServices] = useState<Service[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [patientSearch, setPatientSearch] = useState("");
+  const [patientComboOpen, setPatientComboOpen] = useState(false);
 
   // Create appointment form
   const [newAppointment, setNewAppointment] = useState({
@@ -255,7 +271,13 @@ export default function AppointmentsCalendar() {
       });
 
       if (response.data.success) {
-        setPatients(response.data.data.patients);
+        const mapped = (response.data.data || []).map((p: any) => ({
+          id: p.id,
+          name: `${p.first_name} ${p.last_name}`,
+          email: p.email,
+          phone: p.phone,
+        }));
+        setPatients(mapped);
       }
     } catch (error) {
       logger.error("Error searching patients:", error);
@@ -309,7 +331,7 @@ export default function AppointmentsCalendar() {
     try {
       const token = localStorage.getItem("adminAccessToken");
       const response = await axios.post(
-        `/api/admin/appointments/${appointmentId}/cancel`,
+        `/admin/appointments/${appointmentId}/cancel`,
         { cancelled_reason: reason },
         {
           headers: { Authorization: `Bearer ${token}` },
@@ -332,9 +354,10 @@ export default function AppointmentsCalendar() {
   const handleCreateAppointment = async () => {
     try {
       const token = localStorage.getItem("adminAccessToken");
+      const adminUser = JSON.parse(localStorage.getItem("adminUser") || "{}");
       const response = await axios.post(
-        "/api/admin/appointments/manual",
-        newAppointment,
+        "/admin/appointments/manual",
+        { ...newAppointment, created_by: adminUser?.id || null },
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -372,6 +395,8 @@ export default function AppointmentsCalendar() {
       payment_method: "cash",
     });
     setPatients([]);
+    setPatientSearch("");
+    setPatientComboOpen(false);
   };
 
   // Event style getter for react-big-calendar
@@ -502,7 +527,10 @@ export default function AppointmentsCalendar() {
               </div>
             </div>
           ) : (
-            <div style={{ height: "700px" }} className="calendar-container">
+            <div
+              className="calendar-container"
+              style={{ height: "clamp(400px, 70vh, 700px)" }}
+            >
               <style>{`
                 .calendar-container .rbc-calendar {
                   font-family: inherit;
@@ -628,7 +656,7 @@ export default function AppointmentsCalendar() {
           {selectedAppointment && (
             <>
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label className="text-gray-500">Paciente</Label>
                     <p className="font-medium">
@@ -828,73 +856,122 @@ export default function AppointmentsCalendar() {
             <DialogTitle>Nueva Cita Manual</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <Label>Buscar Paciente</Label>
-                <Input
-                  placeholder="Nombre, email o teléfono..."
-                  onChange={(e) => searchPatients(e.target.value)}
-                />
-                {patients.length > 0 && (
-                  <div className="mt-2 border rounded-lg divide-y max-h-40 overflow-y-auto">
-                    {patients.map((patient) => (
-                      <div
-                        key={patient.id}
-                        className="p-2 hover:bg-gray-50 cursor-pointer"
-                        onClick={() => {
-                          setNewAppointment({
-                            ...newAppointment,
-                            patient_id: patient.id.toString(),
-                            patient_name: patient.name,
-                            patient_email: patient.email,
-                            patient_phone: patient.phone,
-                          });
-                          setPatients([]);
-                        }}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="col-span-1 sm:col-span-2">
+                <Label>Paciente *</Label>
+                <Popover
+                  open={patientComboOpen}
+                  onOpenChange={setPatientComboOpen}
+                >
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className={`w-full flex items-center justify-between px-3 py-2 text-sm border rounded-md bg-white hover:border-primary transition-colors ${
+                        newAppointment.patient_id
+                          ? "border-green-500 text-gray-900"
+                          : "border-input text-muted-foreground"
+                      }`}
+                    >
+                      <span
+                        className={
+                          newAppointment.patient_id
+                            ? "text-gray-900"
+                            : "text-gray-400"
+                        }
                       >
-                        <p className="font-medium text-sm">{patient.name}</p>
-                        <p className="text-xs text-gray-500">{patient.email}</p>
-                      </div>
-                    ))}
+                        {newAppointment.patient_name || "Buscar paciente..."}
+                      </span>
+                      <ChevronsUpDown className="w-4 h-4 text-gray-400 shrink-0" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    className="w-[--radix-popover-trigger-width] p-0"
+                    align="start"
+                  >
+                    <Command shouldFilter={false}>
+                      <CommandInput
+                        placeholder="Nombre, email o teléfono..."
+                        value={patientSearch}
+                        onValueChange={(val) => {
+                          setPatientSearch(val);
+                          searchPatients(val);
+                        }}
+                      />
+                      <CommandList>
+                        <CommandEmpty className="py-4 text-center text-sm text-gray-500">
+                          {patientSearch.length < 2
+                            ? "Escribe al menos 2 caracteres"
+                            : "Sin resultados"}
+                        </CommandEmpty>
+                        {patients.length > 0 && (
+                          <CommandGroup heading="Pacientes">
+                            {patients.map((patient) => (
+                              <CommandItem
+                                key={patient.id}
+                                value={patient.id.toString()}
+                                onSelect={() => {
+                                  setNewAppointment({
+                                    ...newAppointment,
+                                    patient_id: patient.id.toString(),
+                                    patient_name: patient.name,
+                                    patient_email: patient.email,
+                                    patient_phone: patient.phone,
+                                  });
+                                  setPatientSearch("");
+                                  setPatients([]);
+                                  setPatientComboOpen(false);
+                                }}
+                                className="flex items-center justify-between cursor-pointer"
+                              >
+                                <div>
+                                  <p className="font-medium text-sm">
+                                    {patient.name}
+                                  </p>
+                                  <p className="text-xs text-gray-500">
+                                    {patient.email} · {patient.phone}
+                                  </p>
+                                </div>
+                                {newAppointment.patient_id ===
+                                  patient.id.toString() && (
+                                  <Check className="w-4 h-4 text-green-600" />
+                                )}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        )}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {newAppointment.patient_id && (
+                  <div className="mt-2 flex items-center justify-between px-3 py-2 bg-green-50 border border-green-200 rounded-md">
+                    <div>
+                      <p className="text-sm font-medium text-green-800">
+                        {newAppointment.patient_name}
+                      </p>
+                      <p className="text-xs text-green-600">
+                        {newAppointment.patient_email} ·{" "}
+                        {newAppointment.patient_phone}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewAppointment({
+                          ...newAppointment,
+                          patient_id: "",
+                          patient_name: "",
+                          patient_email: "",
+                          patient_phone: "",
+                        });
+                        setPatientSearch("");
+                      }}
+                      className="text-green-600 hover:text-green-800 text-xs underline ml-3"
+                    >
+                      Cambiar
+                    </button>
                   </div>
                 )}
-              </div>
-              <div>
-                <Label>Nombre *</Label>
-                <Input
-                  value={newAppointment.patient_name}
-                  onChange={(e) =>
-                    setNewAppointment({
-                      ...newAppointment,
-                      patient_name: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <Label>Email *</Label>
-                <Input
-                  type="email"
-                  value={newAppointment.patient_email}
-                  onChange={(e) =>
-                    setNewAppointment({
-                      ...newAppointment,
-                      patient_email: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <Label>Teléfono *</Label>
-                <Input
-                  value={newAppointment.patient_phone}
-                  onChange={(e) =>
-                    setNewAppointment({
-                      ...newAppointment,
-                      patient_phone: e.target.value,
-                    })
-                  }
-                />
               </div>
               <div>
                 <Label>Servicio *</Label>
@@ -986,7 +1063,7 @@ export default function AppointmentsCalendar() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="col-span-2">
+              <div className="col-span-1 sm:col-span-2">
                 <Label>Notas</Label>
                 <Textarea
                   value={newAppointment.notes}

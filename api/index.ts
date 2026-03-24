@@ -32,6 +32,107 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
   apiVersion: "2025-02-24.acacia",
 });
 
+/**
+ * Get or create a Stripe Customer for a patient.
+ * If the stored customer ID is invalid (e.g. created with different Stripe keys — test vs live),
+ * a new customer is created and the DB record is updated automatically.
+ */
+async function getOrCreateStripeCustomer(
+  patientId: number,
+  email: string,
+  firstName: string,
+  lastName: string,
+  existingCustomerId?: string | null,
+): Promise<string> {
+  console.log(
+    `[getOrCreateStripeCustomer] patient_id=${patientId} email=${email} existingCustomerId=${existingCustomerId ?? "NULL"}`,
+  );
+
+  if (existingCustomerId) {
+    try {
+      const customer = await stripe.customers.retrieve(existingCustomerId);
+      if (!(customer as any).deleted) {
+        console.log(
+          `[getOrCreateStripeCustomer] ✅ Reusing existing Stripe customer ${existingCustomerId} for patient ${patientId}`,
+        );
+        // Upgrade any payment methods saved before allow_redisplay was set correctly.
+        // Methods saved with allow_redisplay:"unspecified" are hidden by PaymentElement;
+        // updating them to "limited" makes them appear for future bookings.
+        // NOTE: must use stripe.customers.listPaymentMethods (not stripe.paymentMethods.list)
+        // because the latter is for Treasury flows and won't return customer-attached methods.
+        try {
+          const existingPMs =
+            await stripe.customers.listPaymentMethods(existingCustomerId);
+          console.log(
+            `[getOrCreateStripeCustomer] 💳 Customer ${existingCustomerId} has ${existingPMs.data.length} attached payment method(s):`,
+            existingPMs.data.map((pm) => ({
+              id: pm.id,
+              type: pm.type,
+              brand: (pm as any).card?.brand,
+              last4: (pm as any).card?.last4,
+              allow_redisplay: pm.allow_redisplay,
+            })),
+          );
+          for (const pm of existingPMs.data) {
+            if (
+              pm.allow_redisplay !== "limited" &&
+              pm.allow_redisplay !== "always"
+            ) {
+              await stripe.paymentMethods.update(pm.id, {
+                allow_redisplay: "limited",
+              });
+              console.log(
+                `[getOrCreateStripeCustomer] 🔧 Fixed allow_redisplay for ${pm.id} (${(pm as any).card?.brand} ****${(pm as any).card?.last4}): ${pm.allow_redisplay} → limited`,
+              );
+            }
+          }
+        } catch (pmErr: any) {
+          console.warn(
+            `[getOrCreateStripeCustomer] ⚠️  Could not list/update payment methods allow_redisplay:`,
+            pmErr.message,
+          );
+        }
+        return existingCustomerId;
+      }
+      console.log(
+        `[getOrCreateStripeCustomer] ⚠️  Customer ${existingCustomerId} exists but is marked DELETED — will create new`,
+      );
+    } catch (err: any) {
+      // Customer not found — possibly created with different Stripe keys (test vs live)
+      console.log(
+        `[getOrCreateStripeCustomer] ⚠️  Stripe customer ${existingCustomerId} not found in current environment (${err.message}), creating new one`,
+      );
+    }
+  } else {
+    console.log(
+      `[getOrCreateStripeCustomer] ℹ️  No existing stripe_customer_id in DB for patient ${patientId} — will create new Stripe customer`,
+    );
+  }
+
+  const customer = await stripe.customers.create({
+    email,
+    name: `${firstName} ${lastName}`,
+    metadata: { patient_id: patientId.toString() },
+  });
+
+  console.log(
+    `[getOrCreateStripeCustomer] 🆕 Created Stripe customer ${customer.id} for patient ${patientId}`,
+  );
+
+  const [updateResult] = await pool.query<any>(
+    "UPDATE patients SET stripe_customer_id = ? WHERE id = ?",
+    [customer.id, patientId],
+  );
+  console.log(
+    `[getOrCreateStripeCustomer] 💾 DB UPDATE stripe_customer_id → ${customer.id}, affectedRows=${updateResult.affectedRows}`,
+  );
+
+  console.log(
+    `✨ Created Stripe customer ${customer.id} for patient ${patientId}`,
+  );
+  return customer.id;
+}
+
 // ==================== INLINE ROUTE HANDLERS ====================
 
 /**
@@ -318,7 +419,7 @@ const createAppointment: RequestHandler = async (req, res) => {
         scheduledAt,
         service.duration_minutes,
         notes || null,
-        patientId, // created_by is the patient who booked
+        null, // created_by is NULL for patient self-bookings (FK references users.id not patients.id)
       ],
     );
 
@@ -2111,11 +2212,45 @@ const getAdminPatientById: RequestHandler = async (req, res) => {
       [id],
     );
 
+    // Get payments
+    const [payments] = await pool.query<any[]>(
+      `SELECT p.*, s.name as service_name
+       FROM payments p
+       LEFT JOIN appointments a ON p.appointment_id = a.id
+       LEFT JOIN services s ON a.service_id = s.id
+       WHERE p.patient_id = ?
+       ORDER BY p.created_at DESC`,
+      [id],
+    );
+
+    // Get medical records
+    const [medicalRecords] = await pool.query<any[]>(
+      `SELECT mr.*, CONCAT(u.first_name, ' ', u.last_name) as doctor_name
+       FROM medical_records mr
+       LEFT JOIN users u ON mr.doctor_id = u.id
+       WHERE mr.patient_id = ?
+       ORDER BY mr.visit_date DESC`,
+      [id],
+    );
+
+    // Get contracts
+    const [contracts] = await pool.query<any[]>(
+      `SELECT c.*, s.name as service_name
+       FROM contracts c
+       LEFT JOIN services s ON c.service_id = s.id
+       WHERE c.patient_id = ?
+       ORDER BY c.created_at DESC`,
+      [id],
+    );
+
     res.json({
       success: true,
       data: {
         patient,
         appointments,
+        payments,
+        medicalRecords,
+        contracts,
       },
     });
   } catch (error) {
@@ -2133,16 +2268,37 @@ const updatePatient: RequestHandler = async (req, res) => {
     const { id } = req.params;
     const updateData = req.body;
 
-    // Remove undefined and null values
-    const filteredData = Object.entries(updateData).reduce(
-      (acc, [key, value]) => {
-        if (value !== undefined && value !== null) {
-          acc[key] = value;
-        }
-        return acc;
-      },
-      {} as any,
-    );
+    // Whitelist allowed columns to prevent SQL injection
+    const ALLOWED_PATIENT_COLUMNS = new Set([
+      "first_name",
+      "last_name",
+      "email",
+      "phone",
+      "date_of_birth",
+      "gender",
+      "address",
+      "city",
+      "state",
+      "zip_code",
+      "country",
+      "emergency_contact_name",
+      "emergency_contact_phone",
+      "medical_notes",
+      "allergies",
+      "blood_type",
+      "is_active",
+    ]);
+
+    const filteredData: Record<string, any> = {};
+    for (const [key, value] of Object.entries(updateData)) {
+      if (
+        ALLOWED_PATIENT_COLUMNS.has(key) &&
+        value !== undefined &&
+        value !== null
+      ) {
+        filteredData[key] = value;
+      }
+    }
 
     if (Object.keys(filteredData).length === 0) {
       return res.status(400).json({
@@ -2151,7 +2307,7 @@ const updatePatient: RequestHandler = async (req, res) => {
       });
     }
 
-    // Build dynamic SET clause
+    // Build dynamic SET clause with whitelisted columns
     const setClause = Object.keys(filteredData)
       .map((key) => `${key} = ?`)
       .join(", ");
@@ -2182,6 +2338,112 @@ const updatePatient: RequestHandler = async (req, res) => {
     });
   } catch (error) {
     console.error("Error updating patient:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * PATCH /api/admin/patients/:id/toggle-active
+ * Toggle a patient's is_active status
+ */
+const togglePatientActive: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [existing] = await pool.query<any[]>(
+      "SELECT id, is_active FROM patients WHERE id = ?",
+      [id],
+    );
+
+    if (existing.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Patient not found" });
+    }
+
+    const newStatus = existing[0].is_active ? 0 : 1;
+    await pool.query(
+      "UPDATE patients SET is_active = ?, updated_at = NOW() WHERE id = ?",
+      [newStatus, id],
+    );
+
+    res.json({
+      success: true,
+      message: `Patient ${newStatus ? "activated" : "deactivated"} successfully`,
+      data: { is_active: Boolean(newStatus) },
+    });
+  } catch (error) {
+    console.error("Error toggling patient status:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * POST /api/admin/patients/:id/medical-records
+ * Add a simplified medical record for a patient from the patient management panel
+ */
+const addPatientMedicalRecord: RequestHandler = async (req, res) => {
+  try {
+    const { id: patient_id } = req.params;
+    const {
+      record_type = "consultation",
+      notes,
+      attachments,
+      doctor_id,
+    } = req.body;
+
+    if (!notes) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Notes are required" });
+    }
+
+    // Resolve doctor_id: use provided value or fall back to request user
+    const resolvedDoctorId = doctor_id || (req as any).user?.id;
+    if (!resolvedDoctorId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "doctor_id is required" });
+    }
+
+    const [patientCheck] = await pool.query<any[]>(
+      "SELECT id FROM patients WHERE id = ?",
+      [patient_id],
+    );
+    if (patientCheck.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Patient not found" });
+    }
+
+    const [result] = await pool.query<any>(
+      `INSERT INTO medical_records
+         (patient_id, record_type, doctor_id, visit_date, diagnosis, notes, created_at, updated_at)
+       VALUES (?, ?, ?, CURDATE(), ?, ?, NOW(), NOW())`,
+      [
+        patient_id,
+        record_type,
+        resolvedDoctorId,
+        record_type, // store record_type also as diagnosis label
+        notes || null,
+      ],
+    );
+
+    const [created] = await pool.query<any[]>(
+      `SELECT mr.*, CONCAT(u.first_name, ' ', u.last_name) as doctor_name
+       FROM medical_records mr
+       LEFT JOIN users u ON mr.doctor_id = u.id
+       WHERE mr.id = ?`,
+      [result.insertId],
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Medical record added successfully",
+      data: created[0],
+    });
+  } catch (error) {
+    console.error("Error adding patient medical record:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
@@ -3685,6 +3947,109 @@ const getContractByAppointment: RequestHandler = async (req, res) => {
 };
 
 /**
+ * POST /api/admin/appointments/manual
+ * Create a manual appointment from the admin panel
+ */
+const createManualAppointment: RequestHandler = async (req, res) => {
+  try {
+    const {
+      patient_id,
+      service_id,
+      scheduled_date,
+      scheduled_time,
+      notes,
+      payment_amount,
+      payment_method,
+      created_by,
+    } = req.body;
+
+    if (!patient_id || !service_id || !scheduled_date || !scheduled_time) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "patient_id, service_id, scheduled_date and scheduled_time are required",
+      });
+    }
+
+    if (!created_by) {
+      return res.status(400).json({
+        success: false,
+        message: "created_by (admin user ID) is required",
+      });
+    }
+
+    // Validate patient exists
+    const [patients] = await pool.query<any[]>(
+      "SELECT id FROM patients WHERE id = ?",
+      [patient_id],
+    );
+    if (patients.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Patient not found" });
+    }
+
+    // Validate service exists
+    const [services] = await pool.query<any[]>(
+      "SELECT id, duration_minutes, price FROM services WHERE id = ?",
+      [service_id],
+    );
+    if (services.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Service not found" });
+    }
+    const service = services[0];
+
+    const scheduledAt = `${scheduled_date} ${scheduled_time}:00`;
+
+    // Create appointment
+    const [result] = await pool.query<any>(
+      `INSERT INTO appointments
+       (patient_id, service_id, scheduled_at, duration_minutes, status, notes, created_by, booked_for_self, booking_source)
+       VALUES (?, ?, ?, ?, 'scheduled', ?, ?, 1, 'receptionist')`,
+      [
+        patient_id,
+        service_id,
+        scheduledAt,
+        service.duration_minutes,
+        notes || null,
+        created_by,
+      ],
+    );
+
+    const appointmentId = result.insertId;
+
+    // Create payment record if amount provided
+    if (payment_amount && parseFloat(payment_amount) > 0) {
+      await pool.query<any>(
+        `INSERT INTO payments
+         (appointment_id, patient_id, amount, payment_method, payment_status, processed_by, processed_at)
+         VALUES (?, ?, ?, ?, 'completed', ?, NOW())`,
+        [
+          appointmentId,
+          patient_id,
+          parseFloat(payment_amount),
+          payment_method || "cash",
+          created_by,
+        ],
+      );
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Appointment created successfully",
+      data: { id: appointmentId },
+    });
+  } catch (error) {
+    console.error("Error creating manual appointment:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
  * POST /api/admin/appointments/:id/check-in
  * Check in a patient (requires signed contract)
  */
@@ -4532,6 +4897,111 @@ const updatePaymentStatus: RequestHandler = async (req, res) => {
     });
   } catch (error) {
     console.error("Error updating payment status:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * POST /api/admin/payments/:id/refund
+ * Request a refund for a payment
+ */
+const processRefund: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, reason } = req.body;
+    const adminUser = JSON.parse(
+      (req.headers["x-admin-user"] as string) || "{}",
+    );
+    const adminId = adminUser?.id || null;
+
+    if (!amount || parseFloat(amount) <= 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Valid refund amount is required" });
+    }
+    if (!reason?.trim()) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Refund reason is required" });
+    }
+
+    const [existing] = await pool.query<any[]>(
+      "SELECT * FROM payments WHERE id = ?",
+      [id],
+    );
+    if (existing.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Payment not found" });
+    }
+
+    const payment = existing[0];
+    if (parseFloat(amount) > parseFloat(payment.amount)) {
+      return res.status(400).json({
+        success: false,
+        message: "Refund amount cannot exceed payment amount",
+      });
+    }
+
+    await pool.query(
+      `UPDATE payments
+       SET refund_amount = ?, refund_reason = ?, refunded_by = ?,
+           refund_status = 'pending', updated_at = NOW()
+       WHERE id = ?`,
+      [parseFloat(amount), reason, adminId, id],
+    );
+
+    res.json({
+      success: true,
+      message: "Refund request submitted for approval",
+    });
+  } catch (error) {
+    console.error("Error processing refund:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * POST /api/admin/payments/:id/approve-refund
+ * Approve a pending refund
+ */
+const approveRefund: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const adminUser = JSON.parse(
+      (req.headers["x-admin-user"] as string) || "{}",
+    );
+    const adminId = adminUser?.id || null;
+
+    const [existing] = await pool.query<any[]>(
+      "SELECT * FROM payments WHERE id = ?",
+      [id],
+    );
+    if (existing.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Payment not found" });
+    }
+
+    const payment = existing[0];
+    if (payment.refund_status !== "pending") {
+      return res.status(400).json({
+        success: false,
+        message: "No pending refund for this payment",
+      });
+    }
+
+    await pool.query(
+      `UPDATE payments
+       SET refund_status = 'approved', refund_approved_by = ?, refund_approved_at = NOW(),
+           payment_status = 'refunded', refunded_at = NOW(), updated_at = NOW()
+       WHERE id = ?`,
+      [adminId, id],
+    );
+
+    res.json({ success: true, message: "Refund approved successfully" });
+  } catch (error) {
+    console.error("Error approving refund:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
@@ -6244,7 +6714,7 @@ const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
 
     // Verify patient exists
     const [patientRows] = await pool.query<any[]>(
-      "SELECT id, email, first_name, last_name FROM patients WHERE id = ?",
+      "SELECT id, email, first_name, last_name, stripe_customer_id FROM patients WHERE id = ?",
       [finalPatientId],
     );
 
@@ -6280,11 +6750,32 @@ const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
     // Don't create appointment yet - only create it after payment succeeds
     const amountInCents = Math.round(payment_amount * 100); // Convert to cents
 
+    // Ensure this patient has a Stripe customer so payment methods can be saved
+    const patient = patientRows[0];
+    console.log(
+      `[book-with-payment] Patient DB row: id=${patient.id} email=${patient.email} stripe_customer_id=${patient.stripe_customer_id ?? "NULL (migration 009 may not be applied)"}`,
+    );
+    const stripeCustomerId = await getOrCreateStripeCustomer(
+      finalPatientId,
+      patient.email,
+      patient.first_name,
+      patient.last_name,
+      patient.stripe_customer_id,
+    );
+    console.log(
+      `[book-with-payment] Using Stripe customer ID: ${stripeCustomerId}`,
+    );
+
+    console.log(
+      `[book-with-payment] Creating PaymentIntent: amount=${amountInCents} currency=${currency.toLowerCase()} customer=${stripeCustomerId} setup_future_usage=on_session`,
+    );
     let paymentIntent;
     try {
       paymentIntent = await stripe.paymentIntents.create({
         amount: amountInCents,
         currency: currency.toLowerCase(),
+        customer: stripeCustomerId,
+        setup_future_usage: "on_session",
         metadata: {
           patient_id: finalPatientId.toString(),
           service_id: service_id.toString(),
@@ -6296,6 +6787,7 @@ const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
         },
         automatic_payment_methods: {
           enabled: true,
+          allow_redirects: "never",
         },
       });
     } catch (stripeError: any) {
@@ -6307,16 +6799,59 @@ const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
         details: stripeError.message,
       });
     }
+    console.log(
+      `[book-with-payment] ✅ PaymentIntent created: ${paymentIntent.id} | customer=${paymentIntent.customer} | setup_future_usage=${paymentIntent.setup_future_usage}`,
+    );
 
     // Don't create payment record yet - only create after payment is confirmed
     // This prevents pending payments cluttering the database
 
+    // Create a CustomerSession so PaymentElement can display saved payment methods.
+    // IMPORTANT: payment_method_save is intentionally DISABLED here.
+    // When both setup_future_usage on the PaymentIntent AND payment_method_save:"enabled"
+    // are set together, the PaymentElement checkbox controls the outcome: if the user
+    // unchecks "save card", the PaymentElement removes setup_future_usage from the PI
+    // before confirming, resulting in allow_redisplay:"unspecified" — so the method never
+    // appears in future checkouts. By disabling the checkbox we let setup_future_usage
+    // on the PI always take effect (allow_redisplay:"limited"), and payment_method_redisplay
+    // ensures the saved method shows up on subsequent bookings.
+    let customerSessionClientSecret: string | undefined;
+    try {
+      const customerSession = await stripe.customerSessions.create({
+        customer: stripeCustomerId,
+        components: {
+          payment_element: {
+            enabled: true,
+            features: {
+              payment_method_save: "disabled",
+              payment_method_remove: "enabled",
+              payment_method_redisplay: "enabled",
+            },
+          },
+        },
+      });
+      customerSessionClientSecret = customerSession.client_secret;
+      console.log(
+        `[book-with-payment] ✅ CustomerSession created for customer ${stripeCustomerId} | secret present=${!!customerSessionClientSecret}`,
+      );
+    } catch (csError: any) {
+      // Non-fatal — PaymentElement still works, just won't show saved methods
+      console.warn(
+        `[book-with-payment] ⚠️  CustomerSession creation FAILED for customer ${stripeCustomerId}:`,
+        csError.message,
+      );
+    }
+
+    console.log(
+      `[book-with-payment] 📤 Response: paymentIntentId=${paymentIntent.id} | clientSecret present=${!!paymentIntent.client_secret} | customerSessionClientSecret present=${!!customerSessionClientSecret}`,
+    );
     res.json({
       success: true,
       message:
         "Payment intent created. Complete payment to confirm appointment.",
       data: {
         clientSecret: paymentIntent.client_secret,
+        customerSessionClientSecret,
         amount: payment_amount,
         payment_intent_id: paymentIntent.id,
       },
@@ -6377,14 +6912,23 @@ const confirmPayment: RequestHandler = async (req, res) => {
 
     // **CRITICAL: Re-check slot availability before creating appointment**
     // This prevents race conditions where payment was initiated but slot was taken during checkout
-    const scheduledDate = new Date(scheduled_at);
+    //
+    // IMPORTANT: keep all datetime strings as naive local (no UTC conversion) to match DB storage.
+    // Using toISOString() here would produce UTC strings that mismatch the naive local datetimes
+    // stored in MySQL, causing false conflicts on servers with a non-UTC timezone offset.
+    const scheduledDate = new Date(scheduled_at); // parsed as local time
     const scheduledEndTime = new Date(
       scheduledDate.getTime() + parseInt(duration_minutes) * 60000,
     );
+    const pad = (n: number) => String(n).padStart(2, "0");
+    // Format end time as naive local datetime string matching DB storage
+    const scheduledEndStr = `${scheduledEndTime.getFullYear()}-${pad(scheduledEndTime.getMonth() + 1)}-${pad(scheduledEndTime.getDate())} ${pad(scheduledEndTime.getHours())}:${pad(scheduledEndTime.getMinutes())}:${pad(scheduledEndTime.getSeconds())}`;
+    // Normalise start string (T → space) for consistent MySQL comparison
+    const scheduledAtStr = scheduled_at.replace("T", " ");
 
     console.log("🔍 Checking slot availability:", {
-      scheduled_at,
-      scheduled_end: scheduledEndTime.toISOString(),
+      scheduled_at: scheduledAtStr,
+      scheduled_end: scheduledEndStr,
       duration_minutes,
     });
 
@@ -6393,20 +6937,9 @@ const confirmPayment: RequestHandler = async (req, res) => {
        FROM appointments 
        WHERE service_id = ?
        AND status IN ('confirmed', 'scheduled', 'in_progress')
-       AND (
-         (scheduled_at <= ? AND DATE_ADD(scheduled_at, INTERVAL duration_minutes MINUTE) > ?) OR
-         (scheduled_at < ? AND DATE_ADD(scheduled_at, INTERVAL duration_minutes MINUTE) >= ?) OR
-         (scheduled_at >= ? AND DATE_ADD(scheduled_at, INTERVAL duration_minutes MINUTE) <= ?)
-       )`,
-      [
-        service_id,
-        scheduled_at,
-        scheduled_at,
-        scheduledEndTime.toISOString().slice(0, 19).replace("T", " "),
-        scheduledEndTime.toISOString().slice(0, 19).replace("T", " "),
-        scheduled_at,
-        scheduledEndTime.toISOString().slice(0, 19).replace("T", " "),
-      ],
+       AND scheduled_at < ?
+       AND DATE_ADD(scheduled_at, INTERVAL duration_minutes MINUTE) > ?`,
+      [service_id, scheduledEndStr, scheduledAtStr],
     );
 
     if (overlapping.length > 0) {
@@ -6446,7 +6979,7 @@ const confirmPayment: RequestHandler = async (req, res) => {
         scheduled_at,
         duration_minutes,
         notes || null,
-        created_by || patient_id,
+        null, // NULL for patient self-bookings (created_by FK references users.id)
         booked_for_self === "1" ? 1 : 0,
       ],
     );
@@ -6467,11 +7000,36 @@ const confirmPayment: RequestHandler = async (req, res) => {
         (paymentIntent.amount / 100).toFixed(2),
         payment_intent_id,
         payment_intent_id,
-        created_by || patient_id,
+        null, // NULL for Stripe self-service payments (processed_by FK references users.id)
       ],
     );
 
     console.log("💰 Payment record created for appointment:", appointmentId);
+
+    // Explicitly ensure the payment method used is saved on the customer with the
+    // correct allow_redisplay flag so it appears in future PaymentElement checkouts.
+    // setup_future_usage:"on_session" on the PI handles attachment, but Stripe may
+    // still set allow_redisplay:"unspecified" in some flows — this guarantees "limited".
+    try {
+      const pmId =
+        typeof paymentIntent.payment_method === "string"
+          ? paymentIntent.payment_method
+          : (paymentIntent.payment_method as any)?.id;
+      if (pmId) {
+        await stripe.paymentMethods.update(pmId, {
+          allow_redisplay: "limited",
+        });
+        console.log(
+          `[confirm-payment] ✅ Set allow_redisplay:limited on payment method ${pmId}`,
+        );
+      }
+    } catch (pmErr: any) {
+      // Non-fatal — appointment and payment are already confirmed
+      console.warn(
+        `[confirm-payment] ⚠️  Could not update payment method allow_redisplay:`,
+        pmErr.message,
+      );
+    }
 
     // Fetch appointment details for email
     const [appointmentDetails] = await pool.query<any[]>(
@@ -8004,6 +8562,14 @@ function createServer() {
   expressApp.get("/api/admin/patients", getAllAdminPatients);
   expressApp.get("/api/admin/patients/:id", getAdminPatientById);
   expressApp.patch("/api/admin/patients/:id", updatePatient);
+  expressApp.patch(
+    "/api/admin/patients/:id/toggle-active",
+    togglePatientActive,
+  );
+  expressApp.post(
+    "/api/admin/patients/:id/medical-records",
+    addPatientMedicalRecord,
+  );
 
   // Admin Medical Records Management
   expressApp.get("/api/admin/medical-records", getAllMedicalRecords);
@@ -8022,6 +8588,7 @@ function createServer() {
 
   // Admin Appointment Management
   expressApp.get("/api/admin/appointments", getAllAdminAppointments);
+  expressApp.post("/api/admin/appointments/manual", createManualAppointment);
   expressApp.patch(
     "/api/admin/appointments/:id/status",
     updateAppointmentStatus,
@@ -8073,6 +8640,8 @@ function createServer() {
   expressApp.get("/api/admin/payments/:id", getAdminPaymentById);
   expressApp.post("/api/admin/payments", createPayment);
   expressApp.patch("/api/admin/payments/:id/status", updatePaymentStatus);
+  expressApp.post("/api/admin/payments/:id/refund", processRefund);
+  expressApp.post("/api/admin/payments/:id/approve-refund", approveRefund);
 
   // Admin Invoice Management
   expressApp.get("/api/admin/invoices/stats", getInvoiceStats);

@@ -113,7 +113,7 @@ export default function AdminLogin() {
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
       {/* Left column - Login Form */}
-      <div className="flex items-center justify-center p-8 bg-white">
+      <div className="flex items-center justify-center p-4 sm:p-8 bg-white">
         <div className="w-full max-w-md">
           <motion.div
             initial={{ opacity: 0, y: 20 }}

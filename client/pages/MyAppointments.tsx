@@ -11,11 +11,17 @@ import {
   Phone,
   MapPin,
   AlertCircle,
-  CheckCircle,
   XCircle,
   Loader2,
-  CreditCard,
   DollarSign,
+  Sparkles,
+  ChevronRight,
+  Shield,
+  Download,
+  ReceiptText,
+  CalendarCheck2,
+  CalendarX2,
+  HeartPulse,
 } from "lucide-react";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
@@ -30,7 +36,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   InvoiceRequestModal,
   InvoiceData,
@@ -97,6 +102,8 @@ interface PatientProfile {
   emergency_contact_phone?: string;
 }
 
+type ActiveTab = "appointments" | "profile";
+
 export default function MyAppointments() {
   const dispatch = useAppDispatch();
   const { isAuthenticated, user } = useAppSelector((state) => state.auth);
@@ -110,6 +117,7 @@ export default function MyAppointments() {
   } = useAppSelector((state) => state.patientAppointments);
   const { toast } = useToast();
 
+  const [activeTab, setActiveTab] = useState<ActiveTab>("appointments");
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState<Partial<PatientProfile>>({});
 
@@ -127,47 +135,36 @@ export default function MyAppointments() {
       dispatch(fetchPatientAppointments(user.id));
       dispatch(fetchPatientProfile(user.id));
     }
-
     return () => {
       dispatch(resetAppointments());
     };
   }, [isAuthenticated, user, dispatch]);
 
   useEffect(() => {
-    if (profile) {
-      setProfileForm(profile);
-    }
+    if (profile) setProfileForm(profile);
   }, [profile]);
 
-  // Show errors from Redux state
   useEffect(() => {
     if (error) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error,
-      });
+      toast({ variant: "destructive", title: "Error", description: error });
     }
   }, [error, toast]);
 
   const handleCancelAppointment = async () => {
     if (!selectedAppointment || !user?.id) return;
-
     try {
       setIsProcessing(true);
-      const result = await dispatch(
+      await dispatch(
         cancelAppointment({
           appointmentId: selectedAppointment.id,
           patientId: user.id,
           reason: cancellationReason,
         }),
       ).unwrap();
-
       toast({
         title: "Cita cancelada",
         description: "La cita ha sido cancelada exitosamente",
       });
-
       setShowCancelModal(false);
       setCancellationReason("");
       setSelectedAppointment(null);
@@ -187,29 +184,19 @@ export default function MyAppointments() {
     newTime: string,
   ) => {
     if (!selectedAppointment || !user?.id) return;
-
     try {
       setIsProcessing(true);
       const response = await axios.patch(
         `/patient/appointments/${selectedAppointment.id}/reschedule`,
-        {
-          patient_id: user.id,
-          new_date: newDate,
-          new_time: newTime,
-        },
+        { patient_id: user.id, new_date: newDate, new_time: newTime },
       );
-
       if (response.data.success) {
         toast({
           title: "Cita reagendada",
           description: "Tu cita ha sido reagendada exitosamente",
         });
-
         setShowEditModal(false);
-        // Refresh appointments
-        if (user?.id) {
-          dispatch(fetchPatientAppointments(user.id));
-        }
+        if (user?.id) dispatch(fetchPatientAppointments(user.id));
       }
     } catch (error: any) {
       toast({
@@ -225,23 +212,17 @@ export default function MyAppointments() {
 
   const handleRequestInvoice = async (invoiceData: InvoiceData) => {
     if (!selectedAppointment || !user?.id) return;
-
     try {
       setIsProcessing(true);
       const response = await axios.post(
         `/patient/appointments/${selectedAppointment.id}/request-invoice`,
-        {
-          patient_id: user.id,
-          invoice_info: invoiceData,
-        },
+        { patient_id: user.id, invoice_info: invoiceData },
       );
-
       if (response.data.success) {
         toast({
           title: "Factura solicitada",
           description: "Recibirás tu factura por correo electrónico en breve",
         });
-
         setShowInvoiceModal(false);
       }
     } catch (error: any) {
@@ -259,16 +240,11 @@ export default function MyAppointments() {
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user?.id) return;
-
     try {
       setIsProcessing(true);
       await dispatch(
-        updatePatientProfile({
-          patientId: user.id,
-          updates: profileForm,
-        }),
+        updatePatientProfile({ patientId: user.id, updates: profileForm }),
       ).unwrap();
-
       setIsEditingProfile(false);
       toast({
         title: "Perfil actualizado",
@@ -291,7 +267,6 @@ export default function MyAppointments() {
   ) => {
     try {
       await dispatch(downloadContract({ contractId, appointmentId })).unwrap();
-
       toast({
         title: "Contrato descargado",
         description: "El contrato se ha descargado exitosamente",
@@ -305,57 +280,39 @@ export default function MyAppointments() {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "confirmed":
-        return "bg-green-100 text-green-800";
-      case "scheduled":
-        return "bg-blue-100 text-blue-800";
-      case "completed":
-        return "bg-gray-100 text-gray-800";
-      case "cancelled":
-        return "bg-red-100 text-red-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
-  const getStatusLabel = (status: string) => {
-    const labels: Record<string, string> = {
-      confirmed: "Confirmada",
-      scheduled: "Programada",
-      completed: "Completada",
-      cancelled: "Cancelada",
-      in_progress: "En Progreso",
-      no_show: "No Asistió",
-    };
-    return labels[status] || status;
-  };
-
   const upcomingAppointments = appointments.filter((apt) => apt.is_upcoming);
   const pastAppointments = appointments.filter((apt) => apt.is_past);
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen flex flex-col">
+      <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#FFF8EF] to-[#FFF3E0]">
         <MetaHelmet
           title="Mis Citas - All Beauty Luxury & Wellness"
           description="Administra tus citas médicas"
         />
         <Header />
         <div className="flex-grow flex items-center justify-center p-4">
-          <div className="text-center">
-            <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center max-w-md"
+          >
+            <div className="w-20 h-20 bg-gradient-to-br from-[#C9A159] to-[#A0812E] rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl shadow-[#C9A159]/30">
+              <Shield className="w-10 h-10 text-white" />
+            </div>
+            <h2 className="text-3xl font-bold text-[#3D2E1F] mb-3">
               Acceso Restringido
             </h2>
-            <p className="text-gray-600 mb-4">
-              Debes iniciar sesión para ver tus citas
+            <p className="text-[#3D2E1F]/60 mb-6">
+              Inicia sesión para administrar tus citas
             </p>
-            <Button onClick={() => (window.location.href = "/appointment")}>
+            <button
+              onClick={() => (window.location.href = "/appointment")}
+              className="px-8 py-3 bg-gradient-to-r from-[#C9A159] to-[#A0812E] text-white font-semibold rounded-xl hover:shadow-lg hover:shadow-[#C9A159]/30 transition-all"
+            >
               Iniciar Sesión
-            </Button>
-          </div>
+            </button>
+          </motion.div>
         </div>
         <Footer />
       </div>
@@ -363,467 +320,637 @@ export default function MyAppointments() {
   }
 
   return (
-    <div className="flex flex-col bg-gray-50">
+    <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#FFF8EF] to-[#FEFCF7]">
       <MetaHelmet
         title="Mis Citas - All Beauty Luxury & Wellness"
         description="Administra tus citas y perfil"
       />
       <Header />
 
-      <div className="container mx-auto px-4 py-8 min-h-screen">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Mis Citas</h1>
-          <p className="text-gray-600">
-            Administra tus citas, solicita facturas y actualiza tu perfil
-          </p>
+      <main className="flex-grow">
+        {/* Hero Header */}
+        <div className="relative overflow-hidden bg-gradient-to-br from-[#3D2E1F] via-[#4A3728] to-[#2C1F14] px-4 pt-10 pb-20">
+          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iMC4wMyI+PHBhdGggZD0iTTM2IDM0djZoNnYtNmgtNnptMCAwdi02aC02djZoNnptNiAwaDZ2LTZoLTZ2NnptLTEyIDBoLTZ2Nmg2di02eiIvPjwvZz48L2c+PC9zdmc+')] opacity-40" />
+          <div className="max-w-5xl mx-auto relative">
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center gap-2 mb-3"
+            >
+              <Sparkles className="w-4 h-4 text-[#C9A159]" />
+              <span className="text-[#C9A159] text-sm font-medium tracking-widest uppercase">
+                Mi Espacio
+              </span>
+            </motion.div>
+            <motion.h1
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="text-4xl sm:text-5xl font-bold text-white mb-2"
+            >
+              Mis Citas
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.2 }}
+              className="text-white/60 text-base"
+            >
+              Bienvenid@ {profile?.first_name}! Aquí puedes ver y administrar
+              tus citas, así como actualizar tu perfil.
+            </motion.p>
+
+            {/* Stats Row */}
+            {!loading && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="flex flex-wrap gap-4 mt-8"
+              >
+                {[
+                  {
+                    label: "Próximas",
+                    value: upcomingAppointments.length,
+                    icon: CalendarCheck2,
+                    color: "text-[#C9A159]",
+                  },
+                  {
+                    label: "Historial",
+                    value: pastAppointments.length,
+                    icon: CalendarX2,
+                    color: "text-[#E8C580]",
+                  },
+                  {
+                    label: "Total",
+                    value: appointments.length,
+                    icon: HeartPulse,
+                    color: "text-white/70",
+                  },
+                ].map((stat) => (
+                  <div
+                    key={stat.label}
+                    className="flex items-center gap-3 bg-white/10 backdrop-blur-sm rounded-2xl px-5 py-3 border border-white/10"
+                  >
+                    <stat.icon className={`w-5 h-5 ${stat.color}`} />
+                    <div>
+                      <div className="text-white font-bold text-xl leading-none">
+                        {stat.value}
+                      </div>
+                      <div className="text-white/50 text-xs mt-0.5">
+                        {stat.label}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </motion.div>
+            )}
+          </div>
         </div>
 
-        <Tabs defaultValue="appointments" className="w-full">
-          <TabsList className="mb-8">
-            <TabsTrigger value="appointments">Citas</TabsTrigger>
-            <TabsTrigger value="profile">Perfil</TabsTrigger>
-          </TabsList>
+        {/* Sticky Tab Bar */}
+        <div className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-[#F5E9D0] shadow-sm">
+          <div className="max-w-5xl mx-auto px-4 py-3 flex gap-2">
+            {(["appointments", "profile"] as ActiveTab[]).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-6 py-2 rounded-xl font-semibold text-sm transition-all duration-200 ${
+                  activeTab === tab
+                    ? "bg-gradient-to-r from-[#C9A159] to-[#A0812E] text-white shadow-md shadow-[#C9A159]/20"
+                    : "text-[#3D2E1F]/60 hover:bg-[#FFF8EF]"
+                }`}
+              >
+                {tab === "appointments" ? "Citas" : "Perfil"}
+              </button>
+            ))}
+          </div>
+        </div>
 
-          {/* Appointments Tab */}
-          <TabsContent value="appointments">
-            {loading ? (
-              <div className="flex justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-              </div>
-            ) : (
-              <div className="space-y-8">
-                {/* Upcoming Appointments */}
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900 mb-4">
-                    Próximas Citas ({upcomingAppointments.length})
-                  </h2>
-
-                  {upcomingAppointments.length === 0 ? (
-                    <div className="bg-white rounded-lg shadow p-8 text-center">
-                      <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                      <p className="text-gray-600 mb-4">
-                        No tienes citas programadas
-                      </p>
-                      <Button
-                        onClick={() => (window.location.href = "/appointment")}
-                      >
-                        Agendar Nueva Cita
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="grid gap-4">
-                      {upcomingAppointments.map((apt) => (
-                        <AppointmentCard
-                          key={apt.id}
-                          appointment={apt}
-                          onCancel={() => {
-                            setSelectedAppointment(apt);
-                            setShowCancelModal(true);
-                          }}
-                          onEdit={() => {
-                            setSelectedAppointment(apt);
-                            setShowEditModal(true);
-                          }}
-                          onRequestInvoice={() => {
-                            setSelectedAppointment(apt);
-                            setShowInvoiceModal(true);
-                          }}
-                          onDownloadContract={
-                            apt.contract_id && apt.contract_status === "signed"
-                              ? () =>
-                                  handleDownloadContract(
-                                    apt.contract_id!,
-                                    apt.id,
-                                  )
-                              : undefined
-                          }
-                          isDownloadingContract={
-                            downloadingContractId === apt.contract_id
-                          }
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Past Appointments */}
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900 mb-4">
-                    Historial ({pastAppointments.length})
-                  </h2>
-
-                  {pastAppointments.length === 0 ? (
-                    <div className="bg-white rounded-lg shadow p-8 text-center">
-                      <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                      <p className="text-gray-600">
-                        No tienes citas anteriores
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="grid gap-4">
-                      {pastAppointments.map((apt) => (
-                        <AppointmentCard
-                          key={apt.id}
-                          appointment={apt}
-                          onRequestInvoice={() => {
-                            setSelectedAppointment(apt);
-                            setShowInvoiceModal(true);
-                          }}
-                          onDownloadContract={
-                            apt.contract_id && apt.contract_status === "signed"
-                              ? () =>
-                                  handleDownloadContract(
-                                    apt.contract_id!,
-                                    apt.id,
-                                  )
-                              : undefined
-                          }
-                          isDownloadingContract={
-                            downloadingContractId === apt.contract_id
-                          }
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </TabsContent>
-
-          {/* Profile Tab */}
-          <TabsContent value="profile">
-            {profileLoading ? (
-              <div className="flex justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-              </div>
-            ) : profile ? (
-              <div className="bg-white rounded-lg shadow-lg p-6 max-w-4xl">
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-2xl font-bold text-gray-900">
-                    Mi Perfil
-                  </h2>
-                  {!isEditingProfile && (
-                    <Button
-                      variant="outline"
-                      onClick={() => setIsEditingProfile(true)}
-                    >
-                      <Edit2 className="w-4 h-4 mr-2" />
-                      Editar
-                    </Button>
-                  )}
-                </div>
-
-                {isEditingProfile ? (
-                  <form onSubmit={handleUpdateProfile} className="space-y-6">
-                    {/* Personal Information */}
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                        Información Personal
-                      </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <Label htmlFor="first_name">Nombre *</Label>
-                          <Input
-                            id="first_name"
-                            value={profileForm.first_name || ""}
-                            onChange={(e) =>
-                              setProfileForm({
-                                ...profileForm,
-                                first_name: e.target.value,
-                              })
-                            }
-                            required
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="last_name">Apellido *</Label>
-                          <Input
-                            id="last_name"
-                            value={profileForm.last_name || ""}
-                            onChange={(e) =>
-                              setProfileForm({
-                                ...profileForm,
-                                last_name: e.target.value,
-                              })
-                            }
-                            required
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="phone">Teléfono *</Label>
-                          <Input
-                            id="phone"
-                            value={profileForm.phone || ""}
-                            onChange={(e) =>
-                              setProfileForm({
-                                ...profileForm,
-                                phone: e.target.value,
-                              })
-                            }
-                            required
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="date_of_birth">
-                            Fecha de Nacimiento *
-                          </Label>
-                          <Input
-                            id="date_of_birth"
-                            type="date"
-                            value={profileForm.date_of_birth || ""}
-                            onChange={(e) =>
-                              setProfileForm({
-                                ...profileForm,
-                                date_of_birth: e.target.value,
-                              })
-                            }
-                            required
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="gender">Género *</Label>
-                          <Select
-                            value={profileForm.gender || ""}
-                            onValueChange={(value) =>
-                              setProfileForm({ ...profileForm, gender: value })
-                            }
-                            required
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Seleccionar" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="male">Masculino</SelectItem>
-                              <SelectItem value="female">Femenino</SelectItem>
-                              <SelectItem value="other">Otro</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Address */}
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                        Dirección
-                      </h3>
-                      <div className="grid grid-cols-1 gap-4">
-                        <div>
-                          <Label htmlFor="address">Calle y Número *</Label>
-                          <Input
-                            id="address"
-                            value={profileForm.address || ""}
-                            onChange={(e) =>
-                              setProfileForm({
-                                ...profileForm,
-                                address: e.target.value,
-                              })
-                            }
-                            required
-                          />
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div>
-                            <Label htmlFor="city">Ciudad *</Label>
-                            <Input
-                              id="city"
-                              value={profileForm.city || ""}
-                              onChange={(e) =>
-                                setProfileForm({
-                                  ...profileForm,
-                                  city: e.target.value,
-                                })
-                              }
-                              required
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor="state">Estado *</Label>
-                            <Input
-                              id="state"
-                              value={profileForm.state || ""}
-                              onChange={(e) =>
-                                setProfileForm({
-                                  ...profileForm,
-                                  state: e.target.value,
-                                })
-                              }
-                              required
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor="zip_code">Código Postal *</Label>
-                            <Input
-                              id="zip_code"
-                              value={profileForm.zip_code || ""}
-                              onChange={(e) =>
-                                setProfileForm({
-                                  ...profileForm,
-                                  zip_code: e.target.value,
-                                })
-                              }
-                              maxLength={5}
-                              required
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Emergency Contact */}
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                        Contacto de Emergencia
-                      </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <Label htmlFor="emergency_contact_name">
-                            Nombre *
-                          </Label>
-                          <Input
-                            id="emergency_contact_name"
-                            value={profileForm.emergency_contact_name || ""}
-                            onChange={(e) =>
-                              setProfileForm({
-                                ...profileForm,
-                                emergency_contact_name: e.target.value,
-                              })
-                            }
-                            required
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="emergency_contact_phone">
-                            Teléfono *
-                          </Label>
-                          <Input
-                            id="emergency_contact_phone"
-                            value={profileForm.emergency_contact_phone || ""}
-                            onChange={(e) =>
-                              setProfileForm({
-                                ...profileForm,
-                                emergency_contact_phone: e.target.value,
-                              })
-                            }
-                            required
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex gap-3 pt-4 border-t">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => {
-                          setIsEditingProfile(false);
-                          setProfileForm(profile);
-                        }}
-                        disabled={isProcessing}
-                      >
-                        Cancelar
-                      </Button>
-                      <Button type="submit" disabled={isProcessing}>
-                        {isProcessing ? "Guardando..." : "Guardar Cambios"}
-                      </Button>
-                    </div>
-                  </form>
+        {/* Content */}
+        <div className="max-w-5xl mx-auto px-4 pt-8 pb-16">
+          <AnimatePresence mode="wait">
+            {activeTab === "appointments" ? (
+              <motion.div
+                key="appointments"
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 10 }}
+                transition={{ duration: 0.2 }}
+              >
+                {loading ? (
+                  <div className="flex flex-col items-center justify-center py-24 gap-4">
+                    <Loader2 className="w-10 h-10 animate-spin text-[#C9A159]" />
+                    <p className="text-[#3D2E1F]/50 text-sm">
+                      Cargando tus citas...
+                    </p>
+                  </div>
                 ) : (
-                  <div className="space-y-6">
-                    {/* View Mode */}
-                    <ProfileSection icon={User} title="Información Personal">
-                      <ProfileItem
-                        label="Nombre"
-                        value={`${profile.first_name} ${profile.last_name}`}
-                      />
-                      <ProfileItem
-                        label="Email"
-                        value={profile.email}
-                        icon={Mail}
-                      />
-                      <ProfileItem
-                        label="Teléfono"
-                        value={profile.phone}
-                        icon={Phone}
-                      />
-                      {profile.date_of_birth && (
-                        <ProfileItem
-                          label="Fecha de Nacimiento"
-                          value={new Date(
-                            profile.date_of_birth,
-                          ).toLocaleDateString("es-MX")}
-                        />
-                      )}
-                      {profile.gender && (
-                        <ProfileItem
-                          label="Género"
-                          value={
-                            profile.gender === "male"
-                              ? "Masculino"
-                              : profile.gender === "female"
-                                ? "Femenino"
-                                : "Otro"
-                          }
-                        />
-                      )}
-                    </ProfileSection>
+                  <div className="space-y-10">
+                    {/* Upcoming */}
+                    <section>
+                      <div className="flex items-center gap-3 mb-5">
+                        <div className="w-8 h-8 rounded-lg bg-[#FFF8EF] flex items-center justify-center">
+                          <CalendarCheck2 className="w-4 h-4 text-[#C9A159]" />
+                        </div>
+                        <h2 className="text-xl font-bold text-[#3D2E1F]">
+                          Próximas Citas
+                          <span className="ml-2 text-sm font-normal text-[#3D2E1F]/40">
+                            ({upcomingAppointments.length})
+                          </span>
+                        </h2>
+                      </div>
 
-                    {(profile.address || profile.city || profile.state) && (
-                      <ProfileSection icon={MapPin} title="Dirección">
-                        {profile.address && (
-                          <ProfileItem
-                            label="Dirección"
-                            value={profile.address}
-                          />
-                        )}
-                        {profile.city && (
-                          <ProfileItem label="Ciudad" value={profile.city} />
-                        )}
-                        {profile.state && (
-                          <ProfileItem label="Estado" value={profile.state} />
-                        )}
-                        {profile.zip_code && (
-                          <ProfileItem
-                            label="Código Postal"
-                            value={profile.zip_code}
-                          />
-                        )}
-                      </ProfileSection>
-                    )}
+                      {upcomingAppointments.length === 0 ? (
+                        <EmptyState
+                          icon={CalendarCheck2}
+                          title="Sin citas próximas"
+                          action={{
+                            label: "Agendar Nueva Cita",
+                            href: "/appointment",
+                          }}
+                        />
+                      ) : (
+                        <div className="space-y-4">
+                          {upcomingAppointments.map((apt, i) => (
+                            <AppointmentCard
+                              key={apt.id}
+                              appointment={apt}
+                              index={i}
+                              onCancel={() => {
+                                setSelectedAppointment(apt);
+                                setShowCancelModal(true);
+                              }}
+                              onEdit={() => {
+                                setSelectedAppointment(apt);
+                                setShowEditModal(true);
+                              }}
+                              onRequestInvoice={() => {
+                                setSelectedAppointment(apt);
+                                setShowInvoiceModal(true);
+                              }}
+                              onDownloadContract={
+                                apt.contract_id &&
+                                apt.contract_status === "signed"
+                                  ? () =>
+                                      handleDownloadContract(
+                                        apt.contract_id!,
+                                        apt.id,
+                                      )
+                                  : undefined
+                              }
+                              isDownloadingContract={
+                                downloadingContractId === apt.contract_id
+                              }
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </section>
 
-                    {(profile.emergency_contact_name ||
-                      profile.emergency_contact_phone) && (
-                      <ProfileSection
-                        icon={AlertCircle}
-                        title="Contacto de Emergencia"
-                      >
-                        {profile.emergency_contact_name && (
-                          <ProfileItem
-                            label="Nombre"
-                            value={profile.emergency_contact_name}
-                          />
-                        )}
-                        {profile.emergency_contact_phone && (
-                          <ProfileItem
-                            label="Teléfono"
-                            value={profile.emergency_contact_phone}
-                          />
-                        )}
-                      </ProfileSection>
-                    )}
+                    {/* History */}
+                    <section>
+                      <div className="flex items-center gap-3 mb-5">
+                        <div className="w-8 h-8 rounded-lg bg-[#FFF8EF] flex items-center justify-center">
+                          <CalendarX2 className="w-4 h-4 text-[#A0812E]" />
+                        </div>
+                        <h2 className="text-xl font-bold text-[#3D2E1F]">
+                          Historial
+                          <span className="ml-2 text-sm font-normal text-[#3D2E1F]/40">
+                            ({pastAppointments.length})
+                          </span>
+                        </h2>
+                      </div>
+
+                      {pastAppointments.length === 0 ? (
+                        <EmptyState
+                          icon={FileText}
+                          title="Sin citas anteriores"
+                        />
+                      ) : (
+                        <div className="space-y-4">
+                          {pastAppointments.map((apt, i) => (
+                            <AppointmentCard
+                              key={apt.id}
+                              appointment={apt}
+                              index={i}
+                              isPast
+                              onRequestInvoice={() => {
+                                setSelectedAppointment(apt);
+                                setShowInvoiceModal(true);
+                              }}
+                              onDownloadContract={
+                                apt.contract_id &&
+                                apt.contract_status === "signed"
+                                  ? () =>
+                                      handleDownloadContract(
+                                        apt.contract_id!,
+                                        apt.id,
+                                      )
+                                  : undefined
+                              }
+                              isDownloadingContract={
+                                downloadingContractId === apt.contract_id
+                              }
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </section>
                   </div>
                 )}
-              </div>
+              </motion.div>
             ) : (
-              <div className="bg-white rounded-lg shadow p-8 text-center">
-                <User className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600">No se pudo cargar el perfil</p>
-              </div>
+              <motion.div
+                key="profile"
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                transition={{ duration: 0.2 }}
+              >
+                {profileLoading ? (
+                  <div className="flex flex-col items-center justify-center py-24 gap-4">
+                    <Loader2 className="w-10 h-10 animate-spin text-[#C9A159]" />
+                    <p className="text-[#3D2E1F]/50 text-sm">
+                      Cargando perfil...
+                    </p>
+                  </div>
+                ) : profile ? (
+                  <div className="bg-white rounded-3xl shadow-sm border border-[#F5E9D0] overflow-hidden">
+                    {/* Profile Header */}
+                    <div className="bg-gradient-to-r from-[#3D2E1F] to-[#4A3728] px-8 py-6 flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 bg-gradient-to-br from-[#C9A159] to-[#A0812E] rounded-full flex items-center justify-center shadow-lg">
+                          <span className="text-white font-bold text-xl">
+                            {profile.first_name?.[0]}
+                            {profile.last_name?.[0]}
+                          </span>
+                        </div>
+                        <div>
+                          <h2 className="text-white font-bold text-xl">
+                            {profile.first_name} {profile.last_name}
+                          </h2>
+                          <p className="text-white/50 text-sm">
+                            {profile.email}
+                          </p>
+                        </div>
+                      </div>
+                      {!isEditingProfile && (
+                        <button
+                          onClick={() => setIsEditingProfile(true)}
+                          className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-sm font-medium rounded-xl transition-all border border-white/20"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                          Editar
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="p-8">
+                      {isEditingProfile ? (
+                        <form
+                          onSubmit={handleUpdateProfile}
+                          className="space-y-8"
+                        >
+                          <ProfileFormSection
+                            title="Información Personal"
+                            icon={User}
+                          >
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {[
+                                {
+                                  id: "first_name",
+                                  label: "Nombre *",
+                                  field: "first_name" as keyof PatientProfile,
+                                },
+                                {
+                                  id: "last_name",
+                                  label: "Apellido *",
+                                  field: "last_name" as keyof PatientProfile,
+                                },
+                                {
+                                  id: "phone",
+                                  label: "Teléfono *",
+                                  field: "phone" as keyof PatientProfile,
+                                },
+                                {
+                                  id: "date_of_birth",
+                                  label: "Fecha de Nacimiento *",
+                                  field:
+                                    "date_of_birth" as keyof PatientProfile,
+                                  type: "date",
+                                },
+                              ].map(({ id, label, field, type }) => (
+                                <div key={id}>
+                                  <Label
+                                    htmlFor={id}
+                                    className="text-[#3D2E1F]/70 text-sm font-medium mb-1.5 block"
+                                  >
+                                    {label}
+                                  </Label>
+                                  <Input
+                                    id={id}
+                                    type={type || "text"}
+                                    value={(profileForm[field] as string) || ""}
+                                    onChange={(e) =>
+                                      setProfileForm({
+                                        ...profileForm,
+                                        [field]: e.target.value,
+                                      })
+                                    }
+                                    className="border-[#F5E9D0] focus:border-[#C9A159] focus:ring-[#C9A159]/20 rounded-xl"
+                                    required
+                                  />
+                                </div>
+                              ))}
+                              <div>
+                                <Label
+                                  htmlFor="gender"
+                                  className="text-[#3D2E1F]/70 text-sm font-medium mb-1.5 block"
+                                >
+                                  Género *
+                                </Label>
+                                <Select
+                                  value={profileForm.gender || ""}
+                                  onValueChange={(v) =>
+                                    setProfileForm({
+                                      ...profileForm,
+                                      gender: v,
+                                    })
+                                  }
+                                >
+                                  <SelectTrigger className="border-[#F5E9D0] rounded-xl">
+                                    <SelectValue placeholder="Seleccionar" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="male">
+                                      Masculino
+                                    </SelectItem>
+                                    <SelectItem value="female">
+                                      Femenino
+                                    </SelectItem>
+                                    <SelectItem value="other">Otro</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                          </ProfileFormSection>
+
+                          <ProfileFormSection title="Dirección" icon={MapPin}>
+                            <div className="space-y-4">
+                              <div>
+                                <Label
+                                  htmlFor="address"
+                                  className="text-[#3D2E1F]/70 text-sm font-medium mb-1.5 block"
+                                >
+                                  Calle y Número *
+                                </Label>
+                                <Input
+                                  id="address"
+                                  value={profileForm.address || ""}
+                                  onChange={(e) =>
+                                    setProfileForm({
+                                      ...profileForm,
+                                      address: e.target.value,
+                                    })
+                                  }
+                                  className="border-[#F5E9D0] focus:border-[#C9A159] rounded-xl"
+                                  required
+                                />
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                {[
+                                  {
+                                    id: "city",
+                                    label: "Ciudad *",
+                                    field: "city" as keyof PatientProfile,
+                                  },
+                                  {
+                                    id: "state",
+                                    label: "Estado *",
+                                    field: "state" as keyof PatientProfile,
+                                  },
+                                  {
+                                    id: "zip_code",
+                                    label: "C.P. *",
+                                    field: "zip_code" as keyof PatientProfile,
+                                    maxLength: 5,
+                                  },
+                                ].map(({ id, label, field, maxLength }) => (
+                                  <div key={id}>
+                                    <Label
+                                      htmlFor={id}
+                                      className="text-[#3D2E1F]/70 text-sm font-medium mb-1.5 block"
+                                    >
+                                      {label}
+                                    </Label>
+                                    <Input
+                                      id={id}
+                                      value={
+                                        (profileForm[field] as string) || ""
+                                      }
+                                      onChange={(e) =>
+                                        setProfileForm({
+                                          ...profileForm,
+                                          [field]: e.target.value,
+                                        })
+                                      }
+                                      maxLength={maxLength}
+                                      className="border-[#F5E9D0] focus:border-[#C9A159] rounded-xl"
+                                      required
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </ProfileFormSection>
+
+                          <ProfileFormSection
+                            title="Contacto de Emergencia"
+                            icon={AlertCircle}
+                          >
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <Label
+                                  htmlFor="ec_name"
+                                  className="text-[#3D2E1F]/70 text-sm font-medium mb-1.5 block"
+                                >
+                                  Nombre *
+                                </Label>
+                                <Input
+                                  id="ec_name"
+                                  value={
+                                    profileForm.emergency_contact_name || ""
+                                  }
+                                  onChange={(e) =>
+                                    setProfileForm({
+                                      ...profileForm,
+                                      emergency_contact_name: e.target.value,
+                                    })
+                                  }
+                                  className="border-[#F5E9D0] focus:border-[#C9A159] rounded-xl"
+                                  required
+                                />
+                              </div>
+                              <div>
+                                <Label
+                                  htmlFor="ec_phone"
+                                  className="text-[#3D2E1F]/70 text-sm font-medium mb-1.5 block"
+                                >
+                                  Teléfono *
+                                </Label>
+                                <Input
+                                  id="ec_phone"
+                                  value={
+                                    profileForm.emergency_contact_phone || ""
+                                  }
+                                  onChange={(e) =>
+                                    setProfileForm({
+                                      ...profileForm,
+                                      emergency_contact_phone: e.target.value,
+                                    })
+                                  }
+                                  className="border-[#F5E9D0] focus:border-[#C9A159] rounded-xl"
+                                  required
+                                />
+                              </div>
+                            </div>
+                          </ProfileFormSection>
+
+                          <div className="flex gap-3 pt-2 border-t border-[#F5E9D0]">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsEditingProfile(false);
+                                setProfileForm(profile);
+                              }}
+                              disabled={isProcessing}
+                              className="px-6 py-2.5 rounded-xl border border-[#F5E9D0] text-[#3D2E1F]/70 font-medium text-sm hover:bg-[#FFF8EF] transition-all disabled:opacity-50"
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              type="submit"
+                              disabled={isProcessing}
+                              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#C9A159] to-[#A0812E] text-white font-semibold text-sm hover:shadow-lg hover:shadow-[#C9A159]/30 transition-all disabled:opacity-50 flex items-center gap-2"
+                            >
+                              {isProcessing ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />{" "}
+                                  Guardando...
+                                </>
+                              ) : (
+                                "Guardar Cambios"
+                              )}
+                            </button>
+                          </div>
+                        </form>
+                      ) : (
+                        <div className="space-y-8">
+                          <ProfileViewSection
+                            title="Información Personal"
+                            icon={User}
+                          >
+                            <ProfileField
+                              label="Nombre completo"
+                              value={`${profile.first_name} ${profile.last_name}`}
+                            />
+                            <ProfileField
+                              label="Email"
+                              value={profile.email}
+                              icon={Mail}
+                            />
+                            <ProfileField
+                              label="Teléfono"
+                              value={profile.phone}
+                              icon={Phone}
+                            />
+                            {profile.date_of_birth && (
+                              <ProfileField
+                                label="Fecha de Nacimiento"
+                                value={new Date(
+                                  profile.date_of_birth,
+                                ).toLocaleDateString("es-MX")}
+                              />
+                            )}
+                            {profile.gender && (
+                              <ProfileField
+                                label="Género"
+                                value={
+                                  profile.gender === "male"
+                                    ? "Masculino"
+                                    : profile.gender === "female"
+                                      ? "Femenino"
+                                      : "Otro"
+                                }
+                              />
+                            )}
+                          </ProfileViewSection>
+
+                          {(profile.address ||
+                            profile.city ||
+                            profile.state) && (
+                            <ProfileViewSection title="Dirección" icon={MapPin}>
+                              {profile.address && (
+                                <ProfileField
+                                  label="Dirección"
+                                  value={profile.address}
+                                />
+                              )}
+                              {profile.city && (
+                                <ProfileField
+                                  label="Ciudad"
+                                  value={profile.city}
+                                />
+                              )}
+                              {profile.state && (
+                                <ProfileField
+                                  label="Estado"
+                                  value={profile.state}
+                                />
+                              )}
+                              {profile.zip_code && (
+                                <ProfileField
+                                  label="Código Postal"
+                                  value={profile.zip_code}
+                                />
+                              )}
+                            </ProfileViewSection>
+                          )}
+
+                          {(profile.emergency_contact_name ||
+                            profile.emergency_contact_phone) && (
+                            <ProfileViewSection
+                              title="Contacto de Emergencia"
+                              icon={AlertCircle}
+                            >
+                              {profile.emergency_contact_name && (
+                                <ProfileField
+                                  label="Nombre"
+                                  value={profile.emergency_contact_name}
+                                />
+                              )}
+                              {profile.emergency_contact_phone && (
+                                <ProfileField
+                                  label="Teléfono"
+                                  value={profile.emergency_contact_phone}
+                                  icon={Phone}
+                                />
+                              )}
+                            </ProfileViewSection>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <EmptyState icon={User} title="No se pudo cargar el perfil" />
+                )}
+              </motion.div>
             )}
-          </TabsContent>
-        </Tabs>
-      </div>
+          </AnimatePresence>
+        </div>
+      </main>
 
       <Footer />
 
@@ -844,7 +971,6 @@ export default function MyAppointments() {
             }}
             isLoading={isProcessing}
           />
-
           <EditAppointmentModal
             isOpen={showEditModal}
             onClose={() => setShowEditModal(false)}
@@ -858,7 +984,7 @@ export default function MyAppointments() {
             isLoading={isProcessing}
           />
 
-          {/* Cancel Confirmation Modal */}
+          {/* Cancel Modal */}
           <AnimatePresence>
             {showCancelModal && (
               <>
@@ -875,69 +1001,81 @@ export default function MyAppointments() {
                   exit={{ opacity: 0, scale: 0.95, y: 20 }}
                   className="fixed inset-0 z-50 flex items-center justify-center p-4"
                 >
-                  <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-                    <div className="bg-red-600 p-6 text-white rounded-t-2xl">
-                      <div className="flex items-center gap-3">
-                        <XCircle className="w-8 h-8" />
-                        <h2 className="text-2xl font-bold">Cancelar Cita</h2>
+                  <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+                    <div className="bg-gradient-to-br from-[#3D2E1F] to-[#2C1F14] px-7 py-6 relative">
+                      <button
+                        onClick={() => setShowCancelModal(false)}
+                        className="absolute top-4 right-4 w-8 h-8 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white transition-all"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                      <div className="w-12 h-12 bg-red-500/20 rounded-2xl flex items-center justify-center mb-4">
+                        <XCircle className="w-6 h-6 text-red-400" />
                       </div>
+                      <h2 className="text-white font-bold text-2xl">
+                        Cancelar Cita
+                      </h2>
+                      <p className="text-white/50 text-sm mt-1">
+                        {selectedAppointment.service.name}
+                      </p>
                     </div>
-
-                    <div className="p-6">
-                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                        <div className="flex items-start gap-3">
-                          <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                          <div className="text-sm text-yellow-800">
-                            <p className="font-medium mb-1">
-                              Política de Cancelación
-                            </p>
-                            <p>
-                              Las cancelaciones con más de 24 horas de
-                              anticipación recibirán reembolso completo.
-                              Cancelaciones con menos de 24 horas{" "}
-                              <strong>NO son reembolsables</strong>.
-                            </p>
-                          </div>
+                    <div className="p-7 space-y-5">
+                      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex gap-3">
+                        <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                        <div className="text-sm text-amber-800">
+                          <p className="font-semibold mb-0.5">
+                            Política de Cancelación
+                          </p>
+                          <p className="leading-relaxed">
+                            Más de 24 hrs → reembolso completo. Menos de 24 hrs
+                            → <strong>sin reembolso</strong>.
+                          </p>
                         </div>
                       </div>
-
-                      <div className="mb-4">
-                        <Label htmlFor="cancellation_reason">
-                          Motivo de cancelación (opcional)
+                      <div>
+                        <Label
+                          htmlFor="cancel_reason"
+                          className="text-[#3D2E1F]/70 text-sm font-medium mb-1.5 block"
+                        >
+                          Motivo (opcional)
                         </Label>
                         <Input
-                          id="cancellation_reason"
+                          id="cancel_reason"
                           value={cancellationReason}
                           onChange={(e) =>
                             setCancellationReason(e.target.value)
                           }
-                          placeholder="Escribe el motivo..."
+                          placeholder="¿Por qué cancelas?"
                           disabled={isProcessing}
+                          className="border-[#F5E9D0] rounded-xl"
                         />
                       </div>
-
-                      <div className="flex gap-3">
-                        <Button
+                      <div className="flex gap-3 pt-1">
+                        <button
                           type="button"
-                          variant="outline"
                           onClick={() => {
                             setShowCancelModal(false);
                             setCancellationReason("");
                           }}
                           disabled={isProcessing}
-                          className="flex-1"
+                          className="flex-1 py-3 rounded-xl border border-[#F5E9D0] text-[#3D2E1F]/70 font-medium text-sm hover:bg-[#FFF8EF] transition-all disabled:opacity-50"
                         >
                           Volver
-                        </Button>
-                        <Button
+                        </button>
+                        <button
                           onClick={handleCancelAppointment}
                           disabled={isProcessing}
-                          className="flex-1 bg-red-600 hover:bg-red-700"
+                          className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                         >
-                          {isProcessing
-                            ? "Cancelando..."
-                            : "Confirmar Cancelación"}
-                        </Button>
+                          {isProcessing ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />{" "}
+                              Cancelando...
+                            </>
+                          ) : (
+                            "Confirmar"
+                          )}
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -951,9 +1089,11 @@ export default function MyAppointments() {
   );
 }
 
-// Appointment Card Component
+// ─── Appointment Card ──────────────────────────────────────────────────────────
 interface AppointmentCardProps {
   appointment: PatientAppointment;
+  index: number;
+  isPast?: boolean;
   onCancel?: () => void;
   onEdit?: () => void;
   onRequestInvoice?: () => void;
@@ -963,164 +1103,294 @@ interface AppointmentCardProps {
 
 function AppointmentCard({
   appointment,
+  index,
+  isPast = false,
   onCancel,
   onEdit,
   onRequestInvoice,
   onDownloadContract,
   isDownloadingContract = false,
 }: AppointmentCardProps) {
-  const appointmentDate = new Date(appointment.scheduled_at);
+  const date = new Date(appointment.scheduled_at);
+  const dateStr = date.toLocaleDateString("es-MX", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const timeStr = date.toLocaleTimeString("es-MX", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const statusConfig: Record<
+    string,
+    { label: string; bg: string; text: string; dot: string }
+  > = {
+    confirmed: {
+      label: "Confirmada",
+      bg: "bg-[#FFF8EF]",
+      text: "text-[#A0812E]",
+      dot: "bg-[#C9A159]",
+    },
+    scheduled: {
+      label: "Programada",
+      bg: "bg-[#FFF8EF]",
+      text: "text-[#3D2E1F]",
+      dot: "bg-[#C9A159]",
+    },
+    completed: {
+      label: "Completada",
+      bg: "bg-gray-100",
+      text: "text-gray-600",
+      dot: "bg-gray-400",
+    },
+    cancelled: {
+      label: "Cancelada",
+      bg: "bg-red-50",
+      text: "text-red-700",
+      dot: "bg-red-500",
+    },
+    in_progress: {
+      label: "En Progreso",
+      bg: "bg-purple-50",
+      text: "text-purple-700",
+      dot: "bg-purple-500",
+    },
+    no_show: {
+      label: "No Asistió",
+      bg: "bg-orange-50",
+      text: "text-orange-700",
+      dot: "bg-orange-500",
+    },
+  };
+
+  const s = statusConfig[appointment.status] || statusConfig.completed;
+
+  const accentColor = isPast ? "#94A3B8" : "#C9A159";
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white rounded-lg shadow-lg p-6 hover:shadow-xl transition-shadow"
+      transition={{ delay: index * 0.05, duration: 0.3 }}
+      className="bg-white rounded-2xl shadow-sm border border-[#F5E9D0]/60 overflow-hidden hover:shadow-md transition-shadow group"
     >
-      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-        <div className="flex-grow">
-          <div className="flex items-start justify-between mb-3">
-            <div>
-              <h3 className="text-xl font-bold text-gray-900 mb-1">
-                {appointment.service.name}
-              </h3>
-              <span
-                className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(appointment.status)}`}
-              >
-                {getStatusLabel(appointment.status)}
-              </span>
-            </div>
-          </div>
+      {/* Left accent bar */}
+      <div className="flex">
+        <div
+          className="w-1 flex-shrink-0 rounded-l-2xl"
+          style={{
+            background: `linear-gradient(to bottom, ${accentColor}, ${accentColor}88)`,
+          }}
+        />
 
-          <div className="space-y-2 text-sm text-gray-600">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4" />
-              <span>
-                {appointmentDate.toLocaleDateString("es-MX", {
-                  weekday: "long",
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                })}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4" />
-              <span>
-                {appointmentDate.toLocaleTimeString("es-MX", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}{" "}
-                ({appointment.duration_minutes} min)
-              </span>
-            </div>
-            {appointment.payment && (
-              <div className="flex items-center gap-2">
-                <DollarSign className="w-4 h-4" />
-                <span>
-                  ${appointment.payment.amount.toFixed(2)} -{" "}
-                  {appointment.payment.status}
+        <div className="flex-grow px-6 py-5">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            {/* Left: Info */}
+            <div className="flex-grow min-w-0">
+              <div className="flex flex-wrap items-center gap-2.5 mb-3">
+                <h3 className="text-base font-bold text-[#3D2E1F] truncate">
+                  {appointment.service.name}
+                </h3>
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${s.bg} ${s.text}`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+                  {s.label}
                 </span>
               </div>
-            )}
-            {!appointment.booked_for_self && (
-              <div className="flex items-center gap-2">
-                <User className="w-4 h-4" />
-                <span>
-                  Para: {appointment.patient.first_name}{" "}
-                  {appointment.patient.last_name}
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
 
-        <div className="flex flex-col gap-2">
-          {appointment.can_edit && onEdit && (
-            <Button
-              onClick={onEdit}
-              variant="outline"
-              size="sm"
-              className="w-full lg:w-auto"
-            >
-              <Edit2 className="w-4 h-4 mr-2" />
-              Reagendar
-            </Button>
-          )}
-          {appointment.can_cancel && onCancel && (
-            <Button
-              onClick={onCancel}
-              variant="outline"
-              size="sm"
-              className="w-full lg:w-auto text-red-600 hover:text-red-700 hover:bg-red-50"
-            >
-              <XCircle className="w-4 h-4 mr-2" />
-              Cancelar
-            </Button>
-          )}
-          {onDownloadContract && (
-            <Button
-              onClick={onDownloadContract}
-              disabled={isDownloadingContract}
-              variant="outline"
-              size="sm"
-              className="w-full lg:w-auto bg-green-50 hover:bg-green-100 text-green-700 border-green-200 disabled:opacity-50"
-            >
-              {isDownloadingContract ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Descargando...
-                </>
-              ) : (
-                <>
-                  <FileText className="w-4 h-4 mr-2" />
-                  Descargar Contrato
-                </>
+              <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-[#3D2E1F]/60">
+                <span className="flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="capitalize">{dateStr}</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+                  {timeStr} · {appointment.duration_minutes} min
+                </span>
+                {appointment.payment && (
+                  <span className="flex items-center gap-1.5">
+                    <DollarSign className="w-3.5 h-3.5 flex-shrink-0" />$
+                    {appointment.payment.amount.toFixed(2)}
+                    <span
+                      className={`text-xs px-1.5 py-0.5 rounded-md font-medium ${appointment.payment.status === "completed" ? "bg-[#FFF8EF] text-[#A0812E]" : "bg-amber-50 text-amber-600"}`}
+                    >
+                      {appointment.payment.status === "completed"
+                        ? "Pagado"
+                        : appointment.payment.status}
+                    </span>
+                  </span>
+                )}
+                {!appointment.booked_for_self && (
+                  <span className="flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 flex-shrink-0" />
+                    Para: {appointment.patient.first_name}{" "}
+                    {appointment.patient.last_name}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Right: Actions */}
+            <div className="flex flex-row sm:flex-col gap-2 flex-shrink-0">
+              {appointment.can_edit && onEdit && (
+                <ActionButton
+                  onClick={onEdit}
+                  icon={Edit2}
+                  label="Reagendar"
+                  variant="default"
+                />
               )}
-            </Button>
-          )}
-          {appointment.payment &&
-            appointment.payment.status === "completed" &&
-            onRequestInvoice && (
-              <Button
-                onClick={onRequestInvoice}
-                variant="outline"
-                size="sm"
-                className="w-full lg:w-auto"
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                Solicitar Factura
-              </Button>
-            )}
+              {appointment.can_cancel && onCancel && (
+                <ActionButton
+                  onClick={onCancel}
+                  icon={XCircle}
+                  label="Cancelar"
+                  variant="danger"
+                />
+              )}
+              {onDownloadContract && (
+                <ActionButton
+                  onClick={onDownloadContract}
+                  icon={isDownloadingContract ? Loader2 : Download}
+                  label={isDownloadingContract ? "Descargando..." : "Contrato"}
+                  disabled={isDownloadingContract}
+                  spinning={isDownloadingContract}
+                  variant="success"
+                />
+              )}
+              {appointment.payment?.status === "completed" &&
+                onRequestInvoice && (
+                  <ActionButton
+                    onClick={onRequestInvoice}
+                    icon={ReceiptText}
+                    label="Factura"
+                    variant="default"
+                  />
+                )}
+            </div>
+          </div>
         </div>
       </div>
     </motion.div>
   );
 }
 
-// Profile Section Component
-function ProfileSection({
+// ─── Action Button ─────────────────────────────────────────────────────────────
+function ActionButton({
+  onClick,
+  icon: Icon,
+  label,
+  variant = "default",
+  disabled = false,
+  spinning = false,
+}: {
+  onClick: () => void;
+  icon: any;
+  label: string;
+  variant?: "default" | "danger" | "success";
+  disabled?: boolean;
+  spinning?: boolean;
+}) {
+  const styles = {
+    default:
+      "bg-[#FFF8EF] text-[#3D2E1F]/70 hover:bg-[#F5E9D0] border-[#F5E9D0]",
+    danger: "bg-red-50 text-red-600 hover:bg-red-100 border-red-100",
+    success: "bg-[#FFF8EF] text-[#A0812E] hover:bg-[#F5E9D0] border-[#F5E9D0]",
+  };
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all disabled:opacity-50 whitespace-nowrap ${styles[variant]}`}
+    >
+      <Icon
+        className={`w-3.5 h-3.5 flex-shrink-0 ${spinning ? "animate-spin" : ""}`}
+      />
+      {label}
+    </button>
+  );
+}
+
+// ─── Empty State ───────────────────────────────────────────────────────────────
+function EmptyState({
   icon: Icon,
   title,
-  children,
+  action,
 }: {
   icon: any;
   title: string;
+  action?: { label: string; href: string };
+}) {
+  return (
+    <div className="bg-white rounded-2xl border border-[#F5E9D0] p-12 text-center">
+      <div className="w-14 h-14 bg-[#FFF8EF] rounded-2xl flex items-center justify-center mx-auto mb-4">
+        <Icon className="w-7 h-7 text-[#C9A159]/60" />
+      </div>
+      <p className="text-[#3D2E1F]/50 font-medium mb-4">{title}</p>
+      {action && (
+        <a
+          href={action.href}
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[#C9A159] to-[#A0812E] text-white font-semibold text-sm rounded-xl hover:shadow-lg hover:shadow-[#C9A159]/30 transition-all"
+        >
+          {action.label}
+          <ChevronRight className="w-4 h-4" />
+        </a>
+      )}
+    </div>
+  );
+}
+
+// ─── Profile Form Section ──────────────────────────────────────────────────────
+function ProfileFormSection({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  icon: any;
   children: React.ReactNode;
 }) {
   return (
     <div>
       <div className="flex items-center gap-2 mb-4">
-        <Icon className="w-5 h-5 text-indigo-600" />
-        <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+        <div className="w-7 h-7 rounded-lg bg-[#FFF8EF] flex items-center justify-center">
+          <Icon className="w-3.5 h-3.5 text-[#C9A159]" />
+        </div>
+        <h3 className="font-semibold text-[#3D2E1F] text-base">{title}</h3>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{children}</div>
+      {children}
     </div>
   );
 }
 
-// Profile Item Component
-function ProfileItem({
+// ─── Profile View Section ──────────────────────────────────────────────────────
+function ProfileViewSection({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  icon: any;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-4 pb-3 border-b border-[#F5E9D0]">
+        <div className="w-7 h-7 rounded-lg bg-[#FFF8EF] flex items-center justify-center">
+          <Icon className="w-3.5 h-3.5 text-[#C9A159]" />
+        </div>
+        <h3 className="font-semibold text-[#3D2E1F] text-base">{title}</h3>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{children}</div>
+    </div>
+  );
+}
+
+// ─── Profile Field ─────────────────────────────────────────────────────────────
+function ProfileField({
   label,
   value,
   icon: Icon,
@@ -1130,39 +1400,14 @@ function ProfileItem({
   icon?: any;
 }) {
   return (
-    <div>
-      <span className="text-sm text-gray-600">{label}</span>
+    <div className="bg-[#FAFAF9] rounded-xl p-4 border border-[#F5E9D0]">
+      <span className="text-xs text-[#3D2E1F]/40 font-medium uppercase tracking-wide">
+        {label}
+      </span>
       <div className="flex items-center gap-2 mt-1">
-        {Icon && <Icon className="w-4 h-4 text-gray-400" />}
-        <p className="font-medium text-gray-900">{value}</p>
+        {Icon && <Icon className="w-3.5 h-3.5 text-[#C9A159]" />}
+        <p className="font-semibold text-[#3D2E1F] text-sm">{value}</p>
       </div>
     </div>
   );
-}
-
-function getStatusColor(status: string) {
-  switch (status) {
-    case "confirmed":
-      return "bg-green-100 text-green-800";
-    case "scheduled":
-      return "bg-blue-100 text-blue-800";
-    case "completed":
-      return "bg-gray-100 text-gray-800";
-    case "cancelled":
-      return "bg-red-100 text-red-800";
-    default:
-      return "bg-gray-100 text-gray-800";
-  }
-}
-
-function getStatusLabel(status: string) {
-  const labels: Record<string, string> = {
-    confirmed: "Confirmada",
-    scheduled: "Programada",
-    completed: "Completada",
-    cancelled: "Cancelada",
-    in_progress: "En Progreso",
-    no_show: "No Asistió",
-  };
-  return labels[status] || status;
 }

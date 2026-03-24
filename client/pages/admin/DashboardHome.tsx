@@ -301,8 +301,11 @@ export default function DashboardHome() {
           <CardContent>
             <ResponsiveContainer
               width="100%"
-              height={200}
-              className="md:!h-[250px]"
+              height={
+                typeof window !== "undefined" && window.innerWidth >= 768
+                  ? 250
+                  : 200
+              }
             >
               <LineChart data={revenueChart}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />

@@ -268,6 +268,7 @@ export interface CreateAppointmentWithPaymentRequest
 
 export interface StripePaymentResponse {
   clientSecret: string;
+  customerSessionClientSecret?: string;
   paymentId: number;
   paymentIntentId: string;
 }

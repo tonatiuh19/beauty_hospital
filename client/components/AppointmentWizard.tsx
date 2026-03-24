@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronRight,
@@ -8,6 +9,10 @@ import {
   AlertCircle,
   User,
   Users,
+  CreditCard,
+  Shield,
+  Lock,
+  Loader2,
 } from "lucide-react";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements } from "@stripe/react-stripe-js";
@@ -96,6 +101,7 @@ export function AppointmentWizard() {
   // Redux state and dispatch
   const dispatch = useAppDispatch();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const {
     services,
     loading: loadingServices,
@@ -124,9 +130,13 @@ export function AppointmentWizard() {
 
   // Stripe payment state
   const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [customerSessionClientSecret, setCustomerSessionClientSecret] =
+    useState<string | null>(null);
   const [paymentId, setPaymentId] = useState<number | null>(null);
   const [isCreatingPayment, setIsCreatingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [isStripeProcessing, setIsStripeProcessing] = useState(false);
+  const [isConfirmingReservation, setIsConfirmingReservation] = useState(false);
 
   // Error modal state
   const [showErrorModal, setShowErrorModal] = useState(false);
@@ -385,8 +395,21 @@ export function AppointmentWizard() {
       );
 
       if (response.data.success && response.data.data) {
-        setClientSecret(response.data.data.clientSecret);
-        setPaymentId(response.data.data.paymentId);
+        const {
+          clientSecret: cs,
+          customerSessionClientSecret: csscs,
+          paymentId: pid,
+        } = response.data.data;
+        logger.log("[AppointmentWizard] Payment intent response:", {
+          clientSecret: cs ? `${cs.slice(0, 20)}...` : "MISSING",
+          customerSessionClientSecret: csscs
+            ? `${csscs.slice(0, 20)}...`
+            : "MISSING — saved card will NOT appear",
+          paymentId: pid,
+        });
+        setClientSecret(cs);
+        setCustomerSessionClientSecret(csscs ?? null);
+        setPaymentId(pid);
       } else {
         const errorMsg =
           response.data.error ||
@@ -441,6 +464,7 @@ export function AppointmentWizard() {
 
   // Handle successful payment
   const handlePaymentSuccess = async () => {
+    setIsConfirmingReservation(true);
     try {
       // Confirm payment on backend
       const response = await axios.post("/appointments/confirm-payment", {
@@ -448,17 +472,32 @@ export function AppointmentWizard() {
       });
 
       if (response.data.success) {
-        // Reset form
+        // Capture appointment details before resetting state
+        const successState = {
+          serviceName: getServiceName(appointment.service),
+          date: appointment.date,
+          time: appointment.time,
+          duration: getServiceDuration(appointment.service),
+          areas: getAreaLabels(appointment.selectedAreas),
+          contactEmail: user?.email || appointment.email,
+          contactPhone: user?.phone || appointment.phone,
+          amount: getServicePrice(appointment.service),
+        };
+
+        // Reset form state
         dispatch(resetAppointment());
         setClientSecret(null);
+        setCustomerSessionClientSecret(null);
         setPaymentId(null);
         setAcceptedTerms(false);
         setAcceptedPrivacy(false);
-        // Show confirmation modal
-        setShowConfirmationModal(true);
+
+        // Navigate to dedicated success page with appointment details
+        navigate("/appointment/success", { state: successState });
       }
     } catch (error: any) {
       logger.error("Payment confirmation error:", error);
+      setIsConfirmingReservation(false);
 
       if (error.response?.status === 409) {
         // Slot was taken while user was completing payment
@@ -473,34 +512,25 @@ export function AppointmentWizard() {
         });
         setShowErrorModal(true);
 
-        // Redirect to date/time selection after modal is closed
+        // Redirect to date/time selection after error modal
         setTimeout(() => {
           dispatch(setTime(""));
           dispatch(previousStep());
           dispatch(previousStep());
         }, 5000);
       } else {
-        setErrorModalConfig({
-          title: "Error al Confirmar el Pago",
-          message:
-            "Ocurrió un error al confirmar tu pago. Por favor contacta a soporte.",
-          showRetry: true,
-          onRetry: handlePaymentSuccess,
-        });
-        setShowErrorModal(true);
+        const errorMsg =
+          error.response?.data?.error ||
+          "Ocurrió un error al confirmar tu pago. Por favor contacta a soporte.";
+        navigate("/appointment/failed", { state: { error: errorMsg } });
       }
     }
   };
 
-  // Handle payment error
+  // Handle payment error — card errors are shown inline by StripeCheckoutForm.
+  // Only log here; do not open an ErrorModal which would duplicate the inline message.
   const handlePaymentError = (error: string) => {
-    setErrorModalConfig({
-      title: "Error en el Pago",
-      message: error,
-      showRetry: true,
-      onRetry: createPaymentIntent,
-    });
-    setShowErrorModal(true);
+    logger.error("Stripe payment error:", error);
   };
 
   // Handle confirmation modal close
@@ -775,9 +805,9 @@ export function AppointmentWizard() {
           {/* Steps with connectors */}
           <div className="relative">
             {/* Connection line */}
-            <div className="absolute top-5 left-0 right-0 h-1 bg-gray-200/50 rounded-full" />
+            <div className="absolute top-[18px] sm:top-5 left-0 right-0 h-1 bg-gray-200/50 rounded-full" />
             <motion.div
-              className="absolute top-5 left-0 h-1 bg-primary rounded-full"
+              className="absolute top-[18px] sm:top-5 left-0 h-1 bg-primary rounded-full"
               initial={{ width: "0%" }}
               animate={{ width: `${((step - 1) / 3) * 100}%` }}
               transition={{ duration: 0.6, type: "spring" }}
@@ -816,7 +846,7 @@ export function AppointmentWizard() {
                         repeat: Infinity,
                         ease: "easeInOut",
                       }}
-                      className={`relative w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg transition-all backdrop-blur-sm border-2 ${
+                      className={`relative w-9 h-9 sm:w-12 sm:h-12 rounded-full flex items-center justify-center font-bold text-base sm:text-lg transition-all backdrop-blur-sm border-2 ${
                         isCompleted
                           ? "bg-[#C9A159] text-white border-[#A0812E] shadow-lg shadow-[#C9A159]/50"
                           : isCurrent
@@ -1545,6 +1575,7 @@ export function AppointmentWizard() {
                   transition={{ duration: 0.4 }}
                   className="p-6 sm:p-10"
                 >
+                  {/* Step Header */}
                   <div className="text-center mb-10">
                     <motion.div
                       initial={{ scale: 0, rotate: -180 }}
@@ -1554,15 +1585,15 @@ export function AppointmentWizard() {
                         delay: 0.2,
                         stiffness: 100,
                       }}
-                      className="mx-auto w-20 h-20 bg-[#C9A159] rounded-full flex items-center justify-center mb-6 shadow-2xl shadow-[#C9A159]/50"
+                      className="mx-auto w-20 h-20 bg-gradient-to-br from-[#C9A159] to-[#A0812E] rounded-full flex items-center justify-center mb-6 shadow-2xl shadow-[#C9A159]/40"
                     >
-                      <CheckCircle className="w-10 h-10 text-white" />
+                      <CreditCard className="w-10 h-10 text-white" />
                     </motion.div>
-                    <h2 className="text-3xl font-bold mb-3 text-[#A0812E]">
+                    <h2 className="text-3xl font-bold mb-3 text-[#3D2E1F]">
                       Resumen y Pago
                     </h2>
-                    <p className="text-gray-600 text-lg">
-                      Revisa los detalles y completa tu reserva
+                    <p className="text-gray-500 text-lg">
+                      Revisa los detalles y completa tu reserva de forma segura
                     </p>
                   </div>
 
@@ -1570,24 +1601,27 @@ export function AppointmentWizard() {
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     {/* Left Column - Payment Form (2/3 width) */}
                     <div className="lg:col-span-2 space-y-6">
-                      {/* Payment Section - Stripe Integration */}
+                      {/* Terms & Conditions — styled toggle cards */}
                       <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.3 }}
+                        className="space-y-3"
                       >
-                        <h3 className="text-xl font-bold text-gray-800 mb-4">
-                          Método de Pago
+                        <h3 className="text-sm font-bold text-[#A0812E] uppercase tracking-wider mb-3">
+                          Aceptación de términos
                         </h3>
 
-                        {/* Terms and Conditions */}
-                        <motion.div
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.4 }}
-                          className="space-y-4 mb-6"
+                        {/* Terms card */}
+                        <label
+                          htmlFor="terms"
+                          className={`flex items-start gap-4 p-4 rounded-2xl border-2 cursor-pointer transition-all duration-200 select-none ${
+                            acceptedTerms
+                              ? "border-[#C9A159] bg-[#FFF9EE]"
+                              : "border-gray-200 bg-white hover:border-[#C9A159]/50"
+                          }`}
                         >
-                          <div className="flex items-start gap-3">
+                          <div className="relative flex-shrink-0 mt-0.5">
                             <input
                               type="checkbox"
                               id="terms"
@@ -1595,25 +1629,47 @@ export function AppointmentWizard() {
                               onChange={(e) =>
                                 setAcceptedTerms(e.target.checked)
                               }
-                              className="mt-1 w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                              className="sr-only"
                             />
-                            <label
-                              htmlFor="terms"
-                              className="text-sm text-gray-700 cursor-pointer select-none"
+                            <div
+                              className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all duration-200 ${
+                                acceptedTerms
+                                  ? "bg-[#C9A159] border-[#C9A159]"
+                                  : "border-gray-300 bg-white"
+                              }`}
                             >
-                              Acepto los{" "}
-                              <a
-                                href="/terminos"
-                                target="_blank"
-                                className="text-primary font-bold hover:underline"
-                              >
-                                Términos y Condiciones
-                              </a>{" "}
-                              del servicio
-                            </label>
+                              {acceptedTerms && (
+                                <CheckCircle
+                                  className="w-4 h-4 text-white"
+                                  strokeWidth={2.5}
+                                />
+                              )}
+                            </div>
                           </div>
+                          <p className="text-sm text-gray-700 leading-relaxed">
+                            Acepto los{" "}
+                            <a
+                              href="/terminos"
+                              target="_blank"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-[#A0812E] font-bold hover:underline"
+                            >
+                              Términos y Condiciones
+                            </a>{" "}
+                            del servicio
+                          </p>
+                        </label>
 
-                          <div className="flex items-start gap-3">
+                        {/* Privacy card */}
+                        <label
+                          htmlFor="privacy"
+                          className={`flex items-start gap-4 p-4 rounded-2xl border-2 cursor-pointer transition-all duration-200 select-none ${
+                            acceptedPrivacy
+                              ? "border-[#C9A159] bg-[#FFF9EE]"
+                              : "border-gray-200 bg-white hover:border-[#C9A159]/50"
+                          }`}
+                        >
+                          <div className="relative flex-shrink-0 mt-0.5">
                             <input
                               type="checkbox"
                               id="privacy"
@@ -1621,49 +1677,107 @@ export function AppointmentWizard() {
                               onChange={(e) =>
                                 setAcceptedPrivacy(e.target.checked)
                               }
-                              className="mt-1 w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                              className="sr-only"
                             />
-                            <label
-                              htmlFor="privacy"
-                              className="text-sm text-gray-700 cursor-pointer select-none"
+                            <div
+                              className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all duration-200 ${
+                                acceptedPrivacy
+                                  ? "bg-[#C9A159] border-[#C9A159]"
+                                  : "border-gray-300 bg-white"
+                              }`}
                             >
-                              Acepto la{" "}
-                              <a
-                                href="/privacidad"
-                                target="_blank"
-                                className="text-primary font-bold hover:underline"
-                              >
-                                Política de Privacidad
-                              </a>{" "}
-                              y el tratamiento de mis datos personales
-                            </label>
+                              {acceptedPrivacy && (
+                                <CheckCircle
+                                  className="w-4 h-4 text-white"
+                                  strokeWidth={2.5}
+                                />
+                              )}
+                            </div>
                           </div>
-                        </motion.div>
+                          <p className="text-sm text-gray-700 leading-relaxed">
+                            Acepto la{" "}
+                            <a
+                              href="/privacidad"
+                              target="_blank"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-[#A0812E] font-bold hover:underline"
+                            >
+                              Política de Privacidad
+                            </a>{" "}
+                            y el tratamiento de mis datos personales
+                          </p>
+                        </label>
+                      </motion.div>
 
-                        {/* Show payment form only after terms are accepted */}
+                      {/* Payment Method Section */}
+                      <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.4 }}
+                      >
+                        {/* Section header */}
+                        <div className="flex items-center gap-3 mb-4">
+                          <div className="w-9 h-9 rounded-xl bg-[#FFF5E1] flex items-center justify-center">
+                            <CreditCard className="w-5 h-5 text-[#C9A159]" />
+                          </div>
+                          <div>
+                            <h3 className="text-base font-bold text-[#3D2E1F]">
+                              Método de Pago
+                            </h3>
+                            <p className="text-xs text-gray-500">
+                              Tu información está protegida con cifrado SSL
+                            </p>
+                          </div>
+                          <div className="ml-auto flex items-center gap-1.5 bg-green-50 border border-green-200 px-3 py-1.5 rounded-full">
+                            <Lock className="w-3.5 h-3.5 text-green-600" />
+                            <span className="text-xs font-bold text-green-700">
+                              Seguro
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Default payment method notice */}
+                        <div className="mb-4 p-4 rounded-xl bg-[#FFF5E1] border border-[#E8C580]/60 flex items-start gap-3">
+                          <Shield className="w-5 h-5 text-[#C9A159] flex-shrink-0 mt-0.5" />
+                          <p className="text-xs text-[#3D2E1F] leading-relaxed">
+                            La tarjeta que ingreses quedará registrada como tu{" "}
+                            <strong>método de pago preferido</strong> para
+                            futuras reservas, facilitando tu próxima cita.
+                          </p>
+                        </div>
+
+                        {/* Payment form states */}
                         {!acceptedTerms || !acceptedPrivacy ? (
-                          <div className="p-8 rounded-2xl bg-[#FFF5E1] border-2 border-[#C9A159] text-center">
-                            <AlertCircle className="w-12 h-12 text-[#A0812E] mx-auto mb-4" />
-                            <p className="text-[#3D2E1F] font-medium">
-                              ✓ Por favor acepta los términos y condiciones y la
-                              política de privacidad para continuar con el pago
+                          <div className="p-8 rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 text-center">
+                            <div className="w-12 h-12 rounded-full bg-[#FFF5E1] flex items-center justify-center mx-auto mb-3">
+                              <AlertCircle className="w-6 h-6 text-[#C9A159]" />
+                            </div>
+                            <p className="text-gray-500 text-sm font-medium">
+                              Acepta los términos anteriores para continuar con
+                              el pago
                             </p>
                           </div>
                         ) : isCreatingPayment ? (
-                          <div className="p-8 rounded-2xl bg-[#FFF5E1] border-2 border-[#C9A159] text-center">
-                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-                            <p className="text-[#3D2E1F] font-medium">
-                              Preparando método de pago seguro...
+                          <div className="p-10 rounded-2xl bg-[#FFF5E1] border-2 border-[#C9A159]/30 text-center">
+                            <div className="relative w-14 h-14 mx-auto mb-4">
+                              <div className="animate-spin rounded-full h-14 w-14 border-2 border-[#C9A159]/20 border-t-[#C9A159]" />
+                              <Shield className="w-6 h-6 text-[#C9A159] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                            </div>
+                            <p className="text-[#3D2E1F] font-semibold">
+                              Preparando tu pago seguro...
+                            </p>
+                            <p className="text-gray-400 text-xs mt-1">
+                              Conectando con Stripe
                             </p>
                           </div>
                         ) : paymentError ? (
-                          <div className="p-6 rounded-2xl bg-red-50 border-2 border-red-300">
+                          <div className="p-6 rounded-2xl bg-red-50 border-2 border-red-200">
                             <div className="flex items-start gap-3">
-                              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                              <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
                               <div className="flex-1">
-                                <p className="text-sm text-red-800 font-bold mb-2">
+                                <p className="text-sm text-red-800 font-bold mb-1">
                                   {paymentError.includes("horario")
-                                    ? "⚠️ Horario No Disponible"
+                                    ? "Horario No Disponible"
                                     : "Error al preparar el pago"}
                                 </p>
                                 <p className="text-sm text-red-700 leading-relaxed">
@@ -1672,60 +1786,112 @@ export function AppointmentWizard() {
                                 {!paymentError.includes("horario") && (
                                   <button
                                     onClick={createPaymentIntent}
-                                    className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
+                                    className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
                                   >
                                     Intentar de nuevo
                                   </button>
                                 )}
                                 {paymentError.includes("horario") && (
-                                  <p className="mt-3 text-xs text-red-600 italic">
-                                    Serás redirigido a la selección de horario
-                                    en unos segundos...
+                                  <p className="mt-2 text-xs text-red-500 italic">
+                                    Redirigiendo a la selección de horario...
                                   </p>
                                 )}
                               </div>
                             </div>
                           </div>
                         ) : clientSecret ? (
-                          <Elements
-                            stripe={stripePromise}
-                            options={{
-                              clientSecret,
-                              locale: "es", // Force Spanish locale for payment form
-                              appearance: {
-                                theme: "stripe",
-                                variables: {
-                                  colorPrimary: "#ec4899",
-                                  colorBackground: "#ffffff",
-                                  colorText: "#1f2937",
-                                  colorDanger: "#ef4444",
-                                  fontFamily: "system-ui, sans-serif",
-                                  borderRadius: "12px",
+                          <>
+                            {/* Diagnostic: log Elements mount state */}
+                            {(() => {
+                              logger.log(
+                                "[AppointmentWizard] Mounting <Elements>:",
+                                {
+                                  clientSecret:
+                                    clientSecret.slice(0, 20) + "...",
+                                  customerSessionClientSecret:
+                                    customerSessionClientSecret
+                                      ? customerSessionClientSecret.slice(
+                                          0,
+                                          20,
+                                        ) + "..."
+                                      : "NULL — saved methods will NOT display",
                                 },
-                              },
-                            }}
-                          >
-                            <StripeCheckoutForm
-                              amount={getServicePrice(appointment.service)}
-                              onSuccess={handlePaymentSuccess}
-                              onError={handlePaymentError}
-                            />
-                          </Elements>
+                              );
+                              return null;
+                            })()}
+                            <Elements
+                              stripe={stripePromise}
+                              options={{
+                                clientSecret,
+                                ...(customerSessionClientSecret
+                                  ? { customerSessionClientSecret }
+                                  : {}),
+                                locale: "es",
+                                appearance: {
+                                  theme: "stripe",
+                                  variables: {
+                                    colorPrimary: "#C9A159",
+                                    colorBackground: "#ffffff",
+                                    colorText: "#3D2E1F",
+                                    colorDanger: "#ef4444",
+                                    fontFamily: "system-ui, sans-serif",
+                                    borderRadius: "12px",
+                                    spacingUnit: "4px",
+                                  },
+                                  rules: {
+                                    ".Input": {
+                                      borderColor: "#E8C580",
+                                    },
+                                    ".Input:focus": {
+                                      borderColor: "#C9A159",
+                                      boxShadow:
+                                        "0 0 0 3px rgba(201,161,89,0.15)",
+                                    },
+                                    ".Label": {
+                                      color: "#6B5A3E",
+                                      fontWeight: "600",
+                                    },
+                                    ".Tab": {
+                                      borderColor: "#E8C580",
+                                    },
+                                    ".Tab--selected": {
+                                      borderColor: "#C9A159",
+                                      color: "#A0812E",
+                                    },
+                                  },
+                                },
+                              }}
+                            >
+                              <StripeCheckoutForm
+                                amount={getServicePrice(appointment.service)}
+                                onSuccess={handlePaymentSuccess}
+                                onError={handlePaymentError}
+                                onProcessingChange={setIsStripeProcessing}
+                              />
+                            </Elements>
+                          </>
                         ) : null}
                       </motion.div>
 
-                      {/* Info Notice */}
+                      {/* Security badges */}
                       <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.5 }}
-                        className="p-5 rounded-2xl bg-[#FFF5E1]/60 border-2 border-[#C9A159]/40 backdrop-blur-sm"
+                        className="flex flex-wrap items-center justify-center gap-4 p-4 rounded-2xl bg-white/60 border border-white/40"
                       >
-                        <p className="text-sm text-[#3D2E1F] font-bold leading-relaxed">
-                          ✓ Recibirás una confirmación por email y WhatsApp una
-                          vez que se procese tu pago. Nuestro equipo se
-                          contactará contigo para confirmar los detalles.
-                        </p>
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          <Lock className="w-3.5 h-3.5 text-green-500" />
+                          <span>Cifrado SSL 256-bit</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          <Shield className="w-3.5 h-3.5 text-[#C9A159]" />
+                          <span>Procesado por Stripe</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          <CheckCircle className="w-3.5 h-3.5 text-blue-500" />
+                          <span>Pago 100% seguro</span>
+                        </div>
                       </motion.div>
                     </div>
 
@@ -1735,100 +1901,91 @@ export function AppointmentWizard() {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: 0.3 }}
-                        className="sticky top-4 space-y-4"
+                        className="sticky top-4 space-y-3"
                       >
-                        <h3 className="text-lg font-bold text-gray-800 mb-4">
+                        <h3 className="text-sm font-bold text-[#A0812E] uppercase tracking-wider mb-4">
                           Resumen de tu Cita
                         </h3>
 
-                        {/* Summary Cards */}
-                        <div className="space-y-3">
-                          <div className="p-4 rounded-xl bg-white/50 border border-white/40 backdrop-blur-sm">
-                            <p className="text-xs text-gray-600 font-bold mb-1">
-                              Servicio
-                            </p>
-                            <p className="text-sm font-bold text-primary">
-                              {getServiceName(appointment.service)}
-                            </p>
-                          </div>
+                        {/* Service */}
+                        <div className="p-4 rounded-2xl bg-white border border-[#E8C580]/40 shadow-sm">
+                          <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">
+                            Servicio
+                          </p>
+                          <p className="text-sm font-bold text-[#3D2E1F]">
+                            {getServiceName(appointment.service)}
+                          </p>
+                        </div>
 
-                          <div className="p-4 rounded-xl bg-white/50 border border-white/40 backdrop-blur-sm">
-                            <p className="text-xs text-gray-600 font-bold mb-1">
-                              Fecha y Hora
-                            </p>
-                            <p className="text-sm font-bold text-gray-800">
-                              {appointment.date}
-                            </p>
-                            <p className="text-sm font-bold text-gray-800">
-                              {appointment.time}
-                            </p>
-                          </div>
+                        {/* Date & Time */}
+                        <div className="p-4 rounded-2xl bg-white border border-[#E8C580]/40 shadow-sm">
+                          <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">
+                            Fecha y Hora
+                          </p>
+                          <p className="text-sm font-bold text-[#3D2E1F]">
+                            {appointment.date}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {appointment.time}
+                          </p>
+                        </div>
 
-                          <div className="p-4 rounded-xl bg-white/50 border border-white/40 backdrop-blur-sm">
-                            <p className="text-xs text-gray-600 font-bold mb-1">
-                              Duración
-                            </p>
-                            <p className="text-sm font-bold text-gray-800">
-                              {getServiceDuration(appointment.service)} min
-                            </p>
-                          </div>
+                        {/* Duration */}
+                        <div className="p-4 rounded-2xl bg-white border border-[#E8C580]/40 shadow-sm">
+                          <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">
+                            Duración
+                          </p>
+                          <p className="text-sm font-bold text-[#3D2E1F]">
+                            {getServiceDuration(appointment.service)} min
+                          </p>
+                        </div>
 
-                          <div className="p-4 rounded-xl bg-white/50 border border-white/40 backdrop-blur-sm">
-                            <p className="text-xs text-gray-600 font-bold mb-1">
-                              Contacto
-                            </p>
-                            <p className="text-sm font-bold text-gray-800">
-                              {appointment.name}
-                            </p>
-                            <p className="text-xs text-gray-600 mt-1">
-                              {appointment.email}
-                            </p>
-                            <p className="text-xs text-gray-600">
-                              {appointment.phone}
-                            </p>
-                          </div>
+                        {/* Contact */}
+                        <div className="p-4 rounded-2xl bg-white border border-[#E8C580]/40 shadow-sm">
+                          <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">
+                            Contacto
+                          </p>
+                          <p className="text-sm font-bold text-[#3D2E1F]">
+                            {appointment.name || user?.first_name}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1 truncate">
+                            {appointment.email || user?.email}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {appointment.phone || user?.phone}
+                          </p>
+                        </div>
 
-                          {appointment.selectedAreas.length > 0 && (
-                            <div className="p-4 rounded-xl bg-white/50 border border-white/40 backdrop-blur-sm">
-                              <p className="text-xs text-gray-600 font-bold mb-2">
-                                Áreas
-                              </p>
-                              <div className="flex flex-wrap gap-1">
-                                {BODY_AREAS.filter((a) =>
-                                  appointment.selectedAreas.includes(a.id),
-                                ).map((area) => (
-                                  <span
-                                    key={area.id}
-                                    className="px-2 py-1 bg-secondary/30 text-secondary rounded-full text-xs font-bold"
-                                  >
-                                    {area.label}
-                                  </span>
-                                ))}
-                              </div>
+                        {/* Areas */}
+                        {appointment.selectedAreas.length > 0 && (
+                          <div className="p-4 rounded-2xl bg-white border border-[#E8C580]/40 shadow-sm">
+                            <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2">
+                              Áreas
+                            </p>
+                            <div className="flex flex-wrap gap-1">
+                              {BODY_AREAS.filter((a) =>
+                                appointment.selectedAreas.includes(a.id),
+                              ).map((area) => (
+                                <span
+                                  key={area.id}
+                                  className="px-2 py-0.5 bg-[#FFF5E1] text-[#A0812E] border border-[#E8C580]/50 rounded-full text-xs font-bold"
+                                >
+                                  {area.label}
+                                </span>
+                              ))}
                             </div>
-                          )}
-
-                          {appointment.notes && (
-                            <div className="p-4 rounded-xl bg-white/50 border border-white/40 backdrop-blur-sm">
-                              <p className="text-xs text-gray-600 font-bold mb-1">
-                                Notas
-                              </p>
-                              <p className="text-xs text-gray-700">
-                                {appointment.notes}
-                              </p>
-                            </div>
-                          )}
-
-                          {/* Total */}
-                          <div className="p-4 rounded-xl bg-gradient-to-r from-[#C9A159]/20 to-[#E8C580]/20 border-2 border-[#A0812E]/40 backdrop-blur-sm">
-                            <p className="text-xs text-gray-600 font-bold mb-1">
-                              Total a Pagar
-                            </p>
-                            <p className="text-2xl font-bold text-primary">
-                              ${getServicePrice(appointment.service).toFixed(2)}
-                            </p>
-                            <p className="text-xs text-gray-600">MXN</p>
                           </div>
+                        )}
+
+                        {/* Total */}
+                        <div className="p-4 rounded-2xl bg-gradient-to-br from-[#C9A159] to-[#A0812E] shadow-lg shadow-[#C9A159]/30">
+                          <p className="text-xs text-white/70 font-bold uppercase tracking-wider mb-1">
+                            Total a Pagar
+                          </p>
+                          <p className="text-3xl font-bold text-white">
+                            ${getServicePrice(appointment.service).toFixed(2)}
+                          </p>
+                          <p className="text-xs text-white/60 mt-0.5">MXN</p>
                         </div>
                       </motion.div>
                     </div>
@@ -1838,21 +1995,32 @@ export function AppointmentWizard() {
             </AnimatePresence>
 
             {/* Navigation Buttons */}
-            <div className="px-6 sm:px-10 py-6 border-t border-white/40 bg-white/40 backdrop-blur-sm flex gap-3 justify-between">
-              <motion.button
-                onClick={handlePrev}
-                disabled={step === 1}
-                whileHover={step !== 1 ? { scale: 1.05 } : {}}
-                whileTap={step !== 1 ? { scale: 0.95 } : {}}
-                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all backdrop-blur-sm ${
-                  step === 1
-                    ? "bg-gray-200/50 text-gray-400 cursor-not-allowed"
-                    : "bg-white/60 border-2 border-white/40 text-gray-700 hover:border-primary hover:text-primary hover:shadow-lg"
-                }`}
-              >
-                <ChevronLeft size={20} />
-                Anterior
-              </motion.button>
+            <div className="px-4 sm:px-10 py-5 border-t border-white/40 bg-white/40 backdrop-blur-sm flex gap-3 justify-between items-center">
+              {/* Back button — locked during any payment processing */}
+              {(() => {
+                const isBackDisabled =
+                  step === 1 ||
+                  (step === 4 &&
+                    (isCreatingPayment ||
+                      isStripeProcessing ||
+                      isConfirmingReservation));
+                return (
+                  <motion.button
+                    onClick={handlePrev}
+                    disabled={isBackDisabled}
+                    whileHover={!isBackDisabled ? { scale: 1.05 } : {}}
+                    whileTap={!isBackDisabled ? { scale: 0.95 } : {}}
+                    className={`flex items-center gap-1.5 px-4 sm:px-6 py-3 rounded-xl font-bold transition-all backdrop-blur-sm whitespace-nowrap min-w-0 flex-shrink-0 ${
+                      isBackDisabled
+                        ? "bg-gray-200/50 text-gray-400 cursor-not-allowed"
+                        : "bg-white/60 border-2 border-white/40 text-gray-700 hover:border-primary hover:text-primary hover:shadow-lg"
+                    }`}
+                  >
+                    <ChevronLeft size={18} />
+                    <span>Anterior</span>
+                  </motion.button>
+                );
+              })()}
 
               {step < 4 ? (
                 <motion.button
@@ -1883,7 +2051,7 @@ export function AppointmentWizard() {
                       ? { scale: 0.95 }
                       : {}
                   }
-                  className={`flex items-center gap-2 px-8 py-3 rounded-xl font-bold transition-all backdrop-blur-sm ${
+                  className={`flex items-center gap-1.5 px-4 sm:px-8 py-3 rounded-xl font-bold transition-all backdrop-blur-sm whitespace-nowrap min-w-0 flex-shrink-0 ${
                     (step === 3 && !isAuthenticated) ||
                     (step === 3 &&
                       isAuthenticated &&
@@ -1893,11 +2061,17 @@ export function AppointmentWizard() {
                   }`}
                 >
                   Siguiente
-                  <ChevronRight size={20} />
+                  <ChevronRight size={18} />
                 </motion.button>
+              ) : isConfirmingReservation ? (
+                <div className="flex items-center gap-2 text-sm font-semibold text-[#A0812E]">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Confirmando tu reserva...
+                </div>
               ) : (
-                <div className="text-sm text-gray-600 font-medium">
-                  Complete el pago arriba para confirmar
+                <div className="flex items-center gap-2 text-sm text-gray-400 font-medium">
+                  <Lock className="w-4 h-4" />
+                  Completa el pago para confirmar
                 </div>
               )}
             </div>

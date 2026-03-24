@@ -301,86 +301,90 @@ export default function MedicalRecordsManagement() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Paciente</TableHead>
-                <TableHead>Fecha de Visita</TableHead>
-                <TableHead>Diagnóstico</TableHead>
-                <TableHead>Doctor</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8">
-                    Cargando expedientes...
-                  </TableCell>
+                  <TableHead>Paciente</TableHead>
+                  <TableHead>Fecha de Visita</TableHead>
+                  <TableHead>Diagnóstico</TableHead>
+                  <TableHead>Doctor</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
-              ) : filteredRecords.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8">
-                    No se encontraron expedientes
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredRecords.map((record) => (
-                  <TableRow key={record.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <Avatar>
-                          <AvatarFallback>
-                            {record.patient.first_name[0]}
-                            {record.patient.last_name[0]}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-medium">
-                            {record.patient.first_name}{" "}
-                            {record.patient.last_name}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            {record.patient.email}
-                          </p>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {new Date(record.visit_date).toLocaleDateString("es-MX")}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{record.diagnosis}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <MdOutlineLocalHospital className="w-4 h-4 text-green-600" />
-                        <span className="text-sm">{record.doctor_name}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openViewModal(record)}
-                        >
-                          <MdOutlineVisibility className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openEditModal(record)}
-                        >
-                          <MdOutlineEdit className="w-4 h-4" />
-                        </Button>
-                      </div>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-8">
+                      Cargando expedientes...
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : filteredRecords.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-8">
+                      No se encontraron expedientes
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredRecords.map((record) => (
+                    <TableRow key={record.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Avatar>
+                            <AvatarFallback>
+                              {record.patient.first_name[0]}
+                              {record.patient.last_name[0]}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-medium">
+                              {record.patient.first_name}{" "}
+                              {record.patient.last_name}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              {record.patient.email}
+                            </p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {new Date(record.visit_date).toLocaleDateString(
+                          "es-MX",
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{record.diagnosis}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <MdOutlineLocalHospital className="w-4 h-4 text-green-600" />
+                          <span className="text-sm">{record.doctor_name}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openViewModal(record)}
+                          >
+                            <MdOutlineVisibility className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openEditModal(record)}
+                          >
+                            <MdOutlineEdit className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -849,7 +853,7 @@ export default function MedicalRecordsManagement() {
           </DialogHeader>
           {selectedRecord && (
             <div className="space-y-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label className="text-gray-500">Paciente</Label>
                   <p className="font-medium">

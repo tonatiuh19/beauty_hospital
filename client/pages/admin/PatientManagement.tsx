@@ -46,6 +46,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import axios from "@/lib/axios";
+import { useToast } from "@/hooks/use-toast";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { logger } from "@/lib/logger";
@@ -117,6 +118,7 @@ export default function PatientManagement() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [adminUser, setAdminUser] = useState<any>(null);
+  const { toast } = useToast();
 
   // Edit form
   const [editForm, setEditForm] = useState<Partial<Patient>>({});
@@ -180,7 +182,13 @@ export default function PatientManagement() {
           contracts: response.data.data.contracts || [],
         };
         setSelectedPatient(patientData);
-        setEditForm(response.data.data.patient);
+        const patientForForm = {
+          ...response.data.data.patient,
+          date_of_birth: response.data.data.patient.date_of_birth
+            ? response.data.data.patient.date_of_birth.split("T")[0]
+            : null,
+        };
+        setEditForm(patientForForm);
         setIsDetailsOpen(true);
       }
     } catch (error) {
@@ -193,7 +201,7 @@ export default function PatientManagement() {
 
     try {
       const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.put(
+      const response = await axios.patch(
         `/admin/patients/${selectedPatient.id}`,
         editForm,
         {
@@ -202,13 +210,21 @@ export default function PatientManagement() {
       );
 
       if (response.data.success) {
-        alert("Paciente actualizado exitosamente");
+        toast({
+          title: "Éxito",
+          description: "Paciente actualizado exitosamente",
+        });
         fetchPatients();
         fetchPatientDetails(selectedPatient.id);
         setIsEditOpen(false);
       }
     } catch (error: any) {
-      alert(error.response?.data?.message || "Error al actualizar paciente");
+      toast({
+        title: "Error",
+        description:
+          error.response?.data?.message || "Error al actualizar paciente",
+        variant: "destructive",
+      });
     }
   };
 
@@ -217,7 +233,7 @@ export default function PatientManagement() {
     currentStatus: boolean,
   ) => {
     if (
-      !confirm(
+      !window.confirm(
         `¿Está seguro de ${currentStatus ? "desactivar" : "activar"} este paciente?`,
       )
     )
@@ -226,7 +242,7 @@ export default function PatientManagement() {
     try {
       const token = localStorage.getItem("adminAccessToken");
       const response = await axios.patch(
-        `/api/admin/patients/${patientId}/toggle-active`,
+        `/admin/patients/${patientId}/toggle-active`,
         {},
         {
           headers: { Authorization: `Bearer ${token}` },
@@ -240,7 +256,11 @@ export default function PatientManagement() {
         }
       }
     } catch (error: any) {
-      alert(error.response?.data?.message || "Error al cambiar estado");
+      toast({
+        title: "Error",
+        description: error.response?.data?.message || "Error al cambiar estado",
+        variant: "destructive",
+      });
     }
   };
 
@@ -249,16 +269,20 @@ export default function PatientManagement() {
 
     try {
       const token = localStorage.getItem("adminAccessToken");
+      const adminUser = JSON.parse(localStorage.getItem("adminUser") || "{}");
       const response = await axios.post(
-        `/api/admin/patients/${selectedPatient.id}/medical-records`,
-        medicalRecord,
+        `/admin/patients/${selectedPatient.id}/medical-records`,
+        { ...medicalRecord, doctor_id: adminUser?.id || null },
         {
           headers: { Authorization: `Bearer ${token}` },
         },
       );
 
       if (response.data.success) {
-        alert("Registro médico agregado exitosamente");
+        toast({
+          title: "Éxito",
+          description: "Registro médico agregado exitosamente",
+        });
         fetchPatientDetails(selectedPatient.id);
         setIsMedicalRecordOpen(false);
         setMedicalRecord({
@@ -268,7 +292,12 @@ export default function PatientManagement() {
         });
       }
     } catch (error: any) {
-      alert(error.response?.data?.message || "Error al agregar registro");
+      toast({
+        title: "Error",
+        description:
+          error.response?.data?.message || "Error al agregar registro",
+        variant: "destructive",
+      });
     }
   };
 
@@ -509,7 +538,7 @@ export default function PatientManagement() {
                   </Button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label className="text-gray-500">Nombre Completo</Label>
                     <p className="font-medium">
@@ -769,7 +798,7 @@ export default function PatientManagement() {
             <DialogTitle>Editar Paciente</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>Nombre *</Label>
                 <Input

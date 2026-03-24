@@ -198,7 +198,7 @@ export default function PaymentsManagement() {
     try {
       const token = localStorage.getItem("adminAccessToken");
       const response = await axios.post(
-        `/api/admin/payments/${selectedPayment.id}/refund`,
+        `/admin/payments/${selectedPayment.id}/refund`,
         refundForm,
         {
           headers: { Authorization: `Bearer ${token}` },
@@ -223,7 +223,7 @@ export default function PaymentsManagement() {
     try {
       const token = localStorage.getItem("adminAccessToken");
       const response = await axios.post(
-        `/api/admin/payments/${paymentId}/approve-refund`,
+        `/admin/payments/${paymentId}/approve-refund`,
         {},
         {
           headers: { Authorization: `Bearer ${token}` },
@@ -687,7 +687,7 @@ export default function PaymentsManagement() {
 
           {selectedPayment && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label className="text-gray-500">ID de Pago</Label>
                   <p className="font-mono font-medium">#{selectedPayment.id}</p>
