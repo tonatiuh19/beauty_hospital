@@ -47,11 +47,14 @@ import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
-  fetchContracts,
+  fetchContracts as fetchContractsThunk,
   fetchContractById,
+  fetchContractStats,
+  downloadContractPdf,
+  fetchDefaultContractTerms,
+  saveDefaultContractTerms,
   updateContractTerms,
 } from "@/store/slices/contractsSlice";
-import axios from "@/lib/axios";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { logger } from "@/lib/logger";
@@ -120,6 +123,8 @@ export default function ContractsManagement() {
     null,
   );
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [signaturePreviewOpen, setSignaturePreviewOpen] = useState(false);
+  const [editTerms, setEditTerms] = useState("");
 
   // Default contract terms editor
   const [isDefaultTermsOpen, setIsDefaultTermsOpen] = useState(false);
@@ -152,27 +157,18 @@ export default function ContractsManagement() {
   const fetchContracts = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem("adminAccessToken");
-
-      // Note: This endpoint would need to be created in the backend
-      // For now, we'll use a mock response structure
-      const response = await axios.get("/admin/contracts", {
-        headers: { Authorization: `Bearer ${token}` },
-        params: {
+      const result = await dispatch(
+        fetchContractsThunk({
           search: searchQuery,
           status: statusFilter !== "all" ? statusFilter : undefined,
           page,
           limit: 20,
-        },
-      });
-
-      if (response.data.success) {
-        setContracts(response.data.data.contracts);
-        setTotalPages(response.data.data.totalPages);
-      }
+        }),
+      ).unwrap();
+      setContracts(result.contracts);
+      setTotalPages(result.totalPages);
     } catch (error) {
       logger.error("Error fetching contracts:", error);
-      // Mock data for demonstration
       setContracts([]);
     } finally {
       setLoading(false);
@@ -181,14 +177,8 @@ export default function ContractsManagement() {
 
   const fetchStats = async () => {
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get("/admin/contracts/stats", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (response.data.success) {
-        setStats(response.data.data);
-      }
+      const data = await dispatch(fetchContractStats()).unwrap();
+      setStats(data);
     } catch (error) {
       logger.error("Error fetching stats:", error);
     }
@@ -198,15 +188,14 @@ export default function ContractsManagement() {
     try {
       setLoadingDetails(true);
       setIsDetailsOpen(true);
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get(`/admin/contracts/${contractId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (response.data.success) {
-        setSelectedContract(response.data.data.contract);
-        setContractSessions(response.data.data.sessions || []);
-      }
+      const result = await dispatch(fetchContractById(contractId)).unwrap();
+      setSelectedContract(result.contract);
+      setContractSessions(result.sessions || []);
+      setEditTerms(
+        result.contract.terms_and_conditions ||
+          result.contract.signed_terms ||
+          "",
+      );
     } catch (error) {
       logger.error("Error fetching contract details:", error);
       setIsDetailsOpen(false);
@@ -218,27 +207,14 @@ export default function ContractsManagement() {
   const downloadContractPDF = async (contractId: number) => {
     try {
       setDownloading(true);
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get(
-        `/admin/contracts/${contractId}/download`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          responseType: "blob",
-        },
-      );
-
-      // Create a blob URL and trigger download
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", `contrato-${contractId}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      await dispatch(downloadContractPdf(contractId)).unwrap();
     } catch (error) {
       logger.error("Error downloading contract PDF:", error);
-      alert("Error al descargar el contrato");
+      toast({
+        title: "Error",
+        description: "Error al descargar el contrato",
+        variant: "destructive",
+      });
     } finally {
       setDownloading(false);
     }
@@ -258,19 +234,9 @@ export default function ContractsManagement() {
   // Fetch default contract terms
   const fetchDefaultTerms = async () => {
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get(
-        "/admin/settings/default-contract-terms",
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-
-      if (response.data.success) {
-        const terms = response.data.data.terms;
-        setDefaultTerms(terms);
-        setOriginalDefaultTerms(terms);
-      }
+      const terms = await dispatch(fetchDefaultContractTerms()).unwrap();
+      setDefaultTerms(terms);
+      setOriginalDefaultTerms(terms);
     } catch (error) {
       logger.error("Error fetching default terms:", error);
       toast({
@@ -291,23 +257,13 @@ export default function ContractsManagement() {
   const handleSaveDefaultTerms = async () => {
     try {
       setSavingDefaultTerms(true);
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.put(
-        "/admin/settings/default-contract-terms",
-        { terms: defaultTerms },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-
-      if (response.data.success) {
-        setOriginalDefaultTerms(defaultTerms);
-        setIsDefaultTermsOpen(false);
-        toast({
-          title: "Éxito",
-          description: "Términos predeterminados actualizados correctamente",
-        });
-      }
+      await dispatch(saveDefaultContractTerms(defaultTerms)).unwrap();
+      setOriginalDefaultTerms(defaultTerms);
+      setIsDefaultTermsOpen(false);
+      toast({
+        title: "Éxito",
+        description: "Términos predeterminados actualizados correctamente",
+      });
     } catch (error) {
       logger.error("Error saving default terms:", error);
       toast({
@@ -711,6 +667,44 @@ export default function ContractsManagement() {
                 </div>
 
                 {/* Legal Compliance Notice */}
+                {!selectedContract.signed_at && (
+                  <div className="space-y-2">
+                    <Label>Términos del contrato</Label>
+                    <Textarea
+                      value={editTerms}
+                      onChange={(e) => setEditTerms(e.target.value)}
+                      rows={8}
+                    />
+                    <Button
+                      variant="outline"
+                      disabled={updateLoading || !editTerms.trim()}
+                      onClick={async () => {
+                        try {
+                          await dispatch(
+                            updateContractTerms({
+                              id: selectedContract.id,
+                              customTerms: editTerms,
+                            }),
+                          ).unwrap();
+                          toast({
+                            title: "Términos actualizados",
+                          });
+                        } catch (error: any) {
+                          toast({
+                            variant: "destructive",
+                            title: "Error",
+                            description:
+                              error || "No se pudieron guardar los términos",
+                          });
+                        }
+                      }}
+                    >
+                      <Save className="w-4 h-4 mr-2" />
+                      Guardar términos
+                    </Button>
+                  </div>
+                )}
+
                 {selectedContract.signed_terms && (
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                     <div className="flex items-start gap-3">
@@ -829,9 +823,7 @@ export default function ContractsManagement() {
                   {selectedContract.signature_url && (
                     <Button
                       variant="outline"
-                      onClick={() =>
-                        window.open(selectedContract.signature_url!, "_blank")
-                      }
+                      onClick={() => setSignaturePreviewOpen(true)}
                     >
                       <Eye className="w-4 h-4 mr-2" />
                       Ver Firma
@@ -840,6 +832,28 @@ export default function ContractsManagement() {
                 </div>
               </div>
             )
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={signaturePreviewOpen}
+        onOpenChange={setSignaturePreviewOpen}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Firma del contrato</DialogTitle>
+          </DialogHeader>
+          {selectedContract?.signature_url ? (
+            <img
+              src={selectedContract.signature_url}
+              alt="Firma del paciente"
+              className="w-full rounded-md border border-border bg-card"
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No hay firma disponible.
+            </p>
           )}
         </DialogContent>
       </Dialog>

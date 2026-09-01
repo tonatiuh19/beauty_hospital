@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
-import axios from "@/lib/axios";
+import axios, { formatAxiosError } from "@/lib/axios";
 
 interface Contract {
   id: number;
@@ -31,6 +31,9 @@ interface Contract {
 interface ContractsState {
   contracts: Contract[];
   selectedContract: Contract | null;
+  sessions: any[];
+  stats: any | null;
+  totalPages: number;
   loading: boolean;
   error: string | null;
   updateLoading: boolean;
@@ -39,6 +42,9 @@ interface ContractsState {
 const initialState: ContractsState = {
   contracts: [],
   selectedContract: null,
+  sessions: [],
+  stats: null,
+  totalPages: 1,
   loading: false,
   error: null,
   updateLoading: false,
@@ -47,16 +53,41 @@ const initialState: ContractsState = {
 // Async thunks
 export const fetchContracts = createAsyncThunk(
   "contracts/fetchAll",
+  async (
+    params:
+      | {
+          search?: string;
+          status?: string;
+          page?: number;
+          limit?: number;
+        }
+      | undefined,
+    { rejectWithValue },
+  ) => {
+    try {
+      const response = await axios.get("/admin/contracts", { params });
+      return {
+        contracts: response.data.data.contracts,
+        totalPages: response.data.data.totalPages || 1,
+      };
+    } catch (error) {
+      return rejectWithValue(
+        formatAxiosError(error, "Error fetching contracts"),
+      );
+    }
+  },
+);
+
+export const fetchContractStats = createAsyncThunk(
+  "contracts/fetchStats",
   async (_, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get("/admin/contracts", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      return response.data.data.contracts;
-    } catch (error: any) {
+      const response = await axios.get("/admin/contracts/stats");
+      if (response.data.success) return response.data.data;
+      return rejectWithValue("Error fetching contract stats");
+    } catch (error) {
       return rejectWithValue(
-        error.response?.data?.message || "Error fetching contracts",
+        formatAxiosError(error, "Error fetching contract stats"),
       );
     }
   },
@@ -66,14 +97,125 @@ export const fetchContractById = createAsyncThunk(
   "contracts/fetchById",
   async (id: number, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get(`/admin/contracts/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      return response.data.data.contract;
-    } catch (error: any) {
+      const response = await axios.get(`/admin/contracts/${id}`);
+      return {
+        contract: response.data.data.contract,
+        sessions: response.data.data.sessions || [],
+      };
+    } catch (error) {
       return rejectWithValue(
-        error.response?.data?.message || "Error fetching contract",
+        formatAxiosError(error, "Error fetching contract"),
+      );
+    }
+  },
+);
+
+export const downloadContractPdf = createAsyncThunk(
+  "contracts/downloadPdf",
+  async (contractId: number, { rejectWithValue }) => {
+    try {
+      const response = await axios.get(
+        `/admin/contracts/${contractId}/download`,
+        { responseType: "blob" },
+      );
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `contrato-${contractId}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      return contractId;
+    } catch (error) {
+      return rejectWithValue(
+        formatAxiosError(error, "Error al descargar el contrato"),
+      );
+    }
+  },
+);
+
+export const fetchDefaultContractTerms = createAsyncThunk(
+  "contracts/fetchDefaultTerms",
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await axios.get(
+        "/admin/settings/default-contract-terms",
+      );
+      if (response.data.success) return response.data.data.terms as string;
+      return rejectWithValue("No se pudieron cargar los términos");
+    } catch (error) {
+      return rejectWithValue(
+        formatAxiosError(error, "No se pudieron cargar los términos predeterminados"),
+      );
+    }
+  },
+);
+
+export const saveDefaultContractTerms = createAsyncThunk(
+  "contracts/saveDefaultTerms",
+  async (terms: string, { rejectWithValue }) => {
+    try {
+      const response = await axios.put(
+        "/admin/settings/default-contract-terms",
+        { terms },
+      );
+      if (response.data.success) return terms;
+      return rejectWithValue("No se pudieron guardar los términos");
+    } catch (error) {
+      return rejectWithValue(
+        formatAxiosError(error, "No se pudieron guardar los términos"),
+      );
+    }
+  },
+);
+
+export const fetchContractByAppointment = createAsyncThunk(
+  "contracts/fetchByAppointment",
+  async (appointmentId: number, { rejectWithValue }) => {
+    try {
+      const response = await axios.get(
+        `/admin/contracts/appointment/${appointmentId}`,
+      );
+      if (response.data.success) return response.data.data;
+      return rejectWithValue(
+        response.data.message || "Error checking contract status",
+      );
+    } catch (error) {
+      return rejectWithValue(
+        formatAxiosError(error, "Error checking contract status"),
+      );
+    }
+  },
+);
+
+export const createAdminContract = createAsyncThunk(
+  "contracts/create",
+  async (payload: Record<string, unknown>, { rejectWithValue }) => {
+    try {
+      const response = await axios.post("/admin/contracts/create", payload);
+      if (response.data.success) return response.data.data;
+      return rejectWithValue(
+        response.data.message || "Error creating contract",
+      );
+    } catch (error) {
+      return rejectWithValue(
+        formatAxiosError(error, "Error creating contract"),
+      );
+    }
+  },
+);
+
+export const fetchContractStatus = createAsyncThunk(
+  "contracts/fetchStatus",
+  async (id: number, { rejectWithValue }) => {
+    try {
+      const response = await axios.get(`/admin/contracts/${id}/status`);
+      if (response.data.success) return response.data.data;
+      return rejectWithValue("Error checking signature status");
+    } catch (error) {
+      return rejectWithValue(
+        formatAxiosError(error, "Error checking signature status"),
       );
     }
   },
@@ -86,16 +228,13 @@ export const updateContractTerms = createAsyncThunk(
     { rejectWithValue },
   ) => {
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.put(
-        `/admin/contracts/${id}/terms`,
-        { custom_terms: customTerms },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
+      const response = await axios.put(`/admin/contracts/${id}/terms`, {
+        custom_terms: customTerms,
+      });
       return response.data.data;
-    } catch (error: any) {
+    } catch (error) {
       return rejectWithValue(
-        error.response?.data?.message || "Error updating contract terms",
+        formatAxiosError(error, "Error updating contract terms"),
       );
     }
   },
@@ -122,7 +261,8 @@ const contractsSlice = createSlice({
       })
       .addCase(fetchContracts.fulfilled, (state, action) => {
         state.loading = false;
-        state.contracts = action.payload;
+        state.contracts = action.payload.contracts;
+        state.totalPages = action.payload.totalPages;
       })
       .addCase(fetchContracts.rejected, (state, action) => {
         state.loading = false;
@@ -135,7 +275,11 @@ const contractsSlice = createSlice({
       })
       .addCase(fetchContractById.fulfilled, (state, action) => {
         state.loading = false;
-        state.selectedContract = action.payload;
+        state.selectedContract = action.payload.contract;
+        state.sessions = action.payload.sessions;
+      })
+      .addCase(fetchContractStats.fulfilled, (state, action) => {
+        state.stats = action.payload;
       })
       .addCase(fetchContractById.rejected, (state, action) => {
         state.loading = false;

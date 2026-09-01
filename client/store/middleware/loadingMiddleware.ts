@@ -6,7 +6,7 @@ import { showLoading, hideLoading } from "../slices/loadingSlice";
  * when async thunks are pending/fulfilled/rejected
  */
 export const loadingMiddleware: Middleware = (store) => (next) => (action) => {
-  const { type } = action;
+  const { type } = action as { type?: string };
 
   // Check if it's an async thunk action
   if (type && typeof type === "string") {

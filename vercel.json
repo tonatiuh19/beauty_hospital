@@ -2,13 +2,18 @@
   "version": 2,
   "buildCommand": "npm run build:client",
   "outputDirectory": "dist/spa",
+  "functions": {
+    "api/index.ts": {
+      "includeFiles": "public/assets/logo-header.png"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/(.*)",
       "destination": "/api/index.ts"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!api/|assets/).*)",
       "destination": "/index.html"
     }
   ]

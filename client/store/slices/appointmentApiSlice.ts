@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import axios from "@/lib/axios";
+import axios, { formatAxiosError } from "@/lib/axios";
 import { AppointmentState } from "./appointmentSlice";
 
 // Define the state interface
@@ -32,6 +32,63 @@ export const submitAppointment = createAsyncThunk(
           error.message ||
           "Failed to submit appointment",
       );
+    }
+  },
+);
+
+export const bookAppointmentWithPayment = createAsyncThunk(
+  "appointmentApi/bookWithPayment",
+  async (payload: Record<string, unknown>, { rejectWithValue }) => {
+    try {
+      const response = await axios.post(
+        "/appointments/book-with-payment",
+        payload,
+      );
+      if (response.data.success && response.data.data) {
+        return response.data.data;
+      }
+      return rejectWithValue({
+        status: response.status,
+        message:
+          response.data.error ||
+          response.data.message ||
+          "Failed to create payment",
+      });
+    } catch (error: any) {
+      return rejectWithValue({
+        status: error.response?.status,
+        message: formatAxiosError(
+          error,
+          "Error al crear el pago. Por favor intenta de nuevo.",
+        ),
+        error: error.response?.data?.error,
+      });
+    }
+  },
+);
+
+export const confirmAppointmentPayment = createAsyncThunk(
+  "appointmentApi/confirmPayment",
+  async (paymentIntentId: string, { rejectWithValue }) => {
+    try {
+      const response = await axios.post("/appointments/confirm-payment", {
+        payment_intent_id: paymentIntentId,
+      });
+      if (response.data.success) return response.data;
+      return rejectWithValue({
+        status: response.status,
+        message:
+          response.data.error || "No se pudo confirmar tu pago. Por favor contacta soporte.",
+      });
+    } catch (error: any) {
+      return rejectWithValue({
+        status: error.response?.status,
+        message: formatAxiosError(
+          error,
+          "Error al confirmar el pago. Por favor contacta soporte.",
+        ),
+        error: error.response?.data?.error,
+      });
     }
   },
 );

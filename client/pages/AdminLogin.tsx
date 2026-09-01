@@ -17,96 +17,34 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Logo } from "@/components/Logo";
-import axios from "@/lib/axios";
-import { logger } from "@/lib/logger";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import {
+  startAdminLogin,
+  verifyAdminCode,
+  resetAdminLogin,
+} from "@/store/slices/adminAuthSlice";
 
 export default function AdminLogin() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<"email" | "code">("email");
-  const [email, setEmail] = useState("");
+  const dispatch = useAppDispatch();
+  const { step, email, userId, userRole, userName, loading, error, success } =
+    useAppSelector((state) => state.adminAuth);
+  const [emailInput, setEmailInput] = useState("");
   const [code, setCode] = useState("");
-  const [userId, setUserId] = useState<number | null>(null);
-  const [userRole, setUserRole] = useState<string>("");
-  const [userName, setUserName] = useState<string>("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    setLoading(true);
-
-    try {
-      // Check if admin user exists
-      const checkResponse = await axios.post("/admin/auth/check-user", {
-        email,
-      });
-
-      if (checkResponse.data.success && checkResponse.data.exists) {
-        const user = checkResponse.data.user;
-        setUserId(user.id);
-        setUserRole(user.role);
-        setUserName(`${user.first_name} ${user.last_name}`);
-
-        // Send verification code
-        const codeResponse = await axios.post("/admin/auth/send-code", {
-          user_id: user.id,
-          email: email,
-        });
-
-        if (codeResponse.data.success) {
-          setStep("code");
-          setSuccess(`Código de verificación enviado a ${email}`);
-        } else {
-          setError(codeResponse.data.message || "Error al enviar el código");
-        }
-      } else {
-        setError(
-          "No se encontró una cuenta de administrador con este correo electrónico",
-        );
-      }
-    } catch (err: any) {
-      logger.error("Error:", err);
-      setError(
-        err.response?.data?.message ||
-          "Error al procesar la solicitud. Por favor, intenta de nuevo.",
-      );
-    } finally {
-      setLoading(false);
-    }
+    await dispatch(startAdminLogin(emailInput));
   };
 
   const handleCodeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    setLoading(true);
-
-    try {
-      const response = await axios.post("/admin/auth/verify-code", {
-        user_id: userId,
-        code: parseInt(code),
-      });
-
-      if (response.data.success) {
-        // Store tokens and user info
-        localStorage.setItem("adminAccessToken", response.data.accessToken);
-        localStorage.setItem("adminRefreshToken", response.data.refreshToken);
-        localStorage.setItem("adminUser", JSON.stringify(response.data.user));
-
-        // Redirect to admin dashboard
-        navigate("/admin/dashboard");
-      } else {
-        setError(response.data.message || "Código inválido");
-      }
-    } catch (err: any) {
-      logger.error("Error:", err);
-      setError(
-        err.response?.data?.message ||
-          "Código inválido. Por favor, verifica e intenta de nuevo.",
-      );
-    } finally {
-      setLoading(false);
+    if (!userId) return;
+    const result = await dispatch(
+      verifyAdminCode({ userId, code: parseInt(code, 10) }),
+    );
+    if (verifyAdminCode.fulfilled.match(result)) {
+      navigate("/admin/dashboard");
     }
   };
 
@@ -143,7 +81,7 @@ export default function AdminLogin() {
               <p className="text-gray-600">
                 {step === "email"
                   ? "Ingresa tu correo electrónico para acceder al sistema"
-                  : `Ingresa el código enviado a ${email}`}
+                  : `Ingresa el código enviado a ${email || emailInput}`}
               </p>
             </div>
 
@@ -173,9 +111,9 @@ export default function AdminLogin() {
                     <Input
                       id="email"
                       type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="admin@beautyhospital.com"
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
+                      placeholder="correo@clinica.com"
                       className="pl-10"
                       required
                       disabled={loading}
@@ -252,10 +190,8 @@ export default function AdminLogin() {
                 <button
                   type="button"
                   onClick={() => {
-                    setStep("email");
+                    dispatch(resetAdminLogin());
                     setCode("");
-                    setError("");
-                    setSuccess("");
                   }}
                   className="w-full text-sm text-gray-600 hover:text-primary transition-colors"
                 >

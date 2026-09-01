@@ -6,12 +6,14 @@ import { withRetry, getUserFriendlyErrorMessage } from "@/lib/axios-retry";
 
 interface BusinessHoursState {
   businessHours: BusinessHours[];
+  dayHours: BusinessHours | null;
   loading: boolean;
   error: string | null;
 }
 
 const initialState: BusinessHoursState = {
   businessHours: [],
+  dayHours: null,
   loading: false,
   error: null,
 };
@@ -88,8 +90,9 @@ const businessHoursSlice = createSlice({
       state.loading = true;
       state.error = null;
     });
-    builder.addCase(fetchBusinessHoursByDay.fulfilled, (state) => {
+    builder.addCase(fetchBusinessHoursByDay.fulfilled, (state, action) => {
       state.loading = false;
+      state.dayHours = action.payload;
     });
     builder.addCase(fetchBusinessHoursByDay.rejected, (state, action) => {
       state.loading = false;

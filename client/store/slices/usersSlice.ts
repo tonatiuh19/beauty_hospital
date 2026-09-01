@@ -94,6 +94,20 @@ export const updateUser = createAsyncThunk(
   },
 );
 
+export const toggleUserActive = createAsyncThunk(
+  "users/toggleActive",
+  async (id: number, { rejectWithValue }) => {
+    try {
+      const response = await axios.patch(`/admin/users/${id}/toggle-active`);
+      return response.data.data || { id };
+    } catch (error: any) {
+      return rejectWithValue(
+        error.response?.data?.message || "Failed to toggle user",
+      );
+    }
+  },
+);
+
 export const deleteUser = createAsyncThunk(
   "users/deleteUser",
   async (id: number, { rejectWithValue }) => {
@@ -163,6 +177,18 @@ const usersSlice = createSlice({
       .addCase(updateUser.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload as string;
+      })
+      .addCase(toggleUserActive.fulfilled, (state, action) => {
+        const id = action.payload.id;
+        const index = state.users.findIndex((u) => u.id === id);
+        if (index !== -1) {
+          state.users[index] = {
+            ...state.users[index],
+            ...action.payload,
+            is_active:
+              action.payload.is_active ?? !state.users[index].is_active,
+          };
+        }
       })
       // Delete user
       .addCase(deleteUser.pending, (state) => {

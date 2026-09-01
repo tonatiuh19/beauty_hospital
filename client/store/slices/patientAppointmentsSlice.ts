@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import axios from "@/lib/axios";
+import axios, { formatAxiosError } from "@/lib/axios";
 
 interface PatientAppointment {
   id: number;
@@ -142,17 +142,15 @@ export const downloadContract = createAsyncThunk(
     {
       contractId,
       appointmentId,
-    }: { contractId: number; appointmentId: number },
+      patientId,
+    }: { contractId: number; appointmentId: number; patientId: number },
     { rejectWithValue },
   ) => {
     try {
-      const token =
-        localStorage.getItem("adminAccessToken") ||
-        localStorage.getItem("accessToken");
       const response = await axios.get(
-        `/admin/contracts/${contractId}/download`,
+        `/patient/contracts/${contractId}/download`,
         {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          params: { patient_id: patientId },
           responseType: "blob",
         },
       );
@@ -188,7 +186,7 @@ export const cancelAppointment = createAsyncThunk(
     { rejectWithValue },
   ) => {
     try {
-      const response = await axios.post(
+      const response = await axios.patch(
         `/patient/appointments/${appointmentId}/cancel`,
         {
           patient_id: patientId,
@@ -202,6 +200,66 @@ export const cancelAppointment = createAsyncThunk(
     } catch (error: any) {
       return rejectWithValue(
         error.response?.data?.message || "No se pudo cancelar la cita",
+      );
+    }
+  },
+);
+
+export const reschedulePatientAppointment = createAsyncThunk(
+  "patientAppointments/reschedule",
+  async (
+    {
+      appointmentId,
+      patientId,
+      newDate,
+      newTime,
+    }: {
+      appointmentId: number;
+      patientId: number;
+      newDate: string;
+      newTime: string;
+    },
+    { rejectWithValue },
+  ) => {
+    try {
+      const response = await axios.patch(
+        `/patient/appointments/${appointmentId}/reschedule`,
+        { patient_id: patientId, new_date: newDate, new_time: newTime },
+      );
+      if (response.data.success) return appointmentId;
+      return rejectWithValue("No se pudo reagendar la cita");
+    } catch (error) {
+      return rejectWithValue(
+        formatAxiosError(error, "No se pudo reagendar la cita"),
+      );
+    }
+  },
+);
+
+export const requestInvoice = createAsyncThunk(
+  "patientAppointments/requestInvoice",
+  async (
+    {
+      appointmentId,
+      patientId,
+      invoiceInfo,
+    }: {
+      appointmentId: number;
+      patientId: number;
+      invoiceInfo: Record<string, unknown>;
+    },
+    { rejectWithValue },
+  ) => {
+    try {
+      const response = await axios.post(
+        `/patient/appointments/${appointmentId}/request-invoice`,
+        { patient_id: patientId, invoice_info: invoiceInfo },
+      );
+      if (response.data.success) return appointmentId;
+      return rejectWithValue("No se pudo solicitar la factura");
+    } catch (error) {
+      return rejectWithValue(
+        formatAxiosError(error, "No se pudo solicitar la factura"),
       );
     }
   },

@@ -15,8 +15,12 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import axios from "@/lib/axios";
-import { logger } from "@/lib/logger";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import {
+  fetchDashboardMetrics,
+  fetchRevenueChart,
+  fetchRecentActivity,
+} from "@/store/slices/dashboardSlice";
 import {
   Line,
   LineChart,
@@ -66,53 +70,20 @@ interface RevenueChartData {
 }
 
 export default function DashboardHome() {
-  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
-  const [revenueChart, setRevenueChart] = useState<RevenueChartData[]>([]);
-  const [loading, setLoading] = useState(true);
+  const dispatch = useAppDispatch();
+  const { metrics, revenueChart, activity, loading } = useAppSelector(
+    (state) => state.dashboard,
+  );
   const [period, setPeriod] = useState<"week" | "month" | "year">("month");
 
   useEffect(() => {
-    fetchDashboardData();
-  }, []);
+    dispatch(fetchDashboardMetrics());
+    dispatch(fetchRecentActivity());
+  }, [dispatch]);
 
   useEffect(() => {
-    fetchRevenueChart();
-  }, [period]);
-
-  const fetchDashboardData = async () => {
-    try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get("/admin/dashboard/metrics", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (response.data.success) {
-        setMetrics(response.data.data);
-      }
-    } catch (error) {
-      logger.error("Error fetching dashboard metrics:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchRevenueChart = async () => {
-    try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get(
-        `/admin/dashboard/revenue-chart?period=${period}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-
-      if (response.data.success) {
-        setRevenueChart(response.data.data);
-      }
-    } catch (error) {
-      logger.error("Error fetching revenue chart:", error);
-    }
-  };
+    dispatch(fetchRevenueChart(period));
+  }, [dispatch, period]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("es-MX", {
@@ -423,6 +394,40 @@ export default function DashboardHome() {
               <p className="text-center text-gray-500 py-8">
                 No hay datos de servicios disponibles
               </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Actividad reciente</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {activity.length === 0 ? (
+              <p className="text-center text-muted-foreground py-6">
+                No hay actividad reciente
+              </p>
+            ) : (
+              activity.map((item) => (
+                <div
+                  key={`${item.entity_type}-${item.entity_id}-${item.created_at}`}
+                  className="flex items-start justify-between gap-3 rounded-lg border border-border p-3"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-foreground">
+                      {item.description}
+                    </p>
+                    <p className="text-xs text-muted-foreground capitalize mt-1">
+                      {item.entity_type.replace("_", " ")} · {item.action.replace("_", " ")}
+                    </p>
+                  </div>
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {new Date(item.created_at).toLocaleString("es-MX")}
+                  </span>
+                </div>
+              ))
             )}
           </div>
         </CardContent>

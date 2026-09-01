@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import {
   DollarSign,
   Search,
+  Plus,
   Eye,
   CheckCircle,
   XCircle,
@@ -41,10 +42,22 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import axios from "@/lib/axios";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
+import { Formik, Form, Field } from "formik";
+import * as Yup from "yup";
 import { logger } from "@/lib/logger";
+import { useToast } from "@/hooks/use-toast";
+import { useAppDispatch } from "@/store/hooks";
+import {
+  fetchAdminPayments,
+  fetchPaymentStats,
+  processPaymentRefund,
+  approvePaymentRefund,
+  createAdminPayment,
+  fetchAppointmentsByPatient,
+} from "@/store/slices/paymentsSlice";
+import { searchAdminPatients } from "@/store/slices/calendarSlice";
 
 interface Payment {
   id: number;
@@ -103,16 +116,25 @@ const statusLabels = {
 
 const paymentMethodLabels = {
   card: "Tarjeta",
+  credit_card: "Tarjeta",
+  debit_card: "Débito",
   cash: "Efectivo",
   transfer: "Transferencia",
   stripe: "Stripe",
 };
 
 export default function PaymentsManagement() {
+  const dispatch = useAppDispatch();
   const [payments, setPayments] = useState<Payment[]>([]);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isRefundOpen, setIsRefundOpen] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [payPatients, setPayPatients] = useState<
+    { id: number; name: string; email: string; phone: string }[]
+  >([]);
+  const [payAppointments, setPayAppointments] = useState<any[]>([]);
+  const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [methodFilter, setMethodFilter] = useState<string>("all");
@@ -143,25 +165,20 @@ export default function PaymentsManagement() {
   const fetchPayments = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get("/admin/payments", {
-        headers: { Authorization: `Bearer ${token}` },
-        params: {
+      const result = await dispatch(
+        fetchAdminPayments({
           search: searchQuery,
           status: statusFilter !== "all" ? statusFilter : undefined,
           payment_method: methodFilter !== "all" ? methodFilter : undefined,
           page,
           limit: 20,
-        },
-      });
-
-      if (response.data.success) {
-        setPayments(response.data.data || []);
-        setTotalPages(response.data.pagination?.totalPages || 1);
-      }
+        }),
+      ).unwrap();
+      setPayments(result.payments || []);
+      setTotalPages(result.totalPages || 1);
     } catch (error) {
       logger.error("Error fetching payments:", error);
-      setPayments([]); // Set empty array on error
+      setPayments([]);
     } finally {
       setLoading(false);
     }
@@ -169,14 +186,8 @@ export default function PaymentsManagement() {
 
   const fetchStats = async () => {
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get("/admin/payments/stats", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (response.data.success) {
-        setStats(response.data.data);
-      }
+      const data = await dispatch(fetchPaymentStats()).unwrap();
+      setStats(data);
     } catch (error) {
       logger.error("Error fetching stats:", error);
     }
@@ -186,34 +197,45 @@ export default function PaymentsManagement() {
     if (!selectedPayment) return;
 
     if (!refundForm.amount || refundForm.amount <= 0) {
-      alert("Ingrese un monto válido");
+      toast({
+        title: "Monto inválido",
+        description: "Ingrese un monto válido",
+        variant: "destructive",
+      });
       return;
     }
 
     if (!refundForm.reason.trim()) {
-      alert("Ingrese un motivo para el reembolso");
+      toast({
+        title: "Motivo requerido",
+        description: "Ingrese un motivo para el reembolso",
+        variant: "destructive",
+      });
       return;
     }
 
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.post(
-        `/admin/payments/${selectedPayment.id}/refund`,
-        refundForm,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-
-      if (response.data.success) {
-        alert(response.data.message || "Reembolso procesado exitosamente");
-        fetchPayments();
-        fetchStats();
-        setIsRefundOpen(false);
-        setRefundForm({ amount: 0, reason: "" });
-      }
+      const result = await dispatch(
+        processPaymentRefund({
+          paymentId: selectedPayment.id,
+          amount: refundForm.amount,
+          reason: refundForm.reason,
+        }),
+      ).unwrap();
+      toast({
+        title: "Reembolso solicitado",
+        description: result.message || "Reembolso procesado exitosamente",
+      });
+      fetchPayments();
+      fetchStats();
+      setIsRefundOpen(false);
+      setRefundForm({ amount: 0, reason: "" });
     } catch (error: any) {
-      alert(error.response?.data?.message || "Error al procesar reembolso");
+      toast({
+        title: "Error",
+        description: error || "Error al procesar reembolso",
+        variant: "destructive",
+      });
     }
   };
 
@@ -221,23 +243,17 @@ export default function PaymentsManagement() {
     if (!confirm("¿Está seguro de aprobar este reembolso?")) return;
 
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.post(
-        `/admin/payments/${paymentId}/approve-refund`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-
-      if (response.data.success) {
-        alert("Reembolso aprobado exitosamente");
-        fetchPayments();
-        fetchStats();
-        setIsDetailsOpen(false);
-      }
+      await dispatch(approvePaymentRefund(paymentId)).unwrap();
+      toast({ title: "Reembolso aprobado" });
+      fetchPayments();
+      fetchStats();
+      setIsDetailsOpen(false);
     } catch (error: any) {
-      alert(error.response?.data?.message || "Error al aprobar reembolso");
+      toast({
+        title: "Error",
+        description: error || "Error al aprobar reembolso",
+        variant: "destructive",
+      });
     }
   };
 
@@ -258,10 +274,17 @@ export default function PaymentsManagement() {
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
             Gestión de Pagos
           </h1>
-          <p className="text-gray-500 mt-1 text-sm md:text-base">
+          <p className="text-muted-foreground mt-1 text-sm md:text-base">
             Administra pagos, reembolsos y transacciones
           </p>
         </div>
+        <Button
+          onClick={() => setIsCreateOpen(true)}
+          className="bg-primary hover:bg-primary/90"
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          Registrar pago
+        </Button>
       </div>
 
       {/* Stats */}
@@ -399,7 +422,7 @@ export default function PaymentsManagement() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos los métodos</SelectItem>
-                <SelectItem value="card">Tarjeta</SelectItem>
+                <SelectItem value="credit_card">Tarjeta</SelectItem>
                 <SelectItem value="cash">Efectivo</SelectItem>
                 <SelectItem value="transfer">Transferencia</SelectItem>
                 <SelectItem value="stripe">Stripe</SelectItem>
@@ -870,6 +893,207 @@ export default function PaymentsManagement() {
               Solicitar Reembolso
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isCreateOpen}
+        onOpenChange={(open) => {
+          setIsCreateOpen(open);
+          if (!open) {
+            setPayPatients([]);
+            setPayAppointments([]);
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Registrar pago manual</DialogTitle>
+          </DialogHeader>
+          <Formik
+            initialValues={{
+              patient_id: 0,
+              appointment_id: 0,
+              amount: 0,
+              payment_method: "cash",
+              notes: "",
+              patient_query: "",
+            }}
+            validationSchema={Yup.object({
+              patient_id: Yup.number().min(1, "Selecciona un paciente"),
+              amount: Yup.number().positive("Monto inválido").required(),
+              payment_method: Yup.string().required(),
+            })}
+            onSubmit={async (values, { setSubmitting, resetForm }) => {
+              try {
+                await dispatch(
+                  createAdminPayment({
+                    patient_id: values.patient_id,
+                    appointment_id: values.appointment_id || null,
+                    amount: values.amount,
+                    payment_method: values.payment_method,
+                    notes: values.notes || undefined,
+                  }),
+                ).unwrap();
+                toast({
+                  title: "Pago registrado",
+                  description: "El pago se guardó correctamente",
+                });
+                resetForm();
+                setIsCreateOpen(false);
+                fetchPayments();
+                fetchStats();
+              } catch (error: any) {
+                toast({
+                  title: "Error",
+                  description: error || "Error al registrar pago",
+                  variant: "destructive",
+                });
+              } finally {
+                setSubmitting(false);
+              }
+            }}
+          >
+            {({ values, errors, touched, setFieldValue, isSubmitting }) => (
+              <Form className="space-y-4">
+                <div>
+                  <Label>Paciente *</Label>
+                  <Input
+                    value={values.patient_query}
+                    onChange={async (e) => {
+                      const q = e.target.value;
+                      setFieldValue("patient_query", q);
+                      if (q.length < 2) {
+                        setPayPatients([]);
+                        return;
+                      }
+                      try {
+                        const rows = await dispatch(
+                          searchAdminPatients(q),
+                        ).unwrap();
+                        setPayPatients(rows);
+                      } catch (err) {
+                        logger.error("Error searching patients:", err);
+                      }
+                    }}
+                    placeholder="Buscar por nombre, email o teléfono..."
+                  />
+                  {payPatients.length > 0 && (
+                    <div className="mt-1 border rounded-md max-h-40 overflow-y-auto">
+                      {payPatients.map((p) => (
+                        <button
+                          type="button"
+                          key={p.id}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-muted"
+                          onClick={async () => {
+                            setFieldValue("patient_id", p.id);
+                            setFieldValue(
+                              "patient_query",
+                              `${p.name} · ${p.email}`,
+                            );
+                            setPayPatients([]);
+                            try {
+                              const appts = await dispatch(
+                                fetchAppointmentsByPatient(p.id),
+                              ).unwrap();
+                              setPayAppointments(appts);
+                            } catch {
+                              setPayAppointments([]);
+                            }
+                          }}
+                        >
+                          {p.name} · {p.email}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {touched.patient_id && errors.patient_id && (
+                    <p className="text-xs text-destructive mt-1">
+                      {String(errors.patient_id)}
+                    </p>
+                  )}
+                </div>
+                {payAppointments.length > 0 && (
+                  <div>
+                    <Label>Cita (opcional)</Label>
+                    <Select
+                      value={
+                        values.appointment_id
+                          ? String(values.appointment_id)
+                          : "none"
+                      }
+                      onValueChange={(v) =>
+                        setFieldValue(
+                          "appointment_id",
+                          v === "none" ? 0 : Number(v),
+                        )
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Sin cita" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Sin cita</SelectItem>
+                        {payAppointments.map((a) => (
+                          <SelectItem key={a.id} value={String(a.id)}>
+                            {a.service_name} · {a.appointment_date_formatted}{" "}
+                            {a.appointment_time_formatted}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Monto *</Label>
+                    <Field as={Input} type="number" name="amount" min="0" />
+                    {touched.amount && errors.amount && (
+                      <p className="text-xs text-destructive mt-1">
+                        {String(errors.amount)}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <Label>Método *</Label>
+                    <Select
+                      value={values.payment_method}
+                      onValueChange={(v) => setFieldValue("payment_method", v)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cash">Efectivo</SelectItem>
+                        <SelectItem value="credit_card">Tarjeta</SelectItem>
+                        <SelectItem value="transfer">Transferencia</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div>
+                  <Label>Notas</Label>
+                  <Field as={Textarea} name="notes" rows={2} />
+                </div>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsCreateOpen(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="bg-primary hover:bg-primary/90"
+                  >
+                    {isSubmitting ? "Guardando..." : "Registrar"}
+                  </Button>
+                </DialogFooter>
+              </Form>
+            )}
+          </Formik>
         </DialogContent>
       </Dialog>
     </div>

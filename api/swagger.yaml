@@ -1,0 +1,1447 @@
+openapi: 3.0.3
+info:
+  title: All Beauty Luxury & Wellness API
+  version: 1.0.0
+  description: |
+    Express monolith in `api/index.ts`. Admin routes (except `/api/admin/auth/*`)
+    require a Bearer JWT. Roles match the admin navigation. Patient portal routes
+    use an active `users_sessions` row plus `patient_id`.
+servers:
+  - url: /api
+    description: Same-origin Vite / Vercel
+
+tags:
+  - name: Health
+  - name: Public
+  - name: Auth
+  - name: Appointments
+  - name: Check-in
+  - name: Patient
+  - name: Admin Auth
+  - name: Admin Dashboard
+  - name: Admin Services
+  - name: Admin Patients
+  - name: Admin Medical Records
+  - name: Admin Users
+  - name: Admin Appointments
+  - name: Admin Contracts
+  - name: Admin Payments
+  - name: Admin Invoices
+  - name: Admin Settings
+
+components:
+  securitySchemes:
+    adminBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Success:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data: {}
+        message:
+          type: string
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+
+security: []
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /ping:
+    get:
+      tags: [Health]
+      summary: Ping
+      responses:
+        "200":
+          description: pong
+  /demo:
+    get:
+      tags: [Public]
+      summary: Demo payload
+      responses:
+        "200":
+          description: OK
+  /brand/logo:
+    get:
+      tags: [Public]
+      summary: Brand logo PNG for emails and remote clients
+      responses:
+        "200":
+          description: image/png
+        "404":
+          description: Logo file not bundled on this host
+
+  /services:
+    get:
+      tags: [Public]
+      summary: List public services
+      responses:
+        "200":
+          description: OK
+  /services/{id}:
+    get:
+      tags: [Public]
+      summary: Get service by id
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+
+  /business-hours:
+    get:
+      tags: [Public]
+      summary: List weekly business hours
+      responses:
+        "200":
+          description: OK
+  /business-hours/day/{day}:
+    get:
+      tags: [Public]
+      summary: Business hours for one weekday (0=Sunday)
+      parameters:
+        - in: path
+          name: day
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 6
+      responses:
+        "200":
+          description: OK
+
+  /blocked-dates:
+    get:
+      tags: [Public]
+      summary: List blocked dates
+      responses:
+        "200":
+          description: OK
+  /blocked-dates/check:
+    get:
+      tags: [Public]
+      summary: Check if a date/time is blocked
+      parameters:
+        - in: query
+          name: date
+          schema:
+            type: string
+        - in: query
+          name: time
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Legacy password register
+      responses:
+        "200":
+          description: OK
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Legacy password login
+      responses:
+        "200":
+          description: OK
+  /auth/check-user:
+    post:
+      tags: [Auth]
+      summary: Check if a patient exists by email
+      responses:
+        "200":
+          description: OK
+  /auth/send-code:
+    post:
+      tags: [Auth]
+      summary: Send patient OTP
+      responses:
+        "200":
+          description: OK
+  /auth/verify-code:
+    post:
+      tags: [Auth]
+      summary: Verify patient OTP (opens a 24h session row)
+      responses:
+        "200":
+          description: Patient object
+  /auth/create-user:
+    post:
+      tags: [Auth]
+      summary: Create patient during booking
+      responses:
+        "200":
+          description: OK
+
+  /appointments:
+    get:
+      tags: [Appointments]
+      summary: List appointments for a patient (session or admin JWT)
+      parameters:
+        - in: query
+          name: patientId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Auth required
+    post:
+      tags: [Appointments]
+      summary: Create appointment (legacy, unused by current UI)
+      responses:
+        "200":
+          description: OK
+  /appointments/{id}:
+    get:
+      tags: [Appointments]
+      summary: Get appointment (patient session or admin JWT)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+    put:
+      tags: [Appointments]
+      summary: Update appointment (admin JWT)
+      security:
+        - adminBearer: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+    delete:
+      tags: [Appointments]
+      summary: Cancel appointment (admin JWT)
+      security:
+        - adminBearer: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /appointments/booked-slots:
+    get:
+      tags: [Appointments]
+      summary: Booked slots for a date
+      responses:
+        "200":
+          description: OK
+  /appointments/book-with-payment:
+    post:
+      tags: [Appointments]
+      summary: Create Stripe PaymentIntent for online booking
+      description: Charges the catalog `services.price` (client `payment_amount` is ignored). Appointment is created only after payment succeeds.
+      responses:
+        "200":
+          description: OK
+        "409":
+          description: Slot conflict
+  /appointments/confirm-payment:
+    post:
+      tags: [Appointments]
+      summary: Confirm Stripe payment and finalize booking
+      description: Idempotent. Same PaymentIntent will not create a second appointment. Prefer the webhook as the source of truth.
+      responses:
+        "200":
+          description: OK
+  /stripe/webhook:
+    post:
+      tags: [Payments]
+      summary: Stripe webhook
+      description: Verifies `Stripe-Signature`. Handles `payment_intent.succeeded` (fulfill booking) and `charge.refunded` (sync refund status). Requires raw JSON body.
+      responses:
+        "200":
+          description: Received
+        "400":
+          description: Invalid signature or payload
+
+  /check-in/generate-token:
+    post:
+      tags: [Check-in]
+      summary: Generate QR token (admin calendar roles)
+      security:
+        - adminBearer: []
+      responses:
+        "200":
+          description: OK
+  /check-in/validate/{token}:
+    get:
+      tags: [Check-in]
+      summary: Validate public check-in token
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+  /check-in/complete:
+    post:
+      tags: [Check-in]
+      summary: Sign contract and complete check-in
+      responses:
+        "200":
+          description: OK
+
+  /patient/appointments:
+    get:
+      tags: [Patient]
+      summary: List the logged-in patient's appointments
+      responses:
+        "200":
+          description: OK
+  /patient/appointments/{id}/cancel:
+    patch:
+      tags: [Patient]
+      summary: Cancel own appointment
+      responses:
+        "200":
+          description: OK
+  /patient/appointments/{id}/reschedule:
+    patch:
+      tags: [Patient]
+      summary: Reschedule own appointment
+      responses:
+        "200":
+          description: OK
+        "409":
+          description: Slot taken
+  /patient/appointments/{id}/request-invoice:
+    post:
+      tags: [Patient]
+      summary: Request a fiscal invoice
+      responses:
+        "200":
+          description: OK
+        "409":
+          description: Already requested
+  /patient/profile:
+    get:
+      tags: [Patient]
+      summary: Get patient profile
+      responses:
+        "200":
+          description: OK
+    put:
+      tags: [Patient]
+      summary: Update patient profile
+      responses:
+        "200":
+          description: OK
+  /patient/contracts/{id}/download:
+    get:
+      tags: [Patient]
+      summary: Download own signed contract PDF
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: patient_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: PDF
+
+  /admin/auth/check-user:
+    post:
+      tags: [Admin Auth]
+      summary: Check staff email
+      responses:
+        "200":
+          description: OK
+  /admin/auth/send-code:
+    post:
+      tags: [Admin Auth]
+      summary: Send staff OTP
+      responses:
+        "200":
+          description: OK
+  /admin/auth/verify-code:
+    post:
+      tags: [Admin Auth]
+      summary: Verify staff OTP and issue JWTs
+      responses:
+        "200":
+          description: accessToken, refreshToken, user
+  /admin/auth/refresh:
+    post:
+      tags: [Admin Auth]
+      summary: Rotate admin access + refresh tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        "200":
+          description: New tokens
+        "401":
+          description: Invalid refresh
+
+  /admin/dashboard/stats:
+    get:
+      tags: [Admin Dashboard]
+      security:
+        - adminBearer: []
+      summary: Alias of metrics (admin, general_admin)
+      responses:
+        "200":
+          description: OK
+  /admin/dashboard/metrics:
+    get:
+      tags: [Admin Dashboard]
+      security:
+        - adminBearer: []
+      summary: Dashboard KPIs in clinic timezone
+      responses:
+        "200":
+          description: OK
+  /admin/dashboard/revenue-chart:
+    get:
+      tags: [Admin Dashboard]
+      security:
+        - adminBearer: []
+      summary: Revenue chart
+      parameters:
+        - in: query
+          name: period
+          schema:
+            type: string
+            enum: [week, month, year]
+      responses:
+        "200":
+          description: OK
+  /admin/dashboard/activity:
+    get:
+      tags: [Admin Dashboard]
+      security:
+        - adminBearer: []
+      summary: Recent appointments, payments, contracts
+      responses:
+        "200":
+          description: OK
+  /admin/dashboard/calendar:
+    get:
+      tags: [Admin Dashboard]
+      security:
+        - adminBearer: []
+      summary: Calendar appointments (includes receptionist, pos)
+      responses:
+        "200":
+          description: OK
+
+  /admin/services:
+    get:
+      tags: [Admin Services]
+      security:
+        - adminBearer: []
+      summary: List admin services
+      responses:
+        "200":
+          description: OK
+    post:
+      tags: [Admin Services]
+      security:
+        - adminBearer: []
+      summary: Create service (accepts image_url)
+      responses:
+        "201":
+          description: Created
+  /admin/uploads:
+    post:
+      tags: [Admin Services]
+      security:
+        - adminBearer: []
+      summary: Upload a file to Vercel Blob (images or PDF)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, content_type, data_base64]
+              properties:
+                filename: { type: string }
+                content_type: { type: string }
+                data_base64: { type: string }
+                folder:
+                  type: string
+                  enum: [services, contracts, invoices, brand, media, uploads]
+      responses:
+        "200":
+          description: Blob URL
+        "401":
+          description: Missing admin JWT
+        "403":
+          description: Role not allowed
+        "503":
+          description: Blob store not configured
+  /admin/services/{id}:
+    put:
+      tags: [Admin Services]
+      security:
+        - adminBearer: []
+      summary: Update service
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+    delete:
+      tags: [Admin Services]
+      security:
+        - adminBearer: []
+      summary: Delete service
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+
+  /admin/patients:
+    get:
+      tags: [Admin Patients]
+      security:
+        - adminBearer: []
+      summary: List patients
+      responses:
+        "200":
+          description: OK
+    post:
+      tags: [Admin Patients]
+      security:
+        - adminBearer: []
+      summary: Create a walk-in / admin patient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [first_name, last_name, email]
+              properties:
+                first_name:
+                  type: string
+                last_name:
+                  type: string
+                email:
+                  type: string
+                phone:
+                  type: string
+      responses:
+        "201":
+          description: Created
+        "409":
+          description: Email already exists
+  /admin/patients/{id}:
+    get:
+      tags: [Admin Patients]
+      security:
+        - adminBearer: []
+      summary: Patient detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+    patch:
+      tags: [Admin Patients]
+      security:
+        - adminBearer: []
+      summary: Update patient
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/patients/{id}/toggle-active:
+    patch:
+      tags: [Admin Patients]
+      security:
+        - adminBearer: []
+      summary: Toggle patient active
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/patients/{id}/medical-records:
+    post:
+      tags: [Admin Medical Records]
+      security:
+        - adminBearer: []
+      summary: Add medical record on a patient
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+
+  /admin/medical-records:
+    get:
+      tags: [Admin Medical Records]
+      security:
+        - adminBearer: []
+      summary: List medical records (general_admin, doctor)
+      responses:
+        "200":
+          description: OK
+    post:
+      tags: [Admin Medical Records]
+      security:
+        - adminBearer: []
+      summary: Create medical record
+      responses:
+        "200":
+          description: OK
+  /admin/medical-records/{id}:
+    get:
+      tags: [Admin Medical Records]
+      security:
+        - adminBearer: []
+      summary: Get medical record
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+    put:
+      tags: [Admin Medical Records]
+      security:
+        - adminBearer: []
+      summary: Update medical record
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+    delete:
+      tags: [Admin Medical Records]
+      security:
+        - adminBearer: []
+      summary: Delete medical record
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+
+  /admin/users:
+    get:
+      tags: [Admin Users]
+      security:
+        - adminBearer: []
+      summary: List staff (general_admin)
+      responses:
+        "200":
+          description: OK
+    post:
+      tags: [Admin Users]
+      security:
+        - adminBearer: []
+      summary: Create staff user
+      responses:
+        "200":
+          description: OK
+  /admin/users/{id}:
+    get:
+      tags: [Admin Users]
+      security:
+        - adminBearer: []
+      summary: Get staff user
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+    put:
+      tags: [Admin Users]
+      security:
+        - adminBearer: []
+      summary: Update staff user
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+    delete:
+      tags: [Admin Users]
+      security:
+        - adminBearer: []
+      summary: Delete staff user
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/users/{id}/toggle-active:
+    patch:
+      tags: [Admin Users]
+      security:
+        - adminBearer: []
+      summary: Toggle staff active flag
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+
+  /admin/appointments:
+    get:
+      tags: [Admin Appointments]
+      security:
+        - adminBearer: []
+      summary: List admin appointments
+      responses:
+        "200":
+          description: OK
+  /admin/appointments/manual:
+    post:
+      tags: [Admin Appointments]
+      security:
+        - adminBearer: []
+      summary: Create walk-in / manual appointment
+      description: Accepts `patient_id` or `new_patient` `{ first_name, last_name, email, phone }`.
+      responses:
+        "201":
+          description: Created
+  /admin/appointments/{id}/payment-info:
+    get:
+      tags: [Admin Appointments]
+      security:
+        - adminBearer: []
+      summary: Payment info for an appointment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/appointments/{id}/status:
+    patch:
+      tags: [Admin Appointments]
+      security:
+        - adminBearer: []
+      summary: Update appointment status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/appointments/{id}/check-in:
+    post:
+      tags: [Admin Appointments]
+      security:
+        - adminBearer: []
+      summary: Admin check-in (idempotent if QR already completed)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/appointments/{id}/cancel:
+    post:
+      tags: [Admin Appointments]
+      security:
+        - adminBearer: []
+      summary: Cancel (admin, general_admin, receptionist, pos)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/appointments/{id}/reschedule:
+    post:
+      tags: [Admin Appointments]
+      security:
+        - adminBearer: []
+      summary: Reschedule appointment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+
+  /admin/contracts:
+    get:
+      tags: [Admin Contracts]
+      security:
+        - adminBearer: []
+      summary: List contracts
+      responses:
+        "200":
+          description: OK
+  /admin/contracts/stats:
+    get:
+      tags: [Admin Contracts]
+      security:
+        - adminBearer: []
+      summary: Contract stats
+      responses:
+        "200":
+          description: OK
+  /admin/contracts/create:
+    post:
+      tags: [Admin Contracts]
+      security:
+        - adminBearer: []
+      summary: Create draft contract and link appointment
+      description: `created_by` is taken from the admin JWT. Never falls back to a hardcoded user id.
+      responses:
+        "200":
+          description: OK
+  /admin/contracts/{id}:
+    get:
+      tags: [Admin Contracts]
+      security:
+        - adminBearer: []
+      summary: Contract detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/contracts/{id}/download:
+    get:
+      tags: [Admin Contracts]
+      security:
+        - adminBearer: []
+      summary: Download signed PDF
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: PDF
+  /admin/contracts/{id}/send-for-signature:
+    post:
+      tags: [Admin Contracts]
+      security:
+        - adminBearer: []
+      summary: Mark contract pending in-app signature
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/contracts/{id}/status:
+    get:
+      tags: [Admin Contracts]
+      security:
+        - adminBearer: []
+      summary: Signature status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/contracts/{id}/terms:
+    put:
+      tags: [Admin Contracts]
+      security:
+        - adminBearer: []
+      summary: Update terms on draft/pending contracts
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/contracts/appointment/{appointmentId}:
+    get:
+      tags: [Admin Contracts]
+      security:
+        - adminBearer: []
+      summary: Contract linked to an appointment
+      parameters:
+        - in: path
+          name: appointmentId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+
+  /admin/payments:
+    get:
+      tags: [Admin Payments]
+      security:
+        - adminBearer: []
+      summary: List payments (supports search)
+      responses:
+        "200":
+          description: OK
+    post:
+      tags: [Admin Payments]
+      security:
+        - adminBearer: []
+      summary: Record a manual cash/card/transfer payment
+      description: Inserts a row in `payments`. Accepts `appointment_id` and/or `patient_id`. `card` is stored as `credit_card`.
+      responses:
+        "201":
+          description: Created
+  /admin/payments/stats:
+    get:
+      tags: [Admin Payments]
+      security:
+        - adminBearer: []
+      summary: Payment stats
+      responses:
+        "200":
+          description: OK
+  /admin/payments/{id}:
+    get:
+      tags: [Admin Payments]
+      security:
+        - adminBearer: []
+      summary: Payment detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/payments/{id}/status:
+    patch:
+      tags: [Admin Payments]
+      security:
+        - adminBearer: []
+      summary: Update payment status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/payments/{id}/refund:
+    post:
+      tags: [Admin Payments]
+      security:
+        - adminBearer: []
+      summary: Request refund
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/payments/{id}/approve-refund:
+    post:
+      tags: [Admin Payments]
+      security:
+        - adminBearer: []
+      summary: Approve refund
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+
+  /admin/invoices:
+    get:
+      tags: [Admin Invoices]
+      security:
+        - adminBearer: []
+      summary: List invoice requests
+      responses:
+        "200":
+          description: OK
+  /admin/invoices/stats:
+    get:
+      tags: [Admin Invoices]
+      security:
+        - adminBearer: []
+      summary: Invoice stats
+      responses:
+        "200":
+          description: OK
+  /admin/invoices/{id}:
+    get:
+      tags: [Admin Invoices]
+      security:
+        - adminBearer: []
+      summary: Invoice detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+    patch:
+      tags: [Admin Invoices]
+      security:
+        - adminBearer: []
+      summary: Update invoice request
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+
+  /admin/settings:
+    get:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Grouped system settings (general_admin)
+      responses:
+        "200":
+          description: OK
+  /admin/settings/{key}:
+    put:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Update setting by key
+      parameters:
+        - in: path
+          name: key
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+  /admin/settings/default-contract-terms:
+    get:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Default contract terms
+      responses:
+        "200":
+          description: OK
+    put:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Update default contract terms
+      responses:
+        "200":
+          description: OK
+  /admin/settings/coupons:
+    get:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: List coupons
+      responses:
+        "200":
+          description: OK
+    post:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Create coupon
+      description: `created_by` is taken from the admin JWT. Body `created_by` is ignored.
+      responses:
+        "201":
+          description: Created
+  /admin/settings/coupons/{id}:
+    put:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Update coupon
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+    delete:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Delete coupon
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/settings/content-pages:
+    get:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: List content pages
+      responses:
+        "200":
+          description: OK
+    post:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Create content page
+      description: `created_by` is taken from the admin JWT (`req.admin`), not a missing `adminUser` field.
+      responses:
+        "200":
+          description: OK
+  /admin/settings/content-pages/{id}:
+    put:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Update content page
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+    delete:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Delete content page
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/settings/business-hours:
+    get:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Admin business hours
+      responses:
+        "200":
+          description: OK
+    post:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Update weekly hours
+      responses:
+        "200":
+          description: OK
+  /admin/settings/users:
+    get:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Alias of GET /admin/users
+      responses:
+        "200":
+          description: OK
+    post:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Alias of POST /admin/users
+      responses:
+        "200":
+          description: OK
+  /admin/settings/users/{id}:
+    get:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Alias of GET /admin/users/{id}
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+    put:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Alias of PUT /admin/users/{id}
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+    delete:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Alias of DELETE /admin/users/{id}
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/settings/users/{id}/toggle-active:
+    patch:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Alias of PATCH /admin/users/{id}/toggle-active
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/settings/users/{id}/reset-access:
+    post:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Reset staff access
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/settings/users/{id}/activity:
+    get:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Staff activity log
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+  /admin/blocked-dates:
+    get:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Admin blocked dates (admin, general_admin)
+      responses:
+        "200":
+          description: OK
+    post:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Create blocked date
+      responses:
+        "200":
+          description: OK
+  /admin/blocked-dates/{id}:
+    put:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Update blocked date
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+    delete:
+      tags: [Admin Settings]
+      security:
+        - adminBearer: []
+      summary: Delete blocked date
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK

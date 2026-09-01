@@ -45,11 +45,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import axios from "@/lib/axios";
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { logger } from "@/lib/logger";
+import { useAppDispatch } from "@/store/hooks";
+import { Formik, Form, Field } from "formik";
+import {
+  fetchAdminPatients,
+  fetchAdminPatientById,
+  updateAdminPatient,
+  togglePatientActive,
+  addPatientMedicalRecord,
+  createAdminPatient,
+  newPatientSchema,
+} from "@/store/slices/patientsSlice";
 
 interface Patient {
   id: number;
@@ -106,12 +116,14 @@ interface PatientDetails extends Patient {
 }
 
 export default function PatientManagement() {
+  const dispatch = useAppDispatch();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<PatientDetails | null>(
     null,
   );
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isMedicalRecordOpen, setIsMedicalRecordOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -144,23 +156,18 @@ export default function PatientManagement() {
   const fetchPatients = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get("/admin/patients", {
-        headers: { Authorization: `Bearer ${token}` },
-        params: {
+      const result = await dispatch(
+        fetchAdminPatients({
           search: searchQuery,
           page,
           limit: 20,
-        },
-      });
-
-      if (response.data.success) {
-        setPatients(response.data.data);
-        setTotalPages(response.data.pagination?.totalPages || 1);
-      }
+        }),
+      ).unwrap();
+      setPatients(result.patients || []);
+      setTotalPages(result.totalPages || 1);
     } catch (error) {
       logger.error("Error fetching patients:", error);
-      setPatients([]); // Set empty array on error to prevent undefined
+      setPatients([]);
     } finally {
       setLoading(false);
     }
@@ -168,29 +175,15 @@ export default function PatientManagement() {
 
   const fetchPatientDetails = async (patientId: number) => {
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get(`/admin/patients/${patientId}`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const result = await dispatch(fetchAdminPatientById(patientId)).unwrap();
+      setSelectedPatient(result.patient);
+      setEditForm({
+        ...result.raw,
+        date_of_birth: result.raw.date_of_birth
+          ? result.raw.date_of_birth.split("T")[0]
+          : null,
       });
-
-      if (response.data.success) {
-        const patientData = {
-          ...response.data.data.patient,
-          appointments: response.data.data.appointments || [],
-          payments: response.data.data.payments || [],
-          medical_records: response.data.data.medicalRecords || [],
-          contracts: response.data.data.contracts || [],
-        };
-        setSelectedPatient(patientData);
-        const patientForForm = {
-          ...response.data.data.patient,
-          date_of_birth: response.data.data.patient.date_of_birth
-            ? response.data.data.patient.date_of_birth.split("T")[0]
-            : null,
-        };
-        setEditForm(patientForForm);
-        setIsDetailsOpen(true);
-      }
+      setIsDetailsOpen(true);
     } catch (error) {
       logger.error("Error fetching patient details:", error);
     }
@@ -200,29 +193,20 @@ export default function PatientManagement() {
     if (!selectedPatient) return;
 
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.patch(
-        `/admin/patients/${selectedPatient.id}`,
-        editForm,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-
-      if (response.data.success) {
-        toast({
-          title: "Éxito",
-          description: "Paciente actualizado exitosamente",
-        });
-        fetchPatients();
-        fetchPatientDetails(selectedPatient.id);
-        setIsEditOpen(false);
-      }
+      await dispatch(
+        updateAdminPatient({ id: selectedPatient.id, data: editForm }),
+      ).unwrap();
+      toast({
+        title: "Éxito",
+        description: "Paciente actualizado exitosamente",
+      });
+      fetchPatients();
+      fetchPatientDetails(selectedPatient.id);
+      setIsEditOpen(false);
     } catch (error: any) {
       toast({
         title: "Error",
-        description:
-          error.response?.data?.message || "Error al actualizar paciente",
+        description: error || "Error al actualizar paciente",
         variant: "destructive",
       });
     }
@@ -240,25 +224,15 @@ export default function PatientManagement() {
       return;
 
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.patch(
-        `/admin/patients/${patientId}/toggle-active`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-
-      if (response.data.success) {
-        fetchPatients();
-        if (selectedPatient?.id === patientId) {
-          fetchPatientDetails(patientId);
-        }
+      await dispatch(togglePatientActive(patientId)).unwrap();
+      fetchPatients();
+      if (selectedPatient?.id === patientId) {
+        fetchPatientDetails(patientId);
       }
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.response?.data?.message || "Error al cambiar estado",
+        description: error || "Error al cambiar estado",
         variant: "destructive",
       });
     }
@@ -268,34 +242,27 @@ export default function PatientManagement() {
     if (!selectedPatient) return;
 
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const adminUser = JSON.parse(localStorage.getItem("adminUser") || "{}");
-      const response = await axios.post(
-        `/admin/patients/${selectedPatient.id}/medical-records`,
-        { ...medicalRecord, doctor_id: adminUser?.id || null },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-
-      if (response.data.success) {
-        toast({
-          title: "Éxito",
-          description: "Registro médico agregado exitosamente",
-        });
-        fetchPatientDetails(selectedPatient.id);
-        setIsMedicalRecordOpen(false);
-        setMedicalRecord({
-          record_type: "consultation",
-          notes: "",
-          attachments: "",
-        });
-      }
+      await dispatch(
+        addPatientMedicalRecord({
+          patientId: selectedPatient.id,
+          record: medicalRecord,
+        }),
+      ).unwrap();
+      toast({
+        title: "Éxito",
+        description: "Registro médico agregado exitosamente",
+      });
+      fetchPatientDetails(selectedPatient.id);
+      setIsMedicalRecordOpen(false);
+      setMedicalRecord({
+        record_type: "consultation",
+        notes: "",
+        attachments: "",
+      });
     } catch (error: any) {
       toast({
         title: "Error",
-        description:
-          error.response?.data?.message || "Error al agregar registro",
+        description: error || "Error al agregar registro",
         variant: "destructive",
       });
     }
@@ -313,15 +280,22 @@ export default function PatientManagement() {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">
             Gestión de Pacientes
           </h1>
-          <p className="text-gray-500 mt-1">
+          <p className="text-muted-foreground mt-1">
             Administra la información de tus pacientes
           </p>
         </div>
+        <Button
+          onClick={() => setIsCreateOpen(true)}
+          className="bg-primary hover:bg-primary/90"
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          Nuevo paciente
+        </Button>
       </div>
 
       {/* Search */}
@@ -1009,6 +983,107 @@ export default function PatientManagement() {
               Agregar Registro
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Nuevo paciente</DialogTitle>
+          </DialogHeader>
+          <Formik
+            initialValues={{
+              first_name: "",
+              last_name: "",
+              email: "",
+              phone: "",
+            }}
+            validationSchema={newPatientSchema}
+            onSubmit={async (values, { setSubmitting, resetForm }) => {
+              try {
+                await dispatch(createAdminPatient(values)).unwrap();
+                toast({
+                  title: "Paciente creado",
+                  description: "El paciente se registró correctamente",
+                });
+                resetForm();
+                setIsCreateOpen(false);
+                fetchPatients();
+              } catch (error: any) {
+                toast({
+                  title: "Error",
+                  description: error || "Error al crear paciente",
+                  variant: "destructive",
+                });
+              } finally {
+                setSubmitting(false);
+              }
+            }}
+          >
+            {({ errors, touched, isSubmitting }) => (
+              <Form className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="create-first">Nombre *</Label>
+                    <Field as={Input} id="create-first" name="first_name" />
+                    {touched.first_name && errors.first_name && (
+                      <p className="text-xs text-destructive mt-1">
+                        {errors.first_name}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <Label htmlFor="create-last">Apellido *</Label>
+                    <Field as={Input} id="create-last" name="last_name" />
+                    {touched.last_name && errors.last_name && (
+                      <p className="text-xs text-destructive mt-1">
+                        {errors.last_name}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="create-email">Correo *</Label>
+                  <Field
+                    as={Input}
+                    id="create-email"
+                    name="email"
+                    type="email"
+                  />
+                  {touched.email && errors.email && (
+                    <p className="text-xs text-destructive mt-1">
+                      {errors.email}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <Label htmlFor="create-phone">Teléfono *</Label>
+                  <Field as={Input} id="create-phone" name="phone" />
+                  {touched.phone && errors.phone && (
+                    <p className="text-xs text-destructive mt-1">
+                      {errors.phone}
+                    </p>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsCreateOpen(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="bg-primary hover:bg-primary/90"
+                  >
+                    {isSubmitting ? "Guardando..." : "Crear paciente"}
+                  </Button>
+                </DialogFooter>
+              </Form>
+            )}
+          </Formik>
         </DialogContent>
       </Dialog>
     </div>

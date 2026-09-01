@@ -140,10 +140,7 @@ Run migrations:
 npm run db:migrate
 ```
 
-This will create all tables and insert initial data including:
-
-- Default admin user: `admin@beautyhospital.com` / `admin123`
-- Sample services
+This will create all tables and insert initial data including sample services. Staff sign in with a one-time code sent to their email (no default password account).
 
 ### 4. Development
 

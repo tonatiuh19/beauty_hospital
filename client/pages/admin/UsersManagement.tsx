@@ -57,6 +57,7 @@ import {
   createUser,
   updateUser,
   deleteUser,
+  toggleUserActive,
   selectUser as selectUserAction,
   type AdminUser,
   type UserFormData,
@@ -436,11 +437,17 @@ export default function UsersManagement() {
                         </TableCell>
                         <TableCell>{user.specialization || "-"}</TableCell>
                         <TableCell>
-                          <Badge
-                            variant={user.is_active ? "default" : "secondary"}
+                          <button
+                            type="button"
+                            onClick={() => dispatch(toggleUserActive(user.id))}
+                            className="text-left"
                           >
-                            {user.is_active ? "Activo" : "Inactivo"}
-                          </Badge>
+                            <Badge
+                              variant={user.is_active ? "default" : "secondary"}
+                            >
+                              {user.is_active ? "Activo" : "Inactivo"}
+                            </Badge>
+                          </button>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">

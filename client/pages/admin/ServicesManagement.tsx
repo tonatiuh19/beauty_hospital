@@ -11,6 +11,7 @@ import {
   Tag,
   Save,
   X,
+  ImagePlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +35,13 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import axios from "@/lib/axios";
+import { useAppDispatch } from "@/store/hooks";
+import {
+  fetchAdminServices,
+  saveAdminService,
+  deleteAdminService,
+  uploadAdminFile,
+} from "@/store/slices/servicesSlice";
 import { logger } from "@/lib/logger";
 
 interface Service {
@@ -45,6 +52,7 @@ interface Service {
   price: number;
   duration_minutes: number;
   is_active: boolean;
+  image_url?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -71,9 +79,11 @@ const serviceValidationSchema = Yup.object({
     .required("La duración es requerida")
     .min(1, "La duración debe ser al menos 1 minuto"),
   is_active: Yup.boolean(),
+  image_url: Yup.string(),
 });
 
 export default function ServicesManagement() {
+  const dispatch = useAppDispatch();
   const [services, setServices] = useState<Service[]>([]);
   const [filteredServices, setFilteredServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,6 +92,7 @@ export default function ServicesManagement() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [deletingService, setDeletingService] = useState<Service | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const { toast } = useToast();
 
   // Formik instance
@@ -93,28 +104,23 @@ export default function ServicesManagement() {
       price: 0,
       duration_minutes: 0,
       is_active: true,
+      image_url: "",
     },
     validationSchema: serviceValidationSchema,
     onSubmit: async (values) => {
       try {
-        const token = localStorage.getItem("adminAccessToken");
-        if (editingService) {
-          await axios.put(`/admin/services/${editingService.id}`, values, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          toast({
-            title: "Éxito",
-            description: "Servicio actualizado correctamente",
-          });
-        } else {
-          await axios.post("/admin/services", values, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          toast({
-            title: "Éxito",
-            description: "Servicio creado correctamente",
-          });
-        }
+        await dispatch(
+          saveAdminService({
+            id: editingService?.id,
+            values,
+          }),
+        ).unwrap();
+        toast({
+          title: "Éxito",
+          description: editingService
+            ? "Servicio actualizado correctamente"
+            : "Servicio creado correctamente",
+        });
         handleCloseDialog();
         fetchServices();
       } catch (error) {
@@ -147,13 +153,8 @@ export default function ServicesManagement() {
   const fetchServices = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get("/admin/services", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      setServices(response.data.data || []);
+      const list = await dispatch(fetchAdminServices()).unwrap();
+      setServices(list);
     } catch (error) {
       logger.error("Error fetching services:", error);
       toast({
@@ -176,6 +177,7 @@ export default function ServicesManagement() {
         price: service.price,
         duration_minutes: service.duration_minutes,
         is_active: service.is_active,
+        image_url: service.image_url || "",
       });
     } else {
       setEditingService(null);
@@ -194,12 +196,7 @@ export default function ServicesManagement() {
     if (!deletingService) return;
 
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      await axios.delete(`/admin/services/${deletingService.id}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      await dispatch(deleteAdminService(deletingService.id)).unwrap();
       toast({
         title: "Éxito",
         description: "Servicio eliminado correctamente",
@@ -544,6 +541,62 @@ export default function ServicesManagement() {
                       {formik.errors.duration_minutes}
                     </p>
                   )}
+              </div>
+
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="image_url">Imagen</Label>
+                {formik.values.image_url ? (
+                  <img
+                    src={formik.values.image_url}
+                    alt="Vista previa del servicio"
+                    className="h-28 w-full rounded-md border border-border object-cover"
+                  />
+                ) : null}
+                <Input
+                  id="image_file"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  disabled={uploadingImage}
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    try {
+                      setUploadingImage(true);
+                      const uploaded = await dispatch(
+                        uploadAdminFile({ file, folder: "services" }),
+                      ).unwrap();
+                      formik.setFieldValue("image_url", uploaded.url);
+                      toast({
+                        title: "Imagen subida",
+                        description: "La imagen se guardará al actualizar el servicio",
+                      });
+                    } catch (error) {
+                      logger.error("Error uploading service image:", error);
+                      toast({
+                        title: "Error",
+                        description:
+                          typeof error === "string"
+                            ? error
+                            : "No se pudo subir la imagen. Configura Vercel Blob o pega una URL.",
+                        variant: "destructive",
+                      });
+                    } finally {
+                      setUploadingImage(false);
+                      event.target.value = "";
+                    }
+                  }}
+                />
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <ImagePlus className="h-3.5 w-3.5" />
+                  Sube a Vercel Blob o pega una URL /assets/
+                </div>
+                <Input
+                  id="image_url"
+                  name="image_url"
+                  value={formik.values.image_url}
+                  onChange={formik.handleChange}
+                  placeholder="/assets/services/02.jpg"
+                />
               </div>
 
               <div className="space-y-2">

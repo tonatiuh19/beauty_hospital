@@ -43,13 +43,14 @@ import {
 import { EditAppointmentModal } from "@/components/EditAppointmentModal";
 import { useAppSelector, useAppDispatch } from "@/store/hooks";
 import { useToast } from "@/hooks/use-toast";
-import axios from "@/lib/axios";
 import {
   fetchPatientAppointments,
   fetchPatientProfile,
   updatePatientProfile,
   downloadContract,
   cancelAppointment,
+  reschedulePatientAppointment,
+  requestInvoice,
   resetAppointments,
 } from "@/store/slices/patientAppointmentsSlice";
 
@@ -186,24 +187,25 @@ export default function MyAppointments() {
     if (!selectedAppointment || !user?.id) return;
     try {
       setIsProcessing(true);
-      const response = await axios.patch(
-        `/patient/appointments/${selectedAppointment.id}/reschedule`,
-        { patient_id: user.id, new_date: newDate, new_time: newTime },
-      );
-      if (response.data.success) {
-        toast({
-          title: "Cita reagendada",
-          description: "Tu cita ha sido reagendada exitosamente",
-        });
-        setShowEditModal(false);
-        if (user?.id) dispatch(fetchPatientAppointments(user.id));
-      }
+      await dispatch(
+        reschedulePatientAppointment({
+          appointmentId: selectedAppointment.id,
+          patientId: user.id,
+          newDate,
+          newTime,
+        }),
+      ).unwrap();
+      toast({
+        title: "Cita reagendada",
+        description: "Tu cita ha sido reagendada exitosamente",
+      });
+      setShowEditModal(false);
+      if (user?.id) dispatch(fetchPatientAppointments(user.id));
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Error",
-        description:
-          error.response?.data?.message || "No se pudo reagendar la cita",
+        description: error || "No se pudo reagendar la cita",
       });
     } finally {
       setIsProcessing(false);
@@ -214,23 +216,23 @@ export default function MyAppointments() {
     if (!selectedAppointment || !user?.id) return;
     try {
       setIsProcessing(true);
-      const response = await axios.post(
-        `/patient/appointments/${selectedAppointment.id}/request-invoice`,
-        { patient_id: user.id, invoice_info: invoiceData },
-      );
-      if (response.data.success) {
-        toast({
-          title: "Factura solicitada",
-          description: "Recibirás tu factura por correo electrónico en breve",
-        });
-        setShowInvoiceModal(false);
-      }
+      await dispatch(
+        requestInvoice({
+          appointmentId: selectedAppointment.id,
+          patientId: user.id,
+          invoiceInfo: { ...invoiceData },
+        }),
+      ).unwrap();
+      toast({
+        title: "Factura solicitada",
+        description: "Recibirás tu factura por correo electrónico en breve",
+      });
+      setShowInvoiceModal(false);
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Error",
-        description:
-          error.response?.data?.message || "No se pudo solicitar la factura",
+        description: error || "No se pudo solicitar la factura",
       });
     } finally {
       setIsProcessing(false);
@@ -266,7 +268,14 @@ export default function MyAppointments() {
     appointmentId: number,
   ) => {
     try {
-      await dispatch(downloadContract({ contractId, appointmentId })).unwrap();
+      if (!user?.id) return;
+      await dispatch(
+        downloadContract({
+          contractId,
+          appointmentId,
+          patientId: user.id,
+        }),
+      ).unwrap();
       toast({
         title: "Contrato descargado",
         description: "El contrato se ha descargado exitosamente",

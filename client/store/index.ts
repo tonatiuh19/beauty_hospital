@@ -12,6 +12,14 @@ import medicalRecordsReducer from "./slices/medicalRecordsSlice";
 import contractsReducer from "./slices/contractsSlice";
 import patientAppointmentsReducer from "./slices/patientAppointmentsSlice";
 import configReducer from "./slices/configSlice";
+import adminAuthReducer from "./slices/adminAuthSlice";
+import dashboardReducer from "./slices/dashboardSlice";
+import patientsReducer from "./slices/patientsSlice";
+import paymentsReducer from "./slices/paymentsSlice";
+import invoicesReducer from "./slices/invoicesSlice";
+import settingsReducer from "./slices/settingsSlice";
+import calendarReducer from "./slices/calendarSlice";
+import checkInReducer from "./slices/checkInSlice";
 import { loadingMiddleware } from "./middleware/loadingMiddleware";
 
 // Configure the store
@@ -30,6 +38,14 @@ export const store = configureStore({
     contracts: contractsReducer,
     patientAppointments: patientAppointmentsReducer,
     config: configReducer,
+    adminAuth: adminAuthReducer,
+    dashboard: dashboardReducer,
+    patients: patientsReducer,
+    payments: paymentsReducer,
+    invoices: invoicesReducer,
+    settings: settingsReducer,
+    calendar: calendarReducer,
+    checkIn: checkInReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

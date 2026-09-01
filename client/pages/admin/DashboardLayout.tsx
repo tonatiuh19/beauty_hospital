@@ -34,6 +34,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useAppDispatch } from "@/store/hooks";
+import { logoutAdmin } from "@/store/slices/adminAuthSlice";
 
 interface AdminUser {
   id: number;
@@ -126,6 +128,7 @@ const navigation: NavItem[] = [
 export default function AdminDashboardLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const dispatch = useAppDispatch();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
@@ -133,7 +136,8 @@ export default function AdminDashboardLayout() {
   useEffect(() => {
     // Load admin user from localStorage
     const storedUser = localStorage.getItem("adminUser");
-    if (storedUser) {
+    const adminToken = localStorage.getItem("adminAccessToken");
+    if (storedUser && adminToken) {
       const user = JSON.parse(storedUser);
       setAdminUser(user);
 
@@ -169,9 +173,7 @@ export default function AdminDashboardLayout() {
   }, [navigate, location.pathname]);
 
   const handleLogout = () => {
-    localStorage.removeItem("adminAccessToken");
-    localStorage.removeItem("adminRefreshToken");
-    localStorage.removeItem("adminUser");
+    dispatch(logoutAdmin());
     navigate("/admin/login");
   };
 

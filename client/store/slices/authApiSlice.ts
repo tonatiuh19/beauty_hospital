@@ -1,9 +1,6 @@
 import { createAsyncThunk } from "@reduxjs/toolkit";
-import axios from "axios";
+import axios, { formatAxiosError } from "@/lib/axios";
 import { Patient, setUser, clearUser, setLoading } from "./authSlice";
-
-// API base URL
-const API_URL = "/api/auth";
 
 // Response types
 interface CheckPatientResponse {
@@ -37,13 +34,13 @@ export const checkUserExists = createAsyncThunk<
 >("auth/checkUser", async ({ email }, { rejectWithValue }) => {
   try {
     const response = await axios.post<CheckPatientResponse>(
-      `${API_URL}/check-user`,
+      "/auth/check-user",
       { email },
     );
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     return rejectWithValue(
-      error.response?.data?.message || "Failed to check patient",
+      formatAxiosError(error, "Failed to check patient"),
     );
   }
 });
@@ -55,16 +52,16 @@ export const sendVerificationCode = createAsyncThunk<
 >("auth/sendCode", async ({ patient_id, email }, { rejectWithValue }) => {
   try {
     const response = await axios.post<SendCodeResponse>(
-      `${API_URL}/send-code`,
+      "/auth/send-code",
       {
         patient_id,
         email,
       },
     );
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     return rejectWithValue(
-      error.response?.data?.message || "Failed to send verification code",
+      formatAxiosError(error, "Failed to send verification code"),
     );
   }
 });
@@ -79,7 +76,7 @@ export const verifyLoginCode = createAsyncThunk<
     try {
       dispatch(setLoading(true));
       const response = await axios.post<VerifyCodeResponse>(
-        `${API_URL}/verify-code`,
+        "/auth/verify-code",
         {
           patient_id,
           code,
@@ -87,15 +84,21 @@ export const verifyLoginCode = createAsyncThunk<
       );
 
       if (response.data.success && response.data.patient) {
+        if (response.data.token) {
+          localStorage.setItem("token", response.data.token);
+        }
+        if (response.data.refreshToken) {
+          localStorage.setItem("refreshToken", response.data.refreshToken);
+        }
         dispatch(setUser(response.data.patient));
         return response.data.patient;
       }
 
       throw new Error("Invalid response from server");
-    } catch (error: any) {
+    } catch (error) {
       dispatch(setLoading(false));
       return rejectWithValue(
-        error.response?.data?.message || "Failed to verify code",
+        formatAxiosError(error, "Failed to verify code"),
       );
     }
   },
@@ -115,21 +118,20 @@ export const createNewUser = createAsyncThunk<
   try {
     dispatch(setLoading(true));
     const response = await axios.post<CreatePatientResponse>(
-      `${API_URL}/create-user`,
+      "/auth/create-user",
       patientData,
     );
 
     if (response.data.success && response.data.data) {
-      // Don't set patient yet, wait for verification code
       dispatch(setLoading(false));
       return response.data.data;
     }
 
     throw new Error(response.data.message || "Invalid response from server");
-  } catch (error: any) {
+  } catch (error) {
     dispatch(setLoading(false));
     return rejectWithValue(
-      error.response?.data?.message || "Failed to create patient",
+      formatAxiosError(error, "Failed to create patient"),
     );
   }
 });

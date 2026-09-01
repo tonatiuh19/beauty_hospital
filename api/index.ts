@@ -5,22 +5,385 @@ import cors from "cors";
 import mysql from "mysql2/promise";
 import type { RequestHandler } from "express";
 import type { DemoResponse } from "../shared/api";
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 import Stripe from "stripe";
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 import jwt from "jsonwebtoken";
+import { put } from "@vercel/blob";
 
-// Database connection
+// Database connection (TiDB Cloud requires TLS)
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  port: parseInt(process.env.DB_PORT || "3306"),
+  port: parseInt(process.env.DB_PORT || "4000"),
   waitForConnections: true,
-  connectionLimit: 10,
+  connectionLimit: 5,
   queueLimit: 0,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 10_000,
+  connectTimeout: 20_000,
+  timezone: "+00:00",
+  ssl:
+    process.env.DB_SSL === "false"
+      ? undefined
+      : { minVersion: "TLSv1.2" },
 });
+
+const FROM_EMAIL =
+  process.env.SMTP_FROM ||
+  "All Beauty Luxury & Wellness <no-reply@disruptinglabs.com>";
+
+let emailClient: Resend | null = null;
+if (process.env.RESEND_API_KEY) {
+  emailClient = new Resend(process.env.RESEND_API_KEY);
+} else {
+  console.warn("⚠️  RESEND_API_KEY not set — emails will be logged, not sent");
+}
+
+type SendEmailAttachment = {
+  filename: string;
+  content: Buffer | string;
+  contentType?: string;
+  contentId?: string;
+};
+
+type SendEmailOptions = {
+  to: string;
+  subject: string;
+  html: string;
+  text?: string;
+  attachments?: SendEmailAttachment[];
+};
+
+const EMAIL_LOGO_CID = "brand-logo";
+let brandLogoBuffer: Buffer | null | undefined;
+
+function loadBrandLogo(): Buffer | null {
+  if (brandLogoBuffer !== undefined) return brandLogoBuffer;
+  const candidates = [
+    path.join(process.cwd(), "public/assets/logo-header.png"),
+    path.join(process.cwd(), "assets/logo-header.png"),
+    path.join(process.cwd(), "dist/spa/assets/logo-header.png"),
+  ];
+  for (const filePath of candidates) {
+    try {
+      if (fs.existsSync(filePath)) {
+        brandLogoBuffer = fs.readFileSync(filePath);
+        return brandLogoBuffer;
+      }
+    } catch {
+      // try the next candidate
+    }
+  }
+  brandLogoBuffer = null;
+  return null;
+}
+
+function emailLogoAttachment(): SendEmailAttachment | null {
+  const content = loadBrandLogo();
+  if (!content) return null;
+  return {
+    filename: "logo-header.png",
+    content,
+    contentType: "image/png",
+    contentId: EMAIL_LOGO_CID,
+  };
+}
+
+function emailLogoImg(): string {
+  const src = loadBrandLogo() ? `cid:${EMAIL_LOGO_CID}` : brandLogoUrl();
+  return `<img src="${src}" alt="All Beauty Luxury &amp; Wellness" width="220" style="height:52px;width:auto;max-width:220px;display:inline-block;border:0;outline:none;text-decoration:none;" />`;
+}
+
+async function sendEmail(opts: SendEmailOptions) {
+  const attachments = [...(opts.attachments || [])];
+  if (opts.html.includes(`cid:${EMAIL_LOGO_CID}`)) {
+    const logo = emailLogoAttachment();
+    if (logo && !attachments.some((a) => a.contentId === EMAIL_LOGO_CID)) {
+      attachments.unshift(logo);
+    }
+  }
+
+  if (!emailClient || process.env.VITEST === "true") {
+    console.log("[email:dry-run]", opts.to, opts.subject);
+    return { id: "dry-run" };
+  }
+  const { data, error } = await emailClient.emails.send({
+    from: FROM_EMAIL,
+    to: opts.to,
+    subject: opts.subject,
+    html: opts.html,
+    text: opts.text,
+    attachments: attachments.length
+      ? attachments.map((a) => ({
+          filename: a.filename,
+          content: a.content,
+          contentType: a.contentType,
+          contentId: a.contentId,
+        }))
+      : undefined,
+  });
+  if (error) throw new Error(error.message);
+  console.log("[email:sent]", opts.to, opts.subject, data?.id || "(no-id)");
+  return { id: data?.id };
+}
+
+type AdminJwtPayload = {
+  id: number;
+  email: string;
+  role: string;
+  type: "admin";
+};
+
+function getAdminFromRequest(req: express.Request): AdminJwtPayload | null {
+  return ((req as express.Request & { admin?: AdminJwtPayload }).admin ??
+    null) as AdminJwtPayload | null;
+}
+
+function missingAdminActorResponse(res: express.Response) {
+  return res.status(400).json({
+    success: false,
+    message: "No se pudo identificar al administrador",
+  });
+}
+
+async function resolveStaffCreatedBy(
+  preferredId?: number | null,
+): Promise<number | null> {
+  if (preferredId) {
+    const [rows] = await pool.query<any[]>(
+      "SELECT id FROM users WHERE id = ? AND is_active = 1 LIMIT 1",
+      [preferredId],
+    );
+    if (rows.length) return Number(rows[0].id);
+  }
+  const [fallback] = await pool.query<any[]>(
+    `SELECT id FROM users
+     WHERE role IN ('general_admin', 'admin') AND is_active = 1
+     ORDER BY id ASC LIMIT 1`,
+  );
+  return fallback[0]?.id ? Number(fallback[0].id) : null;
+}
+
+function tryGetAdminFromHeader(req: express.Request): AdminJwtPayload | null {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) return null;
+  try {
+    const decoded = jwt.verify(
+      authHeader.substring(7),
+      jwtSecret,
+    ) as AdminJwtPayload;
+    if (decoded.type !== "admin" || !decoded.id) return null;
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+const STAFF_LOGIN_ROLES_SQL =
+  "'admin', 'general_admin', 'receptionist', 'doctor', 'pos'";
+const STAFF_CAN_CANCEL_ROLES = new Set([
+  "admin",
+  "general_admin",
+  "receptionist",
+  "pos",
+]);
+
+const CLINIC_TIMEZONE =
+  process.env.CLINIC_TIMEZONE || "America/Mexico_City";
+
+function clinicDateYmd(date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: CLINIC_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function publicAppUrl(): string {
+  return (
+    process.env.APP_URL ||
+    process.env.CLIENT_URL ||
+    process.env.FRONTEND_URL ||
+    "https://allbeautyweb.com"
+  ).replace(/\/$/, "");
+}
+
+function brandLogoUrl(): string {
+  return process.env.BRAND_LOGO_URL || `${publicAppUrl()}/api/brand/logo`;
+}
+
+const ALLOWED_UPLOAD_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "application/pdf",
+]);
+
+const UPLOAD_FOLDERS = new Set([
+  "services",
+  "contracts",
+  "invoices",
+  "brand",
+  "media",
+  "uploads",
+]);
+
+function sanitizeUploadName(name: string): string {
+  return String(name || "file")
+    .replace(/[^a-zA-Z0-9._-]/g, "_")
+    .slice(0, 80);
+}
+
+function isAllowedAssetUrl(url: string): boolean {
+  if (!url) return true;
+  return (
+    /^https?:\/\//i.test(url) ||
+    url.startsWith("/assets/") ||
+    url.startsWith("/uploads/")
+  );
+}
+
+function clinicMonthStartYmd(date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: CLINIC_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = parts.find((p) => p.type === "year")?.value;
+  const month = parts.find((p) => p.type === "month")?.value;
+  return `${year}-${month}-01`;
+}
+
+const DASHBOARD_ROLES = ["admin", "general_admin"];
+const CALENDAR_ROLES = ["admin", "general_admin", "receptionist", "pos"];
+const PATIENT_ROLES = [
+  "admin",
+  "general_admin",
+  "receptionist",
+  "pos",
+  "doctor",
+];
+const FINANCE_ROLES = ["admin", "general_admin", "receptionist", "pos"];
+const MEDICAL_ROLES = ["general_admin", "doctor"];
+const OPS_ROLES = ["admin", "general_admin"];
+const SETTINGS_ROLES = ["general_admin"];
+
+const ADMIN_ROLE_RULES: Array<{
+  test: (path: string, method: string) => boolean;
+  roles: string[];
+}> = [
+  { test: (p) => p.startsWith("/dashboard/calendar"), roles: CALENDAR_ROLES },
+  { test: (p) => p.startsWith("/dashboard"), roles: DASHBOARD_ROLES },
+  { test: (p) => p.startsWith("/appointments"), roles: CALENDAR_ROLES },
+  { test: (p) => p.startsWith("/patients"), roles: PATIENT_ROLES },
+  { test: (p) => p.startsWith("/contracts"), roles: FINANCE_ROLES },
+  { test: (p) => p.startsWith("/payments"), roles: FINANCE_ROLES },
+  { test: (p) => p.startsWith("/invoices"), roles: FINANCE_ROLES },
+  { test: (p) => p.startsWith("/medical-records"), roles: MEDICAL_ROLES },
+  { test: (p) => p.startsWith("/uploads"), roles: FINANCE_ROLES },
+  { test: (p) => p.startsWith("/services"), roles: OPS_ROLES },
+  { test: (p) => p.startsWith("/blocked-dates"), roles: OPS_ROLES },
+  { test: (p) => p.startsWith("/users"), roles: SETTINGS_ROLES },
+  {
+    test: (p, method) =>
+      p.startsWith("/settings/default-contract-terms") && method === "GET",
+    roles: FINANCE_ROLES,
+  },
+  { test: (p) => p.startsWith("/settings"), roles: SETTINGS_ROLES },
+];
+
+function requireRoles(roles: string[]): RequestHandler {
+  return (req, res, next) => {
+    const admin = getAdminFromRequest(req);
+    if (!admin) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Authentication required" });
+    }
+    if (!roles.includes(admin.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "No tienes permiso para esta acción",
+      });
+    }
+    next();
+  };
+}
+
+const authorizeAdmin: RequestHandler = (req, res, next) => {
+  if (req.path.startsWith("/auth/")) return next();
+  const rule = ADMIN_ROLE_RULES.find((r) =>
+    r.test(req.path, req.method.toUpperCase()),
+  );
+  if (!rule) return next();
+  return requireRoles(rule.roles)(req, res, next);
+};
+
+function signAdminTokens(user: { id: number; email: string; role: string }) {
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    throw new Error("JWT_SECRET is not configured");
+  }
+  const accessExpires = (process.env.JWT_EXPIRES_IN ||
+    "24h") as jwt.SignOptions["expiresIn"];
+  const refreshExpires = (process.env.JWT_REFRESH_EXPIRES_IN ||
+    "7d") as jwt.SignOptions["expiresIn"];
+  const refreshSecret = process.env.JWT_REFRESH_SECRET || jwtSecret;
+
+  const accessToken = jwt.sign(
+    { id: user.id, email: user.email, role: user.role, type: "admin" },
+    jwtSecret,
+    { expiresIn: accessExpires },
+  );
+  const refreshToken = jwt.sign(
+    { id: user.id, type: "admin_refresh" },
+    refreshSecret,
+    { expiresIn: refreshExpires },
+  );
+  return { accessToken, refreshToken };
+}
+
+const authenticateAdmin: RequestHandler = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res
+      .status(401)
+      .json({ success: false, message: "Authentication required" });
+  }
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    return res
+      .status(500)
+      .json({ success: false, message: "Server configuration error" });
+  }
+  try {
+    const decoded = jwt.verify(
+      authHeader.substring(7),
+      jwtSecret,
+    ) as AdminJwtPayload;
+    if (decoded.type !== "admin" || !decoded.id) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Admin access required" });
+    }
+    (req as express.Request & { admin?: AdminJwtPayload }).admin = decoded;
+    next();
+  } catch {
+    return res
+      .status(401)
+      .json({ success: false, message: "Invalid or expired token" });
+  }
+};
 
 // Initialize Stripe
 if (!process.env.STRIPE_SECRET_KEY) {
@@ -132,6 +495,235 @@ async function getOrCreateStripeCustomer(
     `✨ Created Stripe customer ${customer.id} for patient ${patientId}`,
   );
   return customer.id;
+}
+
+type FulfillPaymentResult =
+  | { ok: true; appointmentId: number; alreadyFulfilled: boolean }
+  | { ok: false; status: number; error: string };
+
+async function issueStripeRefund(opts: {
+  paymentIntentId: string;
+  amountCents?: number;
+  reason?: string;
+}): Promise<void> {
+  await stripe.refunds.create(
+    {
+      payment_intent: opts.paymentIntentId,
+      ...(opts.amountCents ? { amount: opts.amountCents } : {}),
+      reason: "requested_by_customer",
+      metadata: { reason: (opts.reason || "").slice(0, 500) },
+    },
+    {
+      idempotencyKey: `refund-${opts.paymentIntentId}-${opts.amountCents ?? "full"}`,
+    },
+  );
+}
+
+async function markPaymentRefundedInDb(opts: {
+  paymentId: number;
+  refundAmount: number;
+  reason?: string;
+  refundedBy?: number | null;
+  approvedBy?: number | null;
+}): Promise<void> {
+  await pool.query(
+    `UPDATE payments
+     SET payment_status = IF(? < amount, 'partially_refunded', 'refunded'),
+         refund_amount = ?,
+         refund_reason = COALESCE(?, refund_reason),
+         refunded_at = NOW(),
+         refund_status = 'approved',
+         refunded_by = COALESCE(?, refunded_by),
+         refund_approved_by = COALESCE(?, refund_approved_by),
+         refund_approved_at = NOW(),
+         updated_at = NOW()
+     WHERE id = ?`,
+    [
+      opts.refundAmount,
+      opts.refundAmount,
+      opts.reason || null,
+      opts.refundedBy ?? null,
+      opts.approvedBy ?? null,
+      opts.paymentId,
+    ],
+  );
+}
+
+async function fulfillSucceededPaymentIntent(
+  paymentIntent: Stripe.PaymentIntent,
+): Promise<FulfillPaymentResult> {
+  if (paymentIntent.status !== "succeeded") {
+    return {
+      ok: false,
+      status: 400,
+      error: "Payment has not been completed",
+    };
+  }
+
+  const [existing] = await pool.query<any[]>(
+    `SELECT appointment_id FROM payments
+     WHERE stripe_payment_intent_id = ? AND appointment_id IS NOT NULL
+     LIMIT 1`,
+    [paymentIntent.id],
+  );
+  if (existing.length > 0) {
+    return {
+      ok: true,
+      appointmentId: Number(existing[0].appointment_id),
+      alreadyFulfilled: true,
+    };
+  }
+
+  const {
+    patient_id,
+    service_id,
+    scheduled_at,
+    duration_minutes,
+    notes,
+    booked_for_self,
+  } = paymentIntent.metadata || {};
+
+  if (!patient_id || !service_id || !scheduled_at || !duration_minutes) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Missing booking information in payment metadata",
+    };
+  }
+
+  const scheduledDate = new Date(scheduled_at);
+  const scheduledEndTime = new Date(
+    scheduledDate.getTime() + parseInt(duration_minutes) * 60000,
+  );
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const scheduledEndStr = `${scheduledEndTime.getFullYear()}-${pad(scheduledEndTime.getMonth() + 1)}-${pad(scheduledEndTime.getDate())} ${pad(scheduledEndTime.getHours())}:${pad(scheduledEndTime.getMinutes())}:${pad(scheduledEndTime.getSeconds())}`;
+  const scheduledAtStr = scheduled_at.replace("T", " ");
+
+  const [overlapping] = await pool.query<any[]>(
+    `SELECT id, scheduled_at, duration_minutes, status
+     FROM appointments
+     WHERE service_id = ?
+       AND status IN ('confirmed', 'scheduled', 'in_progress')
+       AND scheduled_at < ?
+       AND DATE_ADD(scheduled_at, INTERVAL duration_minutes MINUTE) > ?`,
+    [service_id, scheduledEndStr, scheduledAtStr],
+  );
+
+  if (overlapping.length > 0) {
+    try {
+      await issueStripeRefund({
+        paymentIntentId: paymentIntent.id,
+        reason: "slot_conflict",
+      });
+    } catch (refundError) {
+      console.error("[fulfill] Refund after slot conflict failed:", refundError);
+    }
+    return {
+      ok: false,
+      status: 409,
+      error:
+        "Lo sentimos, este horario ya fue reservado. Tu pago será reembolsado automáticamente.",
+    };
+  }
+
+  const [appointmentResult] = await pool.query<any>(
+    `INSERT INTO appointments
+       (patient_id, service_id, scheduled_at, duration_minutes, notes, status, created_by, booked_for_self)
+     VALUES (?, ?, ?, ?, ?, 'confirmed', ?, ?)`,
+    [
+      patient_id,
+      service_id,
+      scheduled_at,
+      duration_minutes,
+      notes || null,
+      null,
+      booked_for_self === "1" ? 1 : 0,
+    ],
+  );
+  const appointmentId = appointmentResult.insertId;
+
+  try {
+    await pool.query(
+      `INSERT INTO payments
+         (appointment_id, patient_id, amount, payment_method, payment_status,
+          stripe_payment_id, stripe_payment_intent_id, processed_by, processed_at, created_at, updated_at)
+       VALUES (?, ?, ?, 'stripe', 'completed', ?, ?, ?, NOW(), NOW(), NOW())`,
+      [
+        appointmentId,
+        patient_id,
+        (paymentIntent.amount / 100).toFixed(2),
+        paymentIntent.id,
+        paymentIntent.id,
+        null,
+      ],
+    );
+  } catch (insertErr) {
+    if (isMysqlDuplicate(insertErr)) {
+      const [again] = await pool.query<any[]>(
+        `SELECT appointment_id FROM payments WHERE stripe_payment_intent_id = ? LIMIT 1`,
+        [paymentIntent.id],
+      );
+      if (again.length > 0) {
+        return {
+          ok: true,
+          appointmentId: Number(again[0].appointment_id),
+          alreadyFulfilled: true,
+        };
+      }
+    }
+    throw insertErr;
+  }
+
+  try {
+    const pmId =
+      typeof paymentIntent.payment_method === "string"
+        ? paymentIntent.payment_method
+        : paymentIntent.payment_method?.id;
+    if (pmId) {
+      await stripe.paymentMethods.update(pmId, {
+        allow_redisplay: "limited",
+      });
+    }
+  } catch (pmErr: any) {
+    console.warn(
+      "[fulfill] Could not update payment method allow_redisplay:",
+      pmErr.message,
+    );
+  }
+
+  const [appointmentDetails] = await pool.query<any[]>(
+    `SELECT
+        a.id, a.scheduled_at, a.duration_minutes,
+        s.name as service_name, s.price as service_price,
+        p.first_name, p.last_name, p.email
+     FROM appointments a
+     JOIN services s ON a.service_id = s.id
+     JOIN patients p ON a.patient_id = p.id
+     WHERE a.id = ?`,
+    [appointmentId],
+  );
+
+  if (appointmentDetails.length > 0) {
+    const appointment = appointmentDetails[0];
+    const patientName = `${appointment.first_name} ${appointment.last_name}`;
+    const scheduled = new Date(appointment.scheduled_at);
+    const appointmentDate = scheduled.toISOString().split("T")[0];
+    const appointmentTime = scheduled.toTimeString().split(" ")[0].substring(0, 5);
+    sendAppointmentConfirmationEmail(appointment.email, patientName, {
+      serviceName: appointment.service_name,
+      date: appointmentDate,
+      time: appointmentTime,
+      duration: appointment.duration_minutes,
+      amount: parseFloat(appointment.service_price),
+    }).catch((emailError) =>
+      console.error(
+        "Failed to send confirmation email, but appointment was created:",
+        emailError,
+      ),
+    );
+  }
+
+  return { ok: true, appointmentId, alreadyFulfilled: false };
 }
 
 // ==================== INLINE ROUTE HANDLERS ====================
@@ -465,6 +1057,17 @@ const getAppointments: RequestHandler = async (req, res) => {
       });
     }
 
+    const staff = tryGetAdminFromHeader(req);
+    if (!staff) {
+      const allowed = await verifyPatientSession(Number(patientId));
+      if (!allowed) {
+        return res.status(401).json({
+          success: false,
+          message: "Authentication required",
+        });
+      }
+    }
+
     const [appointments] = await pool.query<any[]>(
       `SELECT 
          a.id, 
@@ -653,11 +1256,11 @@ const verifyCode: RequestHandler = async (req, res) => {
       });
     }
 
-    // Check if code matches (temporarily ignoring expiration for debugging)
     const [sessions] = await pool.query<any[]>(
       `SELECT id, patient_id, session_code, user_session, user_session_date_start
        FROM users_sessions
-       WHERE patient_id = ? AND session_code = ?`,
+       WHERE patient_id = ? AND session_code = ?
+         AND user_session_date_start > DATE_SUB(NOW(), INTERVAL 10 MINUTE)`,
       [patient_id, code],
     );
 
@@ -734,69 +1337,6 @@ async function sendVerificationEmail(
   code: number,
 ): Promise<boolean> {
   try {
-    console.log("🔍 Checking environment variables:");
-    console.log("   SMTP_HOST:", process.env.SMTP_HOST || "NOT SET");
-    console.log("   SMTP_PORT:", process.env.SMTP_PORT || "NOT SET");
-    console.log("   SMTP_SECURE:", process.env.SMTP_SECURE || "NOT SET");
-    console.log("   SMTP_USER:", process.env.SMTP_USER || "NOT SET");
-    console.log(
-      "   SMTP_PASS:",
-      process.env.SMTP_PASS ? "SET (hidden)" : "NOT SET",
-    );
-
-    // For development/testing without SMTP config, use Ethereal test account
-    let transportConfig: any;
-
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      console.log(
-        "⚠️  No SMTP credentials found. Using Ethereal test account...",
-      );
-
-      // Create test account on the fly (for development only)
-      const testAccount = await nodemailer.createTestAccount();
-
-      transportConfig = {
-        host: testAccount.smtp.host,
-        port: testAccount.smtp.port,
-        secure: testAccount.smtp.secure,
-        auth: {
-          user: testAccount.user,
-          pass: testAccount.pass,
-        },
-      };
-
-      console.log("📧 Ethereal test account created:");
-      console.log("   User:", testAccount.user);
-      console.log("   Pass:", testAccount.pass);
-    } else {
-      // Use configured SMTP settings (Hostgator)
-      transportConfig = {
-        host: process.env.SMTP_HOST || "mail.garbrix.com",
-        port: parseInt(process.env.SMTP_PORT || "465"),
-        secure: process.env.SMTP_SECURE === "true",
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      };
-
-      console.log("📧 Using configured SMTP settings:");
-      console.log("   Host:", transportConfig.host);
-      console.log("   Port:", transportConfig.port);
-      console.log("   Secure:", transportConfig.secure);
-      console.log("   User:", transportConfig.auth.user);
-    }
-
-    // Configure email transporter
-    console.log("🔧 Creating transporter...");
-    const transporter = nodemailer.createTransport(transportConfig);
-
-    // Verify SMTP connection
-    console.log("🔍 Verifying SMTP connection...");
-    await transporter.verify();
-    console.log("✅ SMTP connection verified!");
-
-    // Email template
     const emailBody = `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -812,7 +1352,7 @@ async function sendVerificationEmail(
         <!-- Logo Header -->
         <tr>
           <td style="background-color:#111111;padding:28px 40px;text-align:center;">
-            <img src="https://disruptinglabs.com/data/beauty/assets/images/logo-header.png" alt="All Beauty Luxury &amp; Wellness" style="height:52px;width:auto;display:inline-block;" />
+            ${emailLogoImg()}
           </td>
         </tr>
 
@@ -821,7 +1361,7 @@ async function sendVerificationEmail(
           <td style="background:linear-gradient(135deg,#C9A159 0%,#E8C580 60%,#B8903D 100%);padding:36px 40px;text-align:center;">
             <table cellpadding="0" cellspacing="0" style="margin:0 auto 16px;">
               <tr><td style="width:64px;height:64px;background-color:rgba(255,255,255,0.25);border-radius:50%;text-align:center;vertical-align:middle;">
-                <span style="font-size:30px;line-height:64px;">&#9679;</span>
+                <span style="font-size:18px;line-height:64px;color:#FFFFFF;font-weight:700;letter-spacing:1px;">OTP</span>
               </td></tr>
             </table>
             <h1 style="margin:0 0 8px;font-size:26px;font-weight:700;color:#FFFFFF;letter-spacing:-0.5px;">Codigo de Verificacion</h1>
@@ -851,7 +1391,7 @@ async function sendVerificationEmail(
               <tr>
                 <td style="background-color:#FFF8EC;border-left:4px solid #C9A159;border-radius:0 8px 8px 0;padding:16px 20px;">
                   <p style="margin:0;font-size:14px;color:#7A5C1E;line-height:1.6;">
-                    <strong>&#9888; Importante:</strong> Este codigo expirara en <strong>10 minutos</strong>. Si no solicitaste este codigo, puedes ignorar este mensaje.
+                    <strong>Importante:</strong> Este codigo expirara en <strong>10 minutos</strong>. Si no solicitaste este codigo, puedes ignorar este mensaje.
                   </p>
                 </td>
               </tr>
@@ -873,49 +1413,12 @@ async function sendVerificationEmail(
 </body>
 </html>`;
 
-    console.log("📤 Sending email to:", email);
-    console.log(
-      "   From field:",
-      process.env.SMTP_FROM ||
-        `"All Beauty Luxury & Wellness" <${process.env.SMTP_USER}>`,
-    );
-    console.log(
-      "   Subject:",
-      `${code} es tu código de verificación de All Beauty Luxury & Wellness`,
-    );
-
-    const info = await transporter.sendMail({
-      from:
-        process.env.SMTP_FROM ||
-        `"All Beauty Luxury & Wellness" <${process.env.SMTP_USER}>`,
+    const result = await sendEmail({
       to: email,
       subject: `${code} es tu código de verificación de All Beauty Luxury & Wellness`,
       html: emailBody,
     });
-
-    console.log("✅ Email sent successfully!");
-    console.log("   Message ID:", info.messageId);
-    console.log("   Response:", JSON.stringify(info.response || "No response"));
-    console.log("   Envelope:", JSON.stringify(info.envelope || "No envelope"));
-    console.log("   Accepted:", JSON.stringify(info.accepted || []));
-    console.log("   Rejected:", JSON.stringify(info.rejected || []));
-
-    // If using Ethereal (test mode), log the preview URL
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      const previewUrl = nodemailer.getTestMessageUrl(info as any);
-      console.log("📬 Preview URL:", previewUrl);
-      console.log("🔑 Verification code:", code);
-    } else {
-      // Production mode - log additional debug info
-      console.log("🏭 PRODUCTION EMAIL SENT:");
-      console.log("   Production SMTP used: mail.garbrix.com");
-      console.log("   Target email:", email);
-      console.log("   Patient name:", userName);
-      console.log("   Verification code:", code);
-      console.log("   Environment check:");
-      console.log("     NODE_ENV:", process.env.NODE_ENV);
-      console.log("     SMTP_FROM:", process.env.SMTP_FROM || "NOT SET");
-    }
+    console.log("✅ Verification email sent:", result.id);
 
     return true;
   } catch (error) {
@@ -946,47 +1449,6 @@ async function sendAppointmentConfirmationEmail(
   try {
     console.log("🔍 Sending appointment confirmation email to:", email);
 
-    // Configure email transporter (same as verification email)
-    let transportConfig: any;
-
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      console.log(
-        "⚠️  No SMTP credentials found. Using Ethereal test account...",
-      );
-
-      const testAccount = await nodemailer.createTestAccount();
-
-      transportConfig = {
-        host: testAccount.smtp.host,
-        port: testAccount.smtp.port,
-        secure: testAccount.smtp.secure,
-        auth: {
-          user: testAccount.user,
-          pass: testAccount.pass,
-        },
-      };
-
-      console.log("📧 Ethereal test account created for confirmation email");
-    } else {
-      transportConfig = {
-        host: process.env.SMTP_HOST || "mail.garbrix.com",
-        port: parseInt(process.env.SMTP_PORT || "465"),
-        secure: process.env.SMTP_SECURE === "true",
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      };
-
-      console.log("📧 Using configured SMTP for confirmation email");
-    }
-
-    const transporter = nodemailer.createTransport(transportConfig);
-
-    // Verify SMTP connection
-    await transporter.verify();
-    console.log("✅ SMTP connection verified for confirmation email");
-
     // Format date and time for display
     const appointmentDate = new Date(appointmentDetails.date);
     const formattedDate = appointmentDate.toLocaleDateString("es-MX", {
@@ -1011,7 +1473,7 @@ async function sendAppointmentConfirmationEmail(
         <!-- Logo Header -->
         <tr>
           <td style="background-color:#111111;padding:28px 40px;text-align:center;">
-            <img src="https://disruptinglabs.com/data/beauty/assets/images/logo-header.png" alt="All Beauty Luxury &amp; Wellness" style="height:52px;width:auto;display:inline-block;" />
+            ${emailLogoImg()}
           </td>
         </tr>
 
@@ -1020,7 +1482,7 @@ async function sendAppointmentConfirmationEmail(
           <td style="background:linear-gradient(135deg,#C9A159 0%,#E8C580 60%,#B8903D 100%);padding:36px 40px;text-align:center;">
             <table cellpadding="0" cellspacing="0" style="margin:0 auto 16px;">
               <tr><td style="width:64px;height:64px;background-color:rgba(255,255,255,0.2);border-radius:50%;text-align:center;vertical-align:middle;">
-                <span style="font-size:28px;line-height:64px;color:#FFFFFF;">&#10003;</span>
+                <span style="font-size:13px;line-height:64px;color:#FFFFFF;font-weight:700;letter-spacing:1px;">OK</span>
               </td></tr>
             </table>
             <h1 style="margin:0 0 8px;font-size:26px;font-weight:700;color:#FFFFFF;letter-spacing:-0.5px;">Cita Confirmada</h1>
@@ -1096,7 +1558,7 @@ async function sendAppointmentConfirmationEmail(
             <table width="100%" cellpadding="0" cellspacing="0">
               <tr>
                 <td style="background-color:#F8F8F8;border-radius:10px;padding:20px;text-align:center;">
-                  <p style="margin:0 0 12px;font-size:14px;font-weight:700;color:#1A1A1A;">&#63; Necesitas ayuda?</p>
+                  <p style="margin:0 0 12px;font-size:14px;font-weight:700;color:#1A1A1A;">Necesitas ayuda?</p>
                   <p style="margin:0 0 4px;font-size:14px;color:#4B4B4B;">Telefono: <strong style="color:#C9A159;">+52 1234567890</strong></p>
                   <p style="margin:0;font-size:14px;color:#4B4B4B;">Email: <strong style="color:#C9A159;">info@allbeautyluxury.mx</strong></p>
                 </td>
@@ -1119,36 +1581,16 @@ async function sendAppointmentConfirmationEmail(
 </body>
 </html>`;
 
-    console.log("Sending confirmation email to:", email);
-
-    const info = await transporter.sendMail({
-      from:
-        process.env.SMTP_FROM ||
-        `"All Beauty Luxury & Wellness" <${process.env.SMTP_USER}>`,
+    const result = await sendEmail({
       to: email,
       subject: "Confirmacion de Cita - All Beauty Luxury & Wellness",
       html: emailBody,
     });
-
-    console.log("Confirmation email sent successfully!");
-    console.log("   Message ID:", info.messageId);
-    console.log("   Response:", JSON.stringify(info.response || "No response"));
-    console.log("   Accepted:", JSON.stringify(info.accepted || []));
-    console.log("   Rejected:", JSON.stringify(info.rejected || []));
-
-    // If using Ethereal (test mode), log the preview URL
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      const previewUrl = nodemailer.getTestMessageUrl(info as any);
-      console.log("Preview URL:", previewUrl);
-    } else {
-      // Production mode - log additional debug info
-      console.log("PRODUCTION CONFIRMATION EMAIL SENT:");
-      console.log("   Target email:", email);
-      console.log("   Patient name:", patientName);
-      console.log("   Service:", appointmentDetails.serviceName);
-      console.log("   Date:", appointmentDetails.date);
-      console.log("   Time:", appointmentDetails.time);
-    }
+    console.log("Confirmation email sent:", result.id);
+    console.log("   Patient name:", patientName);
+    console.log("   Service:", appointmentDetails.serviceName);
+    console.log("   Date:", appointmentDetails.date);
+    console.log("   Time:", appointmentDetails.time);
 
     return true;
   } catch (error) {
@@ -1174,26 +1616,6 @@ async function sendAppointmentCancellationEmail(
   },
 ): Promise<boolean> {
   try {
-    let transportConfig: any;
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      const testAccount = await nodemailer.createTestAccount();
-      transportConfig = {
-        host: testAccount.smtp.host,
-        port: testAccount.smtp.port,
-        secure: testAccount.smtp.secure,
-        auth: { user: testAccount.user, pass: testAccount.pass },
-      };
-    } else {
-      transportConfig = {
-        host: process.env.SMTP_HOST || "mail.garbrix.com",
-        port: parseInt(process.env.SMTP_PORT || "465"),
-        secure: process.env.SMTP_SECURE === "true",
-        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-      };
-    }
-    const transporter = nodemailer.createTransport(transportConfig);
-    await transporter.verify();
-
     const formattedDate = new Date(appointmentDetails.date).toLocaleDateString(
       "es-MX",
       { weekday: "long", year: "numeric", month: "long", day: "numeric" },
@@ -1214,7 +1636,7 @@ async function sendAppointmentCancellationEmail(
         <!-- Logo Header -->
         <tr>
           <td style="background-color:#111111;padding:28px 40px;text-align:center;">
-            <img src="https://disruptinglabs.com/data/beauty/assets/images/logo-header.png" alt="All Beauty Luxury &amp; Wellness" style="height:52px;width:auto;display:inline-block;" />
+            ${emailLogoImg()}
           </td>
         </tr>
 
@@ -1223,7 +1645,7 @@ async function sendAppointmentCancellationEmail(
           <td style="background:linear-gradient(135deg,#DC2626 0%,#EF4444 60%,#C01C1C 100%);padding:36px 40px;text-align:center;">
             <table cellpadding="0" cellspacing="0" style="margin:0 auto 16px;">
               <tr><td style="width:64px;height:64px;background-color:rgba(255,255,255,0.2);border-radius:50%;text-align:center;vertical-align:middle;">
-                <span style="font-size:28px;line-height:64px;color:#FFFFFF;">&#10005;</span>
+                <span style="font-size:13px;line-height:64px;color:#FFFFFF;font-weight:700;letter-spacing:1px;">NO</span>
               </td></tr>
             </table>
             <h1 style="margin:0 0 8px;font-size:26px;font-weight:700;color:#FFFFFF;letter-spacing:-0.5px;">Cita Cancelada</h1>
@@ -1296,7 +1718,7 @@ async function sendAppointmentCancellationEmail(
             <table width="100%" cellpadding="0" cellspacing="0">
               <tr>
                 <td style="background-color:#F8F8F8;border-radius:10px;padding:20px;text-align:center;">
-                  <p style="margin:0 0 12px;font-size:14px;font-weight:700;color:#1A1A1A;">&#63; Contactanos</p>
+                  <p style="margin:0 0 12px;font-size:14px;font-weight:700;color:#1A1A1A;">Contactanos</p>
                   <p style="margin:0 0 4px;font-size:14px;color:#4B4B4B;">Telefono: <strong style="color:#C9A159;">+52 1234567890</strong></p>
                   <p style="margin:0;font-size:14px;color:#4B4B4B;">Email: <strong style="color:#C9A159;">info@allbeautyluxury.mx</strong></p>
                 </td>
@@ -1319,21 +1741,13 @@ async function sendAppointmentCancellationEmail(
 </body>
 </html>`;
 
-    const info = await transporter.sendMail({
-      from:
-        process.env.SMTP_FROM ||
-        `"All Beauty Luxury & Wellness" <${process.env.SMTP_USER}>`,
+    const result = await sendEmail({
       to: email,
       subject: "Cancelacion de Cita - All Beauty Luxury & Wellness",
       html: emailBody,
     });
 
-    console.log(
-      "Cancellation email sent to:",
-      email,
-      "| Message ID:",
-      info.messageId,
-    );
+    console.log("Cancellation email sent to:", email, "| id:", result.id);
     return true;
   } catch (error) {
     console.error("Error sending cancellation email:", error);
@@ -1357,26 +1771,6 @@ async function sendAppointmentRescheduleEmail(
   },
 ): Promise<boolean> {
   try {
-    let transportConfig: any;
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      const testAccount = await nodemailer.createTestAccount();
-      transportConfig = {
-        host: testAccount.smtp.host,
-        port: testAccount.smtp.port,
-        secure: testAccount.smtp.secure,
-        auth: { user: testAccount.user, pass: testAccount.pass },
-      };
-    } else {
-      transportConfig = {
-        host: process.env.SMTP_HOST || "mail.garbrix.com",
-        port: parseInt(process.env.SMTP_PORT || "465"),
-        secure: process.env.SMTP_SECURE === "true",
-        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-      };
-    }
-    const transporter = nodemailer.createTransport(transportConfig);
-    await transporter.verify();
-
     const formattedOldDate = new Date(
       appointmentDetails.oldDate,
     ).toLocaleDateString("es-MX", {
@@ -1409,7 +1803,7 @@ async function sendAppointmentRescheduleEmail(
         <!-- Logo Header -->
         <tr>
           <td style="background-color:#111111;padding:28px 40px;text-align:center;">
-            <img src="https://disruptinglabs.com/data/beauty/assets/images/logo-header.png" alt="All Beauty Luxury &amp; Wellness" style="height:52px;width:auto;display:inline-block;" />
+            ${emailLogoImg()}
           </td>
         </tr>
 
@@ -1418,7 +1812,7 @@ async function sendAppointmentRescheduleEmail(
           <td style="background:linear-gradient(135deg,#C9A159 0%,#E8C580 60%,#B8903D 100%);padding:36px 40px;text-align:center;">
             <table cellpadding="0" cellspacing="0" style="margin:0 auto 16px;">
               <tr><td style="width:64px;height:64px;background-color:rgba(255,255,255,0.2);border-radius:50%;text-align:center;vertical-align:middle;">
-                <span style="font-size:26px;line-height:64px;color:#FFFFFF;">&#8635;</span>
+                <span style="font-size:12px;line-height:64px;color:#FFFFFF;font-weight:700;letter-spacing:1px;">NUEVA</span>
               </td></tr>
             </table>
             <h1 style="margin:0 0 8px;font-size:26px;font-weight:700;color:#FFFFFF;letter-spacing:-0.5px;">Cita Reprogramada</h1>
@@ -1437,7 +1831,7 @@ async function sendAppointmentRescheduleEmail(
             <!-- Old Date Card -->
             <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;border:1px solid #FECACA;border-radius:12px;overflow:hidden;">
               <tr><td style="background-color:#FEF2F2;padding:12px 20px;border-bottom:1px solid #FECACA;">
-                <span style="font-size:12px;font-weight:700;color:#DC2626;letter-spacing:1px;text-transform:uppercase;">&#10005; &nbsp;Fecha Anterior (Cancelada)</span>
+                <span style="font-size:12px;font-weight:700;color:#DC2626;letter-spacing:1px;text-transform:uppercase;">Fecha Anterior (Cancelada)</span>
               </td></tr>
               <tr><td style="padding:0 20px;">
                 <table width="100%" cellpadding="0" cellspacing="0">
@@ -1466,14 +1860,14 @@ async function sendAppointmentRescheduleEmail(
             <!-- Arrow -->
             <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
               <tr><td style="text-align:center;padding:4px 0;">
-                <span style="font-size:22px;color:#C9A159;">&#8595;</span>
+                <span style="font-size:12px;font-weight:700;color:#C9A159;letter-spacing:2px;text-transform:uppercase;">Nueva fecha</span>
               </td></tr>
             </table>
 
             <!-- New Date Card -->
             <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;border:1px solid #BBF7D0;border-radius:12px;overflow:hidden;">
               <tr><td style="background-color:#F0FDF4;padding:12px 20px;border-bottom:1px solid #BBF7D0;">
-                <span style="font-size:12px;font-weight:700;color:#16A34A;letter-spacing:1px;text-transform:uppercase;">&#10003; &nbsp;Nueva Fecha Confirmada</span>
+                <span style="font-size:12px;font-weight:700;color:#16A34A;letter-spacing:1px;text-transform:uppercase;">Nueva Fecha Confirmada</span>
               </td></tr>
               <tr><td style="padding:0 20px;">
                 <table width="100%" cellpadding="0" cellspacing="0">
@@ -1514,7 +1908,7 @@ async function sendAppointmentRescheduleEmail(
             <table width="100%" cellpadding="0" cellspacing="0">
               <tr>
                 <td style="background-color:#F8F8F8;border-radius:10px;padding:20px;text-align:center;">
-                  <p style="margin:0 0 12px;font-size:14px;font-weight:700;color:#1A1A1A;">&#63; Necesitas ayuda?</p>
+                  <p style="margin:0 0 12px;font-size:14px;font-weight:700;color:#1A1A1A;">Necesitas ayuda?</p>
                   <p style="margin:0 0 4px;font-size:14px;color:#4B4B4B;">Telefono: <strong style="color:#C9A159;">+52 1234567890</strong></p>
                   <p style="margin:0;font-size:14px;color:#4B4B4B;">Email: <strong style="color:#C9A159;">info@allbeautyluxury.mx</strong></p>
                 </td>
@@ -1537,21 +1931,13 @@ async function sendAppointmentRescheduleEmail(
 </body>
 </html>`;
 
-    const info = await transporter.sendMail({
-      from:
-        process.env.SMTP_FROM ||
-        `"All Beauty Luxury & Wellness" <${process.env.SMTP_USER}>`,
+    const result = await sendEmail({
       to: email,
       subject: "Cita Reprogramada - All Beauty Luxury & Wellness",
       html: emailBody,
     });
 
-    console.log(
-      "Reschedule email sent to:",
-      email,
-      "| Message ID:",
-      info.messageId,
-    );
+    console.log("Reschedule email sent to:", email, "| id:", result.id);
     return true;
   } catch (error) {
     console.error("Error sending reschedule email:", error);
@@ -1575,26 +1961,6 @@ async function sendManualAppointmentEmail(
   },
 ): Promise<boolean> {
   try {
-    let transportConfig: any;
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      const testAccount = await nodemailer.createTestAccount();
-      transportConfig = {
-        host: testAccount.smtp.host,
-        port: testAccount.smtp.port,
-        secure: testAccount.smtp.secure,
-        auth: { user: testAccount.user, pass: testAccount.pass },
-      };
-    } else {
-      transportConfig = {
-        host: process.env.SMTP_HOST || "mail.garbrix.com",
-        port: parseInt(process.env.SMTP_PORT || "465"),
-        secure: process.env.SMTP_SECURE === "true",
-        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-      };
-    }
-    const transporter = nodemailer.createTransport(transportConfig);
-    await transporter.verify();
-
     const formattedDate = new Date(appointmentDetails.date).toLocaleDateString(
       "es-MX",
       { weekday: "long", year: "numeric", month: "long", day: "numeric" },
@@ -1623,7 +1989,7 @@ async function sendManualAppointmentEmail(
         <!-- Logo Header -->
         <tr>
           <td style="background-color:#111111;padding:28px 40px;text-align:center;">
-            <img src="https://disruptinglabs.com/data/beauty/assets/images/logo-header.png" alt="All Beauty Luxury &amp; Wellness" style="height:52px;width:auto;display:inline-block;" />
+            ${emailLogoImg()}
           </td>
         </tr>
 
@@ -1632,7 +1998,7 @@ async function sendManualAppointmentEmail(
           <td style="background:linear-gradient(135deg,#C9A159 0%,#E8C580 60%,#B8903D 100%);padding:36px 40px;text-align:center;">
             <table cellpadding="0" cellspacing="0" style="margin:0 auto 16px;">
               <tr><td style="width:64px;height:64px;background-color:rgba(255,255,255,0.2);border-radius:50%;text-align:center;vertical-align:middle;">
-                <span style="font-size:28px;line-height:64px;color:#FFFFFF;">&#10003;</span>
+                <span style="font-size:13px;line-height:64px;color:#FFFFFF;font-weight:700;letter-spacing:1px;">OK</span>
               </td></tr>
             </table>
             <h1 style="margin:0 0 8px;font-size:26px;font-weight:700;color:#FFFFFF;letter-spacing:-0.5px;">Cita Agendada</h1>
@@ -1718,7 +2084,7 @@ async function sendManualAppointmentEmail(
             <table width="100%" cellpadding="0" cellspacing="0">
               <tr>
                 <td style="background-color:#F8F8F8;border-radius:10px;padding:20px;text-align:center;">
-                  <p style="margin:0 0 12px;font-size:14px;font-weight:700;color:#1A1A1A;">&#63; Necesitas ayuda?</p>
+                  <p style="margin:0 0 12px;font-size:14px;font-weight:700;color:#1A1A1A;">Necesitas ayuda?</p>
                   <p style="margin:0 0 4px;font-size:14px;color:#4B4B4B;">Telefono: <strong style="color:#C9A159;">+52 1234567890</strong></p>
                   <p style="margin:0;font-size:14px;color:#4B4B4B;">Email: <strong style="color:#C9A159;">info@allbeautyluxury.mx</strong></p>
                 </td>
@@ -1741,10 +2107,7 @@ async function sendManualAppointmentEmail(
 </body>
 </html>`;
 
-    const info = await transporter.sendMail({
-      from:
-        process.env.SMTP_FROM ||
-        `"All Beauty Luxury & Wellness" <${process.env.SMTP_USER}>`,
+    const result = await sendEmail({
       to: email,
       subject: "Confirmacion de Cita - All Beauty Luxury & Wellness",
       html: emailBody,
@@ -1753,8 +2116,8 @@ async function sendManualAppointmentEmail(
     console.log(
       "Manual appointment email sent to:",
       email,
-      "| Message ID:",
-      info.messageId,
+      "| id:",
+      result.id,
     );
     return true;
   } catch (error) {
@@ -1772,69 +2135,6 @@ async function sendAdminVerificationEmail(
   code: number,
 ): Promise<boolean> {
   try {
-    console.log("🔍 Checking environment variables for admin email:");
-    console.log("   SMTP_HOST:", process.env.SMTP_HOST || "NOT SET");
-    console.log("   SMTP_PORT:", process.env.SMTP_PORT || "NOT SET");
-    console.log("   SMTP_SECURE:", process.env.SMTP_SECURE || "NOT SET");
-    console.log("   SMTP_USER:", process.env.SMTP_USER || "NOT SET");
-    console.log(
-      "   SMTP_PASS:",
-      process.env.SMTP_PASS ? "SET (hidden)" : "NOT SET",
-    );
-
-    // For development/testing without SMTP config, use Ethereal test account
-    let transportConfig: any;
-
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      console.log(
-        "⚠️  No SMTP credentials found. Using Ethereal test account...",
-      );
-
-      // Create test account on the fly (for development only)
-      const testAccount = await nodemailer.createTestAccount();
-
-      transportConfig = {
-        host: testAccount.smtp.host,
-        port: testAccount.smtp.port,
-        secure: testAccount.smtp.secure,
-        auth: {
-          user: testAccount.user,
-          pass: testAccount.pass,
-        },
-      };
-
-      console.log("📧 Ethereal test account created:");
-      console.log("   User:", testAccount.user);
-      console.log("   Pass:", testAccount.pass);
-    } else {
-      // Use configured SMTP settings (Hostgator)
-      transportConfig = {
-        host: process.env.SMTP_HOST || "mail.garbrix.com",
-        port: parseInt(process.env.SMTP_PORT || "465"),
-        secure: process.env.SMTP_SECURE === "true",
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      };
-
-      console.log("📧 Using configured SMTP settings:");
-      console.log("   Host:", transportConfig.host);
-      console.log("   Port:", transportConfig.port);
-      console.log("   Secure:", transportConfig.secure);
-      console.log("   User:", transportConfig.auth.user);
-    }
-
-    // Configure email transporter
-    console.log("🔧 Creating admin transporter...");
-    const transporter = nodemailer.createTransport(transportConfig);
-
-    // Verify SMTP connection
-    console.log("🔍 Verifying SMTP connection...");
-    await transporter.verify();
-    console.log("✅ SMTP connection verified!");
-
-    // Admin email template
     const emailBody = `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -1850,7 +2150,7 @@ async function sendAdminVerificationEmail(
         <!-- Logo Header -->
         <tr>
           <td style="background-color:#111111;padding:28px 40px;text-align:center;border-bottom:1px solid #2A2A2A;">
-            <img src="https://disruptinglabs.com/data/beauty/assets/images/logo-header.png" alt="All Beauty Luxury &amp; Wellness" style="height:52px;width:auto;display:inline-block;" />
+            ${emailLogoImg()}
           </td>
         </tr>
 
@@ -1859,7 +2159,7 @@ async function sendAdminVerificationEmail(
           <td style="background:linear-gradient(135deg,#111111 0%,#1E1A0E 50%,#111111 100%);padding:36px 40px;text-align:center;border-bottom:1px solid #C9A15933;">
             <table cellpadding="0" cellspacing="0" style="margin:0 auto 16px;">
               <tr><td style="width:64px;height:64px;background-color:#C9A15920;border:2px solid #C9A15966;border-radius:50%;text-align:center;vertical-align:middle;">
-                <span style="font-size:26px;line-height:60px;color:#C9A159;">&#128274;</span>
+                <span style="font-size:12px;line-height:60px;color:#C9A159;font-weight:700;letter-spacing:1px;">ADMIN</span>
               </td></tr>
             </table>
             <h1 style="margin:0 0 8px;font-size:24px;font-weight:700;color:#C9A159;letter-spacing:2px;text-transform:uppercase;">Acceso Administrativo</h1>
@@ -1889,7 +2189,7 @@ async function sendAdminVerificationEmail(
             <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
               <tr>
                 <td style="background-color:#1F1200;border-left:4px solid #C9A159;border-radius:0 8px 8px 0;padding:16px 20px;">
-                  <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#C9A159;letter-spacing:0.5px;">&#9888; IMPORTANTE</p>
+                  <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#C9A159;letter-spacing:0.5px;">IMPORTANTE</p>
                   <p style="margin:0 0 4px;font-size:14px;color:#A89060;line-height:1.6;">Este codigo expirara en <strong style="color:#E8C580;">10 minutos</strong>.</p>
                   <p style="margin:0;font-size:14px;color:#A89060;line-height:1.6;">Si no solicitaste este acceso, contacta inmediatamente al administrador del sistema.</p>
                 </td>
@@ -1912,18 +2212,6 @@ async function sendAdminVerificationEmail(
 </body>
 </html>`;
 
-    console.log("📤 Sending admin email to:", email);
-    console.log(
-      "   From field:",
-      process.env.SMTP_FROM ||
-        `"All Beauty Luxury & Wellness Admin" <${process.env.SMTP_USER}>`,
-    );
-    console.log(
-      "   Subject:",
-      `${code} - Codigo de acceso administrativo All Beauty Luxury & Wellness`,
-    );
-
-    // Plain text version for better deliverability
     const textBody = `
 ACCESO ADMINISTRATIVO - ALL BEAUTY LUXURY & WELLNESS
 
@@ -1942,39 +2230,13 @@ All Beauty Luxury & Wellness - Panel Administrativo
 Este es un mensaje automatico del sistema - No responder
     `;
 
-    const info = await transporter.sendMail({
-      from:
-        process.env.SMTP_FROM ||
-        `"All Beauty Luxury & Wellness Admin" <${process.env.SMTP_USER}>`,
+    const result = await sendEmail({
       to: email,
       subject: `${code} - Codigo de acceso administrativo All Beauty Luxury & Wellness`,
       text: textBody.trim(),
       html: emailBody,
     });
-
-    console.log("✅ Admin email sent successfully!");
-    console.log("   Message ID:", info.messageId);
-    console.log("   Response:", JSON.stringify(info.response || "No response"));
-    console.log("   Envelope:", JSON.stringify(info.envelope || "No envelope"));
-    console.log("   Accepted:", JSON.stringify(info.accepted || []));
-    console.log("   Rejected:", JSON.stringify(info.rejected || []));
-
-    // If using Ethereal (test mode), log the preview URL
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      const previewUrl = nodemailer.getTestMessageUrl(info as any);
-      console.log("📬 Admin Preview URL:", previewUrl);
-      console.log("🔑 Admin Verification code:", code);
-    } else {
-      // Production mode - log additional debug info
-      console.log("🏭 PRODUCTION EMAIL SENT:");
-      console.log("   Production SMTP used: mail.garbrix.com");
-      console.log("   Target email:", email);
-      console.log("   Admin name:", adminName);
-      console.log("   Verification code:", code);
-      console.log("   Environment check:");
-      console.log("     NODE_ENV:", process.env.NODE_ENV);
-      console.log("     SMTP_FROM:", process.env.SMTP_FROM || "NOT SET");
-    }
+    console.log("✅ Admin email sent:", result.id);
 
     return true;
   } catch (error) {
@@ -2027,6 +2289,100 @@ const getBusinessHours: RequestHandler = async (req, res) => {
   }
 };
 
+const getBusinessHoursByDay: RequestHandler = async (req, res) => {
+  try {
+    const dayOfWeek = parseInt(String(req.params.day), 10);
+    if (Number.isNaN(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
+      return res.status(400).json({
+        success: false,
+        message: "day must be an integer from 0 (Sunday) to 6 (Saturday)",
+      });
+    }
+    const [rows] = await pool.query<any[]>(
+      `SELECT id, day_of_week, is_open, open_time, close_time, break_start, break_end, notes, created_at, updated_at
+       FROM business_hours WHERE day_of_week = ? LIMIT 1`,
+      [dayOfWeek],
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Business hours not found for this day",
+      });
+    }
+    const row = rows[0];
+    res.json({
+      success: true,
+      data: {
+        ...row,
+        is_open: Boolean(row.is_open),
+        break_start: row.break_start || null,
+        break_end: row.break_end || null,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching business hours by day:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch business hours",
+    });
+  }
+};
+
+function isMysqlDuplicate(error: unknown): boolean {
+  const err = error as { errno?: number; code?: string };
+  return err.errno === 1062 || err.code === "ER_DUP_ENTRY";
+}
+
+function normalizeClockTime(raw: unknown): string {
+  const match = String(raw || "")
+    .trim()
+    .match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (!match) return "09:00:00";
+  return `${match[1].padStart(2, "0")}:${match[2]}:${match[3] || "00"}`;
+}
+
+function normalizePaymentMethod(raw: unknown): string {
+  const value = String(raw || "cash").toLowerCase();
+  if (value === "card" || value === "credit" || value === "credit_card") {
+    return "credit_card";
+  }
+  if (value === "debit" || value === "debit_card") return "debit_card";
+  if (value === "transfer") return "transfer";
+  if (value === "stripe") return "stripe";
+  return "cash";
+}
+
+async function insertPatientRow(fields: {
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone?: string | null;
+}): Promise<{
+  id: number;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string | null;
+}> {
+  const first_name = String(fields.first_name || "").trim();
+  const last_name = String(fields.last_name || "").trim();
+  const email = String(fields.email || "")
+    .trim()
+    .toLowerCase();
+  const phone = fields.phone ? String(fields.phone).trim() : null;
+  if (!first_name || !last_name || !email) {
+    const err = new Error("first_name, last_name and email are required");
+    (err as Error & { status?: number }).status = 400;
+    throw err;
+  }
+  const [result] = await pool.query<any>(
+    `INSERT INTO patients (email, first_name, last_name, phone, role, is_active, created_at)
+     VALUES (?, ?, ?, ?, 'patient', 1, NOW())`,
+    [email, first_name, last_name, phone],
+  );
+  return { id: result.insertId, first_name, last_name, email, phone };
+}
+
 /**
  * GET /api/blocked-dates
  * Get blocked dates
@@ -2034,46 +2390,42 @@ const getBusinessHours: RequestHandler = async (req, res) => {
 const getBlockedDates: RequestHandler = async (req, res) => {
   try {
     const { start_date, end_date, page = 1, pageSize = 100 } = req.query;
-
-    let query = `
-      SELECT bd.*, 
-             u.id as creator_id,
-             u.first_name as creator_first_name,
-             u.last_name as creator_last_name,
-             u.email as creator_email
-      FROM blocked_dates bd
-      LEFT JOIN users u ON bd.created_by = u.id
-      WHERE 1=1
-    `;
-    const params: any[] = [];
-
-    if (start_date) {
-      query += ` AND bd.end_date >= ?`;
-      params.push(start_date);
-    } else {
-      // Default: only show future blocked dates
-      query += ` AND bd.end_date >= CURDATE()`;
-    }
+    const rangeStart = start_date
+      ? String(start_date).slice(0, 10)
+      : clinicDateYmd();
+    const filters = ["bd.end_date >= ?"];
+    const params: any[] = [rangeStart];
 
     if (end_date) {
-      query += ` AND bd.start_date <= ?`;
-      params.push(end_date);
+      filters.push("bd.start_date <= ?");
+      params.push(String(end_date).slice(0, 10));
     }
 
-    // Get total count for pagination
-    const countQuery = query.replace(
-      "SELECT bd.*, u.id as creator_id, u.first_name as creator_first_name, u.last_name as creator_last_name, u.email as creator_email",
-      "SELECT COUNT(*) as total",
+    const where = filters.join(" AND ");
+    const [countResult] = await pool.query<any[]>(
+      `SELECT COUNT(*) as total FROM blocked_dates bd WHERE ${where}`,
+      params,
     );
-    const [countResult] = await pool.query<any[]>(countQuery, params);
-    const total = countResult[0].total;
+    const total = Number(countResult[0]?.total || 0);
 
-    // Add pagination
-    query += ` ORDER BY bd.start_date ASC, bd.start_time ASC`;
-    query += ` LIMIT ? OFFSET ?`;
-    params.push(Number(pageSize), (Number(page) - 1) * Number(pageSize));
+    const limit = Math.min(Math.max(Number(pageSize) || 100, 1), 500);
+    const pageNum = Math.max(Number(page) || 1, 1);
+    const offset = (pageNum - 1) * limit;
 
-    const [rows] = await pool.query<any[]>(query, params);
+    const [rows] = await pool.query<any[]>(
+      `SELECT bd.id, bd.start_date, bd.end_date, bd.start_time, bd.end_time,
+              bd.all_day, bd.reason, bd.notes, bd.created_by, bd.created_at, bd.updated_at,
+              u.id as creator_id,
+              u.first_name as creator_first_name,
+              u.last_name as creator_last_name,
+              u.email as creator_email
+       FROM blocked_dates bd
+       LEFT JOIN users u ON bd.created_by = u.id
+       WHERE ${where}
+       ORDER BY bd.start_date ASC, bd.start_time ASC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset],
+    );
 
     const blockedDates = rows.map((row) => ({
       id: row.id,
@@ -2102,9 +2454,9 @@ const getBlockedDates: RequestHandler = async (req, res) => {
       data: {
         items: blockedDates,
         total,
-        page: Number(page),
-        pageSize: Number(pageSize),
-        totalPages: Math.ceil(total / Number(pageSize)),
+        page: pageNum,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit) || 0,
       },
     });
   } catch (error) {
@@ -2112,7 +2464,6 @@ const getBlockedDates: RequestHandler = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch blocked dates",
-      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
@@ -2205,7 +2556,7 @@ const checkAdminUser: RequestHandler = async (req, res) => {
       `SELECT id, email, role, first_name, last_name, phone, is_active, is_email_verified, 
               employee_id, specialization, profile_picture_url, created_at, last_login
        FROM users
-       WHERE email = ? AND role IN ('admin', 'general_admin', 'receptionist', 'doctor')`,
+       WHERE email = ? AND role IN (${STAFF_LOGIN_ROLES_SQL})`,
       [email],
     );
 
@@ -2269,24 +2620,17 @@ const sendAdminCode: RequestHandler = async (req, res) => {
     const admin_name = `${userRows[0].first_name} ${userRows[0].last_name}`;
     console.log("✅ Admin user found:", admin_name);
 
-    // Generate session code (fixed for test email, random otherwise)
     let session_code: number;
-    if (email === "admin@beautyhospital.com") {
-      session_code = 123456;
-      console.log("🧪 Using test code:", session_code);
-    } else {
-      // Generate unique code
-      let isUnique = false;
-      do {
-        session_code = Math.floor(100000 + Math.random() * 900000);
-        const [existingCodes] = await pool.query<any[]>(
-          "SELECT COUNT(*) as count FROM admin_sessions WHERE session_code = ?",
-          [session_code],
-        );
-        isUnique = existingCodes[0].count === 0;
-      } while (!isUnique);
-      console.log("🔢 Generated unique code:", session_code);
-    }
+    let isUnique = false;
+    do {
+      session_code = Math.floor(100000 + Math.random() * 900000);
+      const [existingCodes] = await pool.query<any[]>(
+        "SELECT COUNT(*) as count FROM admin_sessions WHERE session_code = ?",
+        [session_code],
+      );
+      isUnique = existingCodes[0].count === 0;
+    } while (!isUnique);
+    console.log("🔢 Generated unique code:", session_code);
 
     // Store the code in admin sessions table
     console.log("💾 Inserting session code into database...");
@@ -2365,7 +2709,7 @@ const verifyAdminCode: RequestHandler = async (req, res) => {
     // Get admin user info
     const [users] = await pool.query<any[]>(
       `SELECT id, email, first_name, last_name, phone, role, employee_id, specialization 
-       FROM users WHERE id = ? AND role IN ('admin', 'general_admin', 'receptionist', 'doctor')`,
+       FROM users WHERE id = ? AND role IN (${STAFF_LOGIN_ROLES_SQL})`,
       [user_id],
     );
 
@@ -2388,9 +2732,13 @@ const verifyAdminCode: RequestHandler = async (req, res) => {
       [user_id],
     );
 
+    const { accessToken, refreshToken } = signAdminTokens(user);
+
     res.json({
       success: true,
       message: "Login successful",
+      accessToken,
+      refreshToken,
       user: {
         id: user.id,
         email: user.email,
@@ -2408,6 +2756,75 @@ const verifyAdminCode: RequestHandler = async (req, res) => {
   }
 };
 
+const refreshAdminToken: RequestHandler = async (req, res) => {
+  try {
+    const { refreshToken } = req.body as { refreshToken?: string };
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Refresh token is required",
+      });
+    }
+    const refreshSecret =
+      process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
+    if (!refreshSecret) {
+      return res.status(500).json({
+        success: false,
+        message: "Server configuration error",
+      });
+    }
+    let decoded: { id?: number; type?: string };
+    try {
+      decoded = jwt.verify(refreshToken, refreshSecret) as {
+        id?: number;
+        type?: string;
+      };
+    } catch {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or expired refresh token",
+      });
+    }
+    if (decoded.type !== "admin_refresh" || !decoded.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Admin refresh token required",
+      });
+    }
+    const [users] = await pool.query<any[]>(
+      `SELECT id, email, first_name, last_name, phone, role, employee_id, specialization, is_active
+       FROM users WHERE id = ? AND role IN (${STAFF_LOGIN_ROLES_SQL})`,
+      [decoded.id],
+    );
+    if (users.length === 0 || users[0].is_active === 0) {
+      return res.status(401).json({
+        success: false,
+        message: "Admin user not found or inactive",
+      });
+    }
+    const user = users[0];
+    const tokens = signAdminTokens(user);
+    res.json({
+      success: true,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        phone: user.phone,
+        role: user.role,
+        employee_id: user.employee_id,
+        specialization: user.specialization,
+      },
+    });
+  } catch (error) {
+    console.error("Error refreshing admin token:", error);
+    res.status(500).json({ success: false, message: "Failed to refresh token" });
+  }
+};
+
 /**
  * GET /api/admin/dashboard/metrics
  * Get dashboard metrics overview
@@ -2416,13 +2833,10 @@ const getDashboardMetrics: RequestHandler = async (req, res) => {
   try {
     const { start_date, end_date } = req.query;
 
-    // Default to current month if no dates provided
     const startDate =
-      start_date ||
-      new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-        .toISOString()
-        .split("T")[0];
-    const endDate = end_date || new Date().toISOString().split("T")[0];
+      (typeof start_date === "string" && start_date) || clinicMonthStartYmd();
+    const endDate =
+      (typeof end_date === "string" && end_date) || clinicDateYmd();
 
     // Get total appointments
     const [appointmentStats] = await pool.query<any[]>(
@@ -2480,8 +2894,8 @@ const getDashboardMetrics: RequestHandler = async (req, res) => {
     const [upcomingToday] = await pool.query<any[]>(
       `SELECT COUNT(*) as count
        FROM appointments
-       WHERE DATE(scheduled_at) = CURDATE() AND status IN ('scheduled', 'confirmed')`,
-      [],
+       WHERE DATE(scheduled_at) = ? AND status IN ('scheduled', 'confirmed')`,
+      [clinicDateYmd()],
     );
 
     res.json({
@@ -2526,17 +2940,18 @@ const getRevenueChart: RequestHandler = async (req, res) => {
     switch (period) {
       case "week":
         dateFormat = "%Y-%m-%d";
-        dateRange = "DATE_SUB(CURDATE(), INTERVAL 7 DAY)";
+        dateRange = "DATE_SUB(?, INTERVAL 7 DAY)";
         break;
       case "year":
         dateFormat = "%Y-%m";
-        dateRange = "DATE_SUB(CURDATE(), INTERVAL 12 MONTH)";
+        dateRange = "DATE_SUB(?, INTERVAL 12 MONTH)";
         break;
       default: // month
         dateFormat = "%Y-%m-%d";
-        dateRange = "DATE_SUB(CURDATE(), INTERVAL 30 DAY)";
+        dateRange = "DATE_SUB(?, INTERVAL 30 DAY)";
     }
 
+    const clinicToday = clinicDateYmd();
     const [revenueData] = await pool.query<any[]>(
       `SELECT 
         DATE_FORMAT(created_at, ?) as date,
@@ -2546,7 +2961,7 @@ const getRevenueChart: RequestHandler = async (req, res) => {
        WHERE created_at >= ${dateRange}
        GROUP BY DATE_FORMAT(created_at, ?)
        ORDER BY date ASC`,
-      [dateFormat, dateFormat],
+      [dateFormat, clinicToday, dateFormat],
     );
 
     res.json({
@@ -2612,24 +3027,44 @@ const getCalendarAppointments: RequestHandler = async (req, res) => {
  */
 const getRecentActivity: RequestHandler = async (req, res) => {
   try {
-    const { limit = 20 } = req.query;
+    const limit = Math.min(parseInt(String(req.query.limit || "20"), 10) || 20, 50);
+    const take = Math.max(limit, 8);
 
-    // Since we might not have audit_logs table, let's create activity from appointments
-    const [activities] = await pool.query<any[]>(
-      `SELECT 
-        a.id,
-        a.patient_id,
-        'appointment_created' as action,
-        'appointment' as entity_type,
-        a.id as entity_id,
-        CONCAT('New appointment created for ', p.first_name, ' ', p.last_name) as description,
-        a.created_at
+    const [appointments] = await pool.query<any[]>(
+      `SELECT a.id as entity_id, a.patient_id, a.created_at,
+              'appointment_created' as action, 'appointment' as entity_type,
+              CONCAT('Cita creada para ', p.first_name, ' ', p.last_name) as description
        FROM appointments a
        JOIN patients p ON a.patient_id = p.id
        ORDER BY a.created_at DESC
        LIMIT ?`,
-      [parseInt(limit as string)],
+      [take],
     );
+    const [payments] = await pool.query<any[]>(
+      `SELECT pay.id as entity_id, pay.patient_id, pay.created_at,
+              'payment_recorded' as action, 'payment' as entity_type,
+              CONCAT('Pago ', pay.payment_status, ' de $', pay.amount) as description
+       FROM payments pay
+       ORDER BY pay.created_at DESC
+       LIMIT ?`,
+      [take],
+    );
+    const [contracts] = await pool.query<any[]>(
+      `SELECT c.id as entity_id, c.patient_id, c.created_at,
+              'contract_updated' as action, 'contract' as entity_type,
+              CONCAT('Contrato ', c.contract_number, ' (', c.status, ')') as description
+       FROM contracts c
+       ORDER BY c.updated_at DESC
+       LIMIT ?`,
+      [take],
+    );
+
+    const activities = [...appointments, ...payments, ...contracts]
+      .sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      )
+      .slice(0, limit);
 
     res.json({
       success: true,
@@ -2943,7 +3378,7 @@ const addPatientMedicalRecord: RequestHandler = async (req, res) => {
     }
 
     // Resolve doctor_id: use provided value or fall back to request user
-    const resolvedDoctorId = doctor_id || (req as any).user?.id;
+    const resolvedDoctorId = doctor_id || getAdminFromRequest(req)?.id;
     if (!resolvedDoctorId) {
       return res
         .status(400)
@@ -3131,6 +3566,7 @@ const createMedicalRecord: RequestHandler = async (req, res) => {
   try {
     const {
       patient_id,
+      appointment_id,
       visit_date,
       diagnosis,
       treatment,
@@ -3138,9 +3574,7 @@ const createMedicalRecord: RequestHandler = async (req, res) => {
       prescriptions,
     } = req.body;
 
-    // Get doctor ID from authenticated user (req.user should be set by auth middleware)
-    // For now, we'll accept it from the request or use a default
-    const doctor_id = (req as any).user?.id || req.body.doctor_id;
+    const doctor_id = getAdminFromRequest(req)?.id || req.body.doctor_id;
 
     if (!patient_id || !visit_date || !diagnosis || !treatment) {
       return res.status(400).json({
@@ -3150,13 +3584,21 @@ const createMedicalRecord: RequestHandler = async (req, res) => {
       });
     }
 
+    if (!doctor_id) {
+      return res.status(400).json({
+        success: false,
+        message: "doctor_id is required",
+      });
+    }
+
     const [result] = await pool.query<any>(
       `INSERT INTO medical_records 
-        (patient_id, doctor_id, visit_date, diagnosis, treatment, notes, prescriptions, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        (patient_id, doctor_id, appointment_id, visit_date, diagnosis, treatment, notes, prescriptions, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
       [
         patient_id,
         doctor_id,
+        appointment_id || null,
         visit_date,
         diagnosis,
         treatment,
@@ -3196,6 +3638,7 @@ const updateMedicalRecord: RequestHandler = async (req, res) => {
     const { id } = req.params;
     const {
       patient_id,
+      appointment_id,
       visit_date,
       diagnosis,
       treatment,
@@ -3217,11 +3660,12 @@ const updateMedicalRecord: RequestHandler = async (req, res) => {
 
     const [result] = await pool.query<any>(
       `UPDATE medical_records 
-       SET patient_id = ?, visit_date = ?, diagnosis = ?, treatment = ?, 
+       SET patient_id = ?, appointment_id = ?, visit_date = ?, diagnosis = ?, treatment = ?, 
            notes = ?, prescriptions = ?, updated_at = NOW()
        WHERE id = ?`,
       [
         patient_id,
+        appointment_id || null,
         visit_date,
         diagnosis,
         treatment,
@@ -3721,7 +4165,7 @@ const getDefaultContractTerms: RequestHandler = async (req, res) => {
 const updateDefaultContractTerms: RequestHandler = async (req, res) => {
   try {
     const { terms } = req.body;
-    const admin_id = (req as any).user?.id || 1; // Get from auth middleware
+    const admin_id = getAdminFromRequest(req)?.id || null;
 
     if (!terms) {
       return res.status(400).json({
@@ -3957,6 +4401,34 @@ const downloadContractPDF: RequestHandler = async (req, res) => {
   }
 };
 
+const downloadPatientContractPDF: RequestHandler = async (req, res, next) => {
+  const patient_id = Number(req.query.patient_id);
+  if (!patient_id) {
+    return res.status(400).json({
+      success: false,
+      message: "Patient ID is required",
+    });
+  }
+  const isAuthenticated = await verifyPatientSession(patient_id);
+  if (!isAuthenticated) {
+    return res.status(401).json({
+      success: false,
+      message: "Unauthorized - please login again",
+    });
+  }
+  const [rows] = await pool.query<any[]>(
+    `SELECT id FROM contracts WHERE id = ? AND patient_id = ?`,
+    [req.params.id, patient_id],
+  );
+  if (rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      message: "Contract not found",
+    });
+  }
+  return downloadContractPDF(req, res, next);
+};
+
 /**
  * POST /api/admin/appointments/:id/check-in
  * Check in a patient for their appointment
@@ -4006,13 +4478,16 @@ const createContract: RequestHandler = async (req, res) => {
 
     // Generate contract number
     const contractNumber = `CON-${Date.now()}-${patient_id}`;
+    const createdBy = getAdminFromRequest(req)?.id;
+    if (!createdBy) return missingAdminActorResponse(res);
+    const appointmentId = req.body.appointment_id;
 
     // Create contract in database
     const [result] = await pool.query<any>(
       `INSERT INTO contracts (
         patient_id, service_id, contract_number, status, total_amount,
         sessions_included, terms_and_conditions, created_by, created_at
-      ) VALUES (?, ?, ?, 'draft', ?, ?, ?, 1, NOW())`,
+      ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, NOW())`,
       [
         patient_id,
         service_id,
@@ -4020,10 +4495,28 @@ const createContract: RequestHandler = async (req, res) => {
         total_amount,
         sessions_included,
         terms_and_conditions || "Términos y condiciones estándar del servicio.",
+        createdBy,
       ],
     );
 
     const contractId = result.insertId;
+
+    if (appointmentId) {
+      await pool.query(
+        `UPDATE appointments SET contract_id = ? WHERE id = ?`,
+        [contractId, appointmentId],
+      );
+    } else {
+      await pool.query(
+        `UPDATE appointments
+         SET contract_id = ?
+         WHERE patient_id = ?
+           AND service_id = ?
+           AND status IN ('scheduled', 'confirmed')
+           AND contract_id IS NULL`,
+        [contractId, patient_id, service_id],
+      );
+    }
 
     res.json({
       success: true,
@@ -4042,222 +4535,6 @@ const createContract: RequestHandler = async (req, res) => {
   }
 };
 
-const createContractAndOpenDocuSign: RequestHandler = async (req, res) => {
-  try {
-    const {
-      patient_id,
-      patient_name,
-      patient_email,
-      service_id,
-      service_name,
-      total_amount,
-      sessions_included,
-      return_url,
-    } = req.body;
-
-    if (!patient_id || !service_id || !total_amount || !sessions_included) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing required fields",
-      });
-    }
-
-    const contractNumber = `CON-${Date.now()}-${patient_id}`;
-
-    // Fetch default terms from database
-    const [defaultTerms] = await pool.query<any[]>(
-      `SELECT setting_value FROM system_settings WHERE setting_key = 'default_contract_terms'`,
-    );
-
-    const terms =
-      defaultTerms.length > 0
-        ? defaultTerms[0].setting_value
-        : "Términos y condiciones estándar del servicio.";
-
-    // Create contract in database
-    const [result] = await pool.query<any>(
-      `INSERT INTO contracts (
-        patient_id, service_id, contract_number, status, total_amount,
-        sessions_included, terms_and_conditions, created_by, created_at
-      ) VALUES (?, ?, ?, 'draft', ?, ?, ?, 1, NOW())`,
-      [
-        patient_id,
-        service_id,
-        contractNumber,
-        total_amount,
-        sessions_included,
-        terms,
-      ],
-    );
-
-    const contractId = result.insertId;
-
-    // Try to create DocuSign envelope
-    try {
-      const { createContractEnvelope, isDocuSignConfigured } = await import(
-        "../server/utils/docusign"
-      );
-
-      const configured = isDocuSignConfigured();
-      console.log("🔍 DocuSign Configuration Check:", {
-        configured,
-        hasIntegrationKey: !!process.env.DOCUSIGN_INTEGRATION_KEY,
-        hasUserId: !!process.env.DOCUSIGN_USER_ID,
-        hasAccountId: !!process.env.DOCUSIGN_ACCOUNT_ID,
-        hasPrivateKeyPath: !!process.env.DOCUSIGN_PRIVATE_KEY_PATH,
-        basePath: process.env.DOCUSIGN_BASE_PATH,
-      });
-
-      if (configured) {
-        console.log("✅ DocuSign is configured, attempting real API call...");
-        // Use real DocuSign - ensure amount is a number
-        const docusignResult = await createContractEnvelope(
-          patient_name,
-          patient_email,
-          service_name,
-          parseFloat(total_amount),
-          parseInt(sessions_included),
-          "Términos y condiciones estándar del servicio.",
-          contractNumber,
-          return_url,
-        );
-
-        console.log("✅ DocuSign envelope created:", docusignResult.envelopeId);
-
-        await pool.query(
-          `UPDATE contracts 
-           SET status = 'pending_signature',
-               updated_at = NOW()
-           WHERE id = ?`,
-          [contractId],
-        );
-
-        // Link contract to appointments for this patient and service
-        await pool.query(
-          `UPDATE appointments 
-           SET contract_id = ?
-           WHERE patient_id = ? 
-             AND service_id = ? 
-             AND status IN ('scheduled', 'confirmed')
-             AND contract_id IS NULL`,
-          [contractId, patient_id, service_id],
-        );
-
-        res.json({
-          success: true,
-          message: "Contract created and sent to DocuSign",
-          data: {
-            contract_id: contractId,
-            contract_number: contractNumber,
-            envelope_id: docusignResult.envelopeId,
-            configuration_url: docusignResult.signingUrl,
-          },
-        });
-      } else {
-        console.log("⚠️ DocuSign not configured, using demo fallback");
-        // Fallback to demo mode
-        const envelopeId = `ENV-${Date.now()}`;
-        const configurationUrl = `https://demo.docusign.net/Signing/StartInSession.aspx?code=${envelopeId}&patient=${encodeURIComponent(patient_name)}&email=${encodeURIComponent(patient_email)}&service=${encodeURIComponent(service_name)}`;
-
-        await pool.query(
-          `UPDATE contracts 
-           SET status = 'pending_signature',
-               updated_at = NOW()
-           WHERE id = ?`,
-          [contractId],
-        );
-
-        res.json({
-          success: true,
-          message: "Contract created (demo mode)",
-          data: {
-            contract_id: contractId,
-            contract_number: contractNumber,
-            envelope_id: envelopeId,
-            configuration_url: configurationUrl,
-          },
-        });
-      }
-    } catch (docusignError: any) {
-      console.error("❌ DocuSign API call failed:", docusignError);
-      console.error("Error details:", {
-        message: docusignError.message,
-        stack: docusignError.stack,
-        response: docusignError.response?.data,
-        status: docusignError.response?.status,
-      });
-
-      // If DocuSign fails, still return success but with demo URL
-      const envelopeId = `ENV-${Date.now()}`;
-      const configurationUrl = `https://demo.docusign.net/Signing/StartInSession.aspx?code=${envelopeId}`;
-
-      await pool.query(
-        `UPDATE contracts 
-         SET status = 'pending_signature',
-             updated_at = NOW()
-         WHERE id = ?`,
-        [contractId],
-      );
-
-      res.json({
-        success: true,
-        message: "Contract created (demo mode - DocuSign unavailable)",
-        data: {
-          contract_id: contractId,
-          contract_number: contractNumber,
-          envelope_id: envelopeId,
-          configuration_url: configurationUrl,
-          docusign_error: docusignError.message,
-        },
-      });
-    }
-  } catch (error) {
-    console.error("Error creating contract:", error);
-    res.status(500).json({ success: false, message: "Internal server error" });
-  }
-};
-
-const openDocuSignForContract: RequestHandler = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { patient_name, patient_email, return_url } = req.body;
-
-    const [contracts] = await pool.query<any[]>(
-      `SELECT c.*, 
-        p.first_name, p.last_name, p.email,
-        s.name as service_name
-      FROM contracts c
-      JOIN patients p ON c.patient_id = p.id
-      JOIN services s ON c.service_id = s.id
-      WHERE c.id = ?`,
-      [id],
-    );
-
-    if (contracts.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Contract not found",
-      });
-    }
-
-    const contract = contracts[0];
-    const envelopeId = `ENV-${Date.now()}`;
-    const configurationUrl = `https://demo.docusign.net/Signing/StartInSession.aspx?code=${envelopeId}&patient=${encodeURIComponent(patient_name)}&email=${encodeURIComponent(patient_email)}`;
-
-    res.json({
-      success: true,
-      message: "DocuSign configuration URL generated",
-      data: {
-        envelope_id: envelopeId,
-        configuration_url: configurationUrl,
-      },
-    });
-  } catch (error) {
-    console.error("Error opening DocuSign:", error);
-    res.status(500).json({ success: false, message: "Internal server error" });
-  }
-};
-
 const uploadContractPDF: RequestHandler = async (req, res) => {
   try {
     const { patient_id, service_id, total_amount, sessions_included } =
@@ -4272,12 +4549,14 @@ const uploadContractPDF: RequestHandler = async (req, res) => {
 
     const contractNumber = `CON-${Date.now()}-${patient_id}`;
     const pdfUrl = `/uploads/contracts/${contractNumber}.pdf`;
+    const createdBy = getAdminFromRequest(req)?.id;
+    if (!createdBy) return missingAdminActorResponse(res);
 
     const [result] = await pool.query<any>(
       `INSERT INTO contracts (
         patient_id, service_id, contract_number, status, total_amount,
         sessions_included, terms_and_conditions, pdf_url, created_by, created_at
-      ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, 1, NOW())`,
+      ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, NOW())`,
       [
         patient_id,
         service_id,
@@ -4286,6 +4565,7 @@ const uploadContractPDF: RequestHandler = async (req, res) => {
         sessions_included,
         "PDF Contract",
         pdfUrl,
+        createdBy,
       ],
     );
 
@@ -4330,17 +4610,7 @@ const sendContractForSignature: RequestHandler = async (req, res) => {
     }
 
     const contract = contracts[0];
-    const patientName = `${contract.first_name} ${contract.last_name}`;
 
-    // Note: DocuSign integration requires the docusign-esign package
-    // For now, we'll simulate the process
-    // To enable: npm install docusign-esign
-
-    // Simulated DocuSign response
-    const envelopeId = `ENV-${Date.now()}`;
-    const signingUrl = `${process.env.APP_URL || "http://localhost:5000"}/sign/${envelopeId}`;
-
-    // Update contract status
     await pool.query(
       `UPDATE contracts 
        SET status = 'pending_signature',
@@ -4351,10 +4621,11 @@ const sendContractForSignature: RequestHandler = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Contract sent for signature",
+      message: "Contract ready for in-app signature",
       data: {
-        envelope_id: envelopeId,
-        signing_url: signingUrl,
+        contract_id: contract.id,
+        contract_number: contract.contract_number,
+        status: "pending_signature",
       },
     });
   } catch (error) {
@@ -4363,16 +4634,61 @@ const sendContractForSignature: RequestHandler = async (req, res) => {
   }
 };
 
+const updateContractTermsHandler: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const customTerms =
+      req.body.custom_terms || req.body.terms_and_conditions;
+    if (!customTerms || typeof customTerms !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "custom_terms is required",
+      });
+    }
+    const [contracts] = await pool.query<any[]>(
+      `SELECT id, status FROM contracts WHERE id = ?`,
+      [id],
+    );
+    if (contracts.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Contract not found",
+      });
+    }
+    if (!["draft", "pending_signature"].includes(contracts[0].status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Only draft or pending contracts can update terms",
+      });
+    }
+    await pool.query(
+      `UPDATE contracts SET terms_and_conditions = ?, updated_at = NOW() WHERE id = ?`,
+      [customTerms, id],
+    );
+    res.json({
+      success: true,
+      data: {
+        id: Number(id),
+        custom_terms: customTerms,
+        terms_and_conditions: customTerms,
+      },
+    });
+  } catch (error) {
+    console.error("Error updating contract terms:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
 /**
  * GET /api/admin/contracts/:id/status
- * Get contract and DocuSign status
+ * Get contract signature status (in-app canvas)
  */
 const getContractStatus: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
 
     const [contracts] = await pool.query<any[]>(
-      `SELECT c.*, 
+      `SELECT c.id, c.contract_number, c.status, c.signed_at,
         p.first_name, p.last_name, p.email,
         s.name as service_name
       FROM contracts c
@@ -4389,51 +4705,9 @@ const getContractStatus: RequestHandler = async (req, res) => {
       });
     }
 
-    const contract = contracts[0];
-
-    // If there's a DocuSign envelope, fetch the latest status
-    if (contract.docusign_envelope_id) {
-      try {
-        const { getEnvelopeStatus } = await import("../server/utils/docusign");
-        const envelopeStatus = await getEnvelopeStatus(
-          contract.docusign_envelope_id,
-        );
-
-        console.log("📋 DocuSign envelope status:", envelopeStatus);
-
-        // Update contract status in database if it changed
-        const newDocuSignStatus = envelopeStatus.status.toLowerCase();
-        if (newDocuSignStatus !== contract.docusign_status) {
-          const updateQuery =
-            newDocuSignStatus === "completed"
-              ? `UPDATE contracts 
-                 SET docusign_status = ?, 
-                     status = 'signed',
-                     signed_at = NOW(),
-                     updated_at = NOW()
-                 WHERE id = ?`
-              : `UPDATE contracts 
-                 SET docusign_status = ?,
-                     updated_at = NOW()
-                 WHERE id = ?`;
-
-          await pool.query(updateQuery, [newDocuSignStatus, id]);
-
-          contract.docusign_status = newDocuSignStatus;
-          if (newDocuSignStatus === "completed") {
-            contract.status = "signed";
-            contract.signed_at = new Date();
-          }
-        }
-      } catch (error) {
-        console.error("Error fetching DocuSign status:", error);
-        // Continue with database status if DocuSign API fails
-      }
-    }
-
     res.json({
       success: true,
-      data: contract,
+      data: contracts[0],
     });
   } catch (error) {
     console.error("Error getting contract status:", error);
@@ -4452,7 +4726,7 @@ const getContractByAppointment: RequestHandler = async (req, res) => {
     // Get appointment details
     const [appointments] = await pool.query<any[]>(
       `SELECT a.*, c.id as contract_id, c.status as contract_status,
-        c.signed_at
+        c.signed_at, c.contract_number
       FROM appointments a
       LEFT JOIN contracts c ON a.contract_id = c.id
       WHERE a.id = ?`,
@@ -4480,6 +4754,7 @@ const getContractByAppointment: RequestHandler = async (req, res) => {
       success: true,
       data: {
         contract_id: appointment.contract_id,
+        contract_number: appointment.contract_number,
         contract_status: appointment.contract_status,
         signed_at: appointment.signed_at,
       },
@@ -4494,10 +4769,40 @@ const getContractByAppointment: RequestHandler = async (req, res) => {
  * POST /api/admin/appointments/manual
  * Create a manual appointment from the admin panel
  */
+const createAdminPatient: RequestHandler = async (req, res) => {
+  try {
+    const patient = await insertPatientRow(req.body || {});
+    return res.status(201).json({
+      success: true,
+      message: "Patient created successfully",
+      data: patient,
+    });
+  } catch (error) {
+    const status = (error as Error & { status?: number }).status;
+    if (status === 400) {
+      return res.status(400).json({
+        success: false,
+        message: "Nombre, apellido y correo son requeridos",
+      });
+    }
+    if (isMysqlDuplicate(error)) {
+      return res.status(409).json({
+        success: false,
+        message: "Ya existe un paciente con ese correo",
+      });
+    }
+    console.error("Error creating admin patient:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
 const createManualAppointment: RequestHandler = async (req, res) => {
   try {
     const {
       patient_id,
+      new_patient,
       service_id,
       scheduled_date,
       scheduled_time,
@@ -4507,25 +4812,73 @@ const createManualAppointment: RequestHandler = async (req, res) => {
       created_by,
     } = req.body;
 
-    if (!patient_id || !service_id || !scheduled_date || !scheduled_time) {
+    const adminId = (req as express.Request & { admin?: AdminJwtPayload }).admin
+      ?.id;
+    const createdBy = created_by || adminId;
+
+    if (!service_id || !scheduled_date || !scheduled_time) {
       return res.status(400).json({
         success: false,
-        message:
-          "patient_id, service_id, scheduled_date and scheduled_time are required",
+        message: "service_id, scheduled_date and scheduled_time are required",
       });
     }
 
-    if (!created_by) {
+    if (!createdBy) {
       return res.status(400).json({
         success: false,
         message: "created_by (admin user ID) is required",
       });
     }
 
-    // Validate patient exists
+    let resolvedPatientId = patient_id ? Number(patient_id) : 0;
+    if (!resolvedPatientId && new_patient) {
+      const email = String(new_patient.email || "")
+        .trim()
+        .toLowerCase();
+      if (email) {
+        const [existing] = await pool.query<any[]>(
+          "SELECT id FROM patients WHERE email = ?",
+          [email],
+        );
+        if (existing.length > 0) {
+          resolvedPatientId = existing[0].id;
+        }
+      }
+      if (!resolvedPatientId) {
+        try {
+          const created = await insertPatientRow(new_patient);
+          resolvedPatientId = created.id;
+        } catch (error) {
+          const status = (error as Error & { status?: number }).status;
+          if (status === 400) {
+            return res.status(400).json({
+              success: false,
+              message:
+                "Para un paciente nuevo se requieren nombre, apellido y correo",
+            });
+          }
+          if (isMysqlDuplicate(error)) {
+            return res.status(409).json({
+              success: false,
+              message: "Ya existe un paciente con ese correo",
+            });
+          }
+          throw error;
+        }
+      }
+    }
+
+    if (!resolvedPatientId) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Selecciona un paciente existente o captura los datos de un paciente nuevo",
+      });
+    }
+
     const [patients] = await pool.query<any[]>(
       "SELECT id FROM patients WHERE id = ?",
-      [patient_id],
+      [resolvedPatientId],
     );
     if (patients.length === 0) {
       return res
@@ -4545,7 +4898,8 @@ const createManualAppointment: RequestHandler = async (req, res) => {
     }
     const service = services[0];
 
-    const scheduledAt = `${scheduled_date} ${scheduled_time}:00`;
+    const scheduledAt = `${scheduled_date} ${normalizeClockTime(scheduled_time)}`;
+    const paymentMethod = normalizePaymentMethod(payment_method);
 
     // Create appointment
     const [result] = await pool.query<any>(
@@ -4553,12 +4907,12 @@ const createManualAppointment: RequestHandler = async (req, res) => {
        (patient_id, service_id, scheduled_at, duration_minutes, status, notes, created_by, booked_for_self, booking_source)
        VALUES (?, ?, ?, ?, 'scheduled', ?, ?, 1, 'receptionist')`,
       [
-        patient_id,
+        resolvedPatientId,
         service_id,
         scheduledAt,
         service.duration_minutes,
         notes || null,
-        created_by,
+        createdBy,
       ],
     );
 
@@ -4572,10 +4926,10 @@ const createManualAppointment: RequestHandler = async (req, res) => {
          VALUES (?, ?, ?, ?, 'completed', ?, NOW())`,
         [
           appointmentId,
-          patient_id,
+          resolvedPatientId,
           parseFloat(payment_amount),
-          payment_method || "cash",
-          created_by,
+          paymentMethod,
+          createdBy,
         ],
       );
     }
@@ -4584,7 +4938,7 @@ const createManualAppointment: RequestHandler = async (req, res) => {
     const [patientRows] = await pool.query<any[]>(
       `SELECT p.email, CONCAT(p.first_name, ' ', p.last_name) AS full_name
        FROM patients p WHERE p.id = ?`,
-      [patient_id],
+      [resolvedPatientId],
     );
     if (patientRows.length > 0) {
       const patient = patientRows[0];
@@ -4594,7 +4948,7 @@ const createManualAppointment: RequestHandler = async (req, res) => {
         time: scheduled_time,
         duration: service.duration_minutes,
         amount: payment_amount ? parseFloat(payment_amount) : 0,
-        paymentMethod: payment_method || "cash",
+        paymentMethod,
       }).catch((err) =>
         console.error("Failed to send manual appointment email:", err),
       );
@@ -4603,7 +4957,7 @@ const createManualAppointment: RequestHandler = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: "Appointment created successfully",
-      data: { id: appointmentId },
+      data: { id: appointmentId, patient_id: resolvedPatientId },
     });
   } catch (error) {
     console.error("Error creating manual appointment:", error);
@@ -4647,9 +5001,10 @@ const checkInAppointment: RequestHandler = async (req, res) => {
     }
 
     if (appointment.check_in_at) {
-      return res.status(400).json({
-        success: false,
+      return res.json({
+        success: true,
         message: "Patient already checked in",
+        already_checked_in: true,
       });
     }
 
@@ -4696,61 +5051,22 @@ const checkInAppointment: RequestHandler = async (req, res) => {
 };
 
 /**
- * POST /api/webhooks/docusign
- * DocuSign webhook to receive status updates
- */
-const handleDocuSignWebhook: RequestHandler = async (req, res) => {
-  try {
-    console.log(
-      "📨 DocuSign webhook received:",
-      JSON.stringify(req.body, null, 2),
-    );
-
-    // DocuSign functionality disabled - return success
-    res.json({
-      success: true,
-      message: "Webhook received (DocuSign disabled)",
-    });
-  } catch (error) {
-    console.error("Error processing DocuSign webhook:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Webhook processing failed" });
-  }
-};
-
-/**
  * POST /api/admin/appointments/:id/cancel
  * Cancel an appointment (admin)
  */
 const cancelAdminAppointment: RequestHandler = async (req, res) => {
   try {
     // ── Role check: only 'admin' (super admin) may cancel ──────────────────────
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    const caller = getAdminFromRequest(req);
+    if (!caller) {
       return res
         .status(401)
         .json({ success: false, message: "Authentication required" });
     }
-    const jwtSecret = process.env.JWT_SECRET;
-    if (!jwtSecret) {
-      return res
-        .status(500)
-        .json({ success: false, message: "Server configuration error" });
-    }
-    let callerRole: string;
-    try {
-      const decoded = jwt.verify(authHeader.substring(7), jwtSecret) as any;
-      callerRole = decoded.role;
-    } catch {
-      return res
-        .status(401)
-        .json({ success: false, message: "Invalid or expired token" });
-    }
-    if (callerRole !== "admin") {
+    if (!STAFF_CAN_CANCEL_ROLES.has(caller.role)) {
       return res.status(403).json({
         success: false,
-        message: "Solo el super administrador puede cancelar citas",
+        message: "No tienes permiso para cancelar citas",
       });
     }
 
@@ -4790,24 +5106,17 @@ const cancelAdminAppointment: RequestHandler = async (req, res) => {
     let refundIssued = false;
     if (refund === true && appt.stripe_payment_intent_id) {
       try {
-        await stripe.refunds.create({
-          payment_intent: appt.stripe_payment_intent_id,
-          reason: "requested_by_customer",
+        await issueStripeRefund({
+          paymentIntentId: appt.stripe_payment_intent_id,
+          reason: cancellation_reason || "Cancelled by admin",
         });
         refundIssued = true;
-        console.log(
-          `[cancel] Refund issued for PI ${appt.stripe_payment_intent_id}`,
-        );
-        // Mark payment as refunded in DB
-        await pool.query(
-          `UPDATE payments
-           SET payment_status = 'refunded',
-               refund_amount = amount,
-               refund_reason = ?,
-               refunded_at = NOW()
-           WHERE id = ?`,
-          [cancellation_reason || "Cancelled by admin", appt.payment_id],
-        );
+        await markPaymentRefundedInDb({
+          paymentId: appt.payment_id,
+          refundAmount: Number(appt.paid_amount),
+          reason: cancellation_reason || "Cancelled by admin",
+          approvedBy: caller.id,
+        });
       } catch (stripeErr: any) {
         console.error("[cancel] Stripe refund failed:", stripeErr.message);
         return res.status(502).json({
@@ -5186,10 +5495,14 @@ const completeCheckIn: RequestHandler = async (req, res) => {
         CONCAT(p.first_name, ' ', p.last_name) as patient_name,
         p.email as patient_email,
         s.name as service_name,
-        s.price as service_price
+        s.price as service_price,
+        c.id as existing_contract_id,
+        c.contract_number as existing_contract_number,
+        c.terms_and_conditions as existing_terms
        FROM appointments a 
        JOIN patients p ON a.patient_id = p.id 
        JOIN services s ON a.service_id = s.id
+       LEFT JOIN contracts c ON a.contract_id = c.id
        WHERE a.check_in_token = ?`,
       [token],
     );
@@ -5203,6 +5516,16 @@ const completeCheckIn: RequestHandler = async (req, res) => {
 
     const appointment = appointments[0];
 
+    if (
+      appointment.check_in_token_expires_at &&
+      new Date(appointment.check_in_token_expires_at) < new Date()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "El código de check-in ha expirado",
+      });
+    }
+
     // Check if already checked in
     if (appointment.check_in_at) {
       return res.status(400).json({
@@ -5212,7 +5535,9 @@ const completeCheckIn: RequestHandler = async (req, res) => {
     }
 
     const now = new Date();
-    const contractNumber = `CON-${Date.now()}-${appointment.patient_id}`;
+    const contractNumber =
+      appointment.existing_contract_number ||
+      `CON-${Date.now()}-${appointment.patient_id}`;
 
     // Fetch the EXACT terms that were shown to the patient during check-in
     // This ensures legal compliance - we store what they actually saw and signed
@@ -5221,9 +5546,10 @@ const completeCheckIn: RequestHandler = async (req, res) => {
     );
 
     const contractTerms =
-      defaultTermsRows.length > 0
+      appointment.existing_terms ||
+      (defaultTermsRows.length > 0
         ? defaultTermsRows[0].setting_value
-        : "Términos y condiciones del servicio.";
+        : "Términos y condiciones del servicio.");
 
     // Convert base64 PDF to Buffer for email attachment
     let pdfBuffer: Buffer | null = null;
@@ -5237,41 +5563,72 @@ const completeCheckIn: RequestHandler = async (req, res) => {
       }
     }
 
-    // Update appointment with check-in info
+    let contractId = appointment.existing_contract_id as number | null;
+    if (contractId) {
+      await pool.query(
+        `UPDATE contracts
+         SET status = 'signed',
+             signature_data = ?,
+             signed_terms = COALESCE(signed_terms, ?),
+             signed_at = ?,
+             signed_by = NULL,
+             signature_canvas_data = ?,
+             signature_ip_address = ?,
+             signature_user_agent = ?
+         WHERE id = ?`,
+        [
+          signature_data,
+          contractTerms,
+          now,
+          signature_data,
+          req.ip,
+          req.headers["user-agent"] || null,
+          contractId,
+        ],
+      );
+    } else {
+      const createdBy = await resolveStaffCreatedBy(appointment.created_by);
+      if (!createdBy) {
+        return res.status(500).json({
+          success: false,
+          message: "No hay un administrador activo para registrar el contrato",
+        });
+      }
+      const [created] = await pool.query<any>(
+        `INSERT INTO contracts 
+         (patient_id, service_id, contract_number, status, total_amount, 
+          sessions_included, terms_and_conditions, signed_terms, signature_data, signed_at, 
+          signed_by, created_by, pdf_url, signature_canvas_data, signature_ip_address, signature_user_agent)
+         VALUES (?, ?, ?, 'signed', ?, 1, ?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?)`,
+        [
+          appointment.patient_id,
+          appointment.service_id,
+          contractNumber,
+          appointment.service_price,
+          contractTerms,
+          contractTerms,
+          signature_data,
+          now,
+          createdBy,
+          signature_data,
+          req.ip,
+          req.headers["user-agent"] || null,
+        ],
+      );
+      contractId = created.insertId;
+    }
+
     await pool.query(
       `UPDATE appointments 
        SET check_in_at = ?,
            signature_data_url = ?,
-           signed_contract_pdf_url = ?,
+           signed_contract_pdf_url = NULL,
            contract_signed_at = ?,
            signature_ip_address = ?,
-           status = 'confirmed'
+           status = 'confirmed',
+           contract_id = ?
        WHERE id = ?`,
-      [now, signature_data, contractNumber, now, req.ip, appointment.id],
-    );
-
-    // Create contract record with IMMUTABLE signed_terms
-    await pool.query(
-      `INSERT INTO contracts 
-       (patient_id, service_id, contract_number, status, total_amount, 
-        sessions_included, terms_and_conditions, signed_terms, signature_data, signed_at, 
-        signed_by, created_by, pdf_url, signature_canvas_data, signature_ip_address, signature_user_agent)
-       VALUES (?, ?, ?, 'signed', ?, 1, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
-      [
-        appointment.patient_id,
-        appointment.service_id,
-        contractNumber,
-        appointment.service_price,
-        contractTerms, // Current default template (can be edited later)
-        contractTerms, // IMMUTABLE - exact terms patient saw and signed
-        signature_data,
-        now,
-        appointment.patient_id,
-        contractNumber,
-        signature_data,
-        req.ip,
-        req.headers["user-agent"] || null,
-      ],
+      [now, signature_data, now, req.ip, contractId, appointment.id],
     );
 
     // Log signature completion
@@ -5284,88 +5641,73 @@ const completeCheckIn: RequestHandler = async (req, res) => {
 
     // Send email notification with PDF attachment
     try {
-      // Skip email if SMTP not configured
-      if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-        console.log("SMTP not configured - skipping email");
-        await pool.query(
-          `INSERT INTO check_in_logs 
-           (appointment_id, check_in_token, action) 
-           VALUES (?, ?, 'email_skipped_no_smtp')`,
-          [appointment.id, token],
-        );
+      if (!process.env.RESEND_API_KEY) {
+        console.log("RESEND_API_KEY not configured - skipping email");
       } else {
-        // Email transport configuration
-        const transportConfig: any = {
-          host: process.env.SMTP_HOST || "smtp.gmail.com",
-          port: parseInt(process.env.SMTP_PORT || "587"),
-          secure: process.env.SMTP_SECURE === "true",
-          auth: {
-            user: process.env.SMTP_USER,
-            pass: process.env.SMTP_PASS,
-          },
-        };
+        const emailBody = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contrato Firmado - All Beauty Luxury &amp; Wellness</title>
+</head>
+<body style="margin:0;padding:0;background-color:#F5F0E8;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#F5F0E8;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#FFFFFF;border-radius:16px;overflow:hidden;">
+        <tr>
+          <td style="background-color:#111111;padding:28px 40px;text-align:center;">
+            ${emailLogoImg()}
+          </td>
+        </tr>
+        <tr>
+          <td style="background:linear-gradient(135deg,#C9A159 0%,#E8C580 60%,#B8903D 100%);padding:28px 40px;text-align:center;">
+            <h1 style="margin:0;font-size:24px;font-weight:700;color:#FFFFFF;">Check-in Completado</h1>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:40px;">
+            <p style="margin:0 0 12px;font-size:16px;color:#1A1A1A;">Estimado/a <strong>${appointment.patient_name}</strong>,</p>
+            <p style="margin:0 0 24px;font-size:15px;color:#4B4B4B;line-height:1.7;">Su check-in ha sido completado exitosamente y su contrato ha sido firmado.</p>
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;border:1px solid #EDE8DF;border-radius:12px;overflow:hidden;">
+              <tr><td style="background-color:#FAF7F2;padding:14px 20px;border-bottom:1px solid #EDE8DF;">
+                <span style="font-size:13px;font-weight:700;color:#C9A159;letter-spacing:1px;text-transform:uppercase;">Detalles de la cita</span>
+              </td></tr>
+              <tr><td style="padding:16px 20px;">
+                <p style="margin:0 0 8px;font-size:14px;color:#4B4B4B;"><strong>Servicio:</strong> ${appointment.service_name}</p>
+                <p style="margin:0 0 8px;font-size:14px;color:#4B4B4B;"><strong>Fecha:</strong> ${new Date(appointment.scheduled_at).toLocaleDateString("es-MX")}</p>
+                <p style="margin:0 0 8px;font-size:14px;color:#4B4B4B;"><strong>Precio:</strong> $${appointment.service_price.toLocaleString("es-MX")}</p>
+                <p style="margin:0;font-size:14px;color:#4B4B4B;"><strong>Numero de Contrato:</strong> ${contractNumber}</p>
+              </td></tr>
+            </table>
+            <p style="margin:0;font-size:15px;color:#4B4B4B;line-height:1.7;">Adjuntamos su contrato firmado en formato PDF. Gracias por su preferencia.</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="background-color:#111111;padding:24px 40px;text-align:center;">
+            <p style="margin:0;font-size:13px;color:#C9A159;font-weight:600;letter-spacing:0.5px;">ALL BEAUTY LUXURY &amp; WELLNESS</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
 
-        const transporter = nodemailer.createTransport(transportConfig);
-
-        const emailBody = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px; }
-            .container { background-color: white; border-radius: 10px; padding: 30px; max-width: 600px; margin: 0 auto; }
-            .header { text-align: center; color: #C9A159; margin-bottom: 30px; }
-            .details { background-color: #f9f9f9; padding: 20px; border-radius: 5px; margin: 20px 0; }
-            .footer { color: #666; font-size: 12px; text-align: center; margin-top: 30px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>✓ Check-in Completado</h1>
-            </div>
-            <h2>Estimado/a ${appointment.patient_name},</h2>
-            <p>Su check-in ha sido completado exitosamente y su contrato ha sido firmado.</p>
-            <div class="details">
-              <h3>Detalles de la cita:</h3>
-              <ul>
-                <li><strong>Servicio:</strong> ${appointment.service_name}</li>
-                <li><strong>Fecha:</strong> ${new Date(appointment.scheduled_at).toLocaleDateString("es-MX")}</li>
-                <li><strong>Precio:</strong> $${appointment.service_price.toLocaleString("es-MX")}</li>
-                <li><strong>Número de Contrato:</strong> ${contractNumber}</li>
-              </ul>
-            </div>
-            <p>Adjuntamos su contrato firmado en formato PDF.</p>
-            <p>Gracias por su preferencia.</p>
-            <div class="footer">
-              <p>All Beauty Luxury & Wellness - Tu clínica de confianza</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `;
-
-        const mailOptions: any = {
-          from:
-            process.env.SMTP_FROM ||
-            `"All Beauty Luxury & Wellness" <${process.env.SMTP_USER}>`,
+        await sendEmail({
           to: appointment.patient_email,
           subject: "Contrato Firmado - All Beauty Luxury & Wellness",
           html: emailBody,
-        };
-
-        // Attach PDF if provided
-        if (pdfBuffer) {
-          mailOptions.attachments = [
-            {
-              filename: `${contractNumber}.pdf`,
-              content: pdfBuffer,
-              contentType: "application/pdf",
-            },
-          ];
-        }
-
-        await transporter.sendMail(mailOptions);
+          attachments: pdfBuffer
+            ? [
+                {
+                  filename: `${contractNumber}.pdf`,
+                  content: pdfBuffer,
+                  contentType: "application/pdf",
+                },
+              ]
+            : undefined,
+        });
 
         await pool.query(
           `INSERT INTO check_in_logs 
@@ -5442,6 +5784,7 @@ const getAllAdminPayments: RequestHandler = async (req, res) => {
       payment_method,
       start_date,
       end_date,
+      search,
     } = req.query;
 
     const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
@@ -5464,9 +5807,21 @@ const getAllAdminPayments: RequestHandler = async (req, res) => {
       queryParams.push(start_date, end_date);
     }
 
+    if (typeof search === "string" && search.trim()) {
+      const like = `%${search.trim()}%`;
+      whereClause +=
+        " AND (pat.first_name LIKE ? OR pat.last_name LIKE ? OR pat.email LIKE ? OR s.name LIKE ? OR CAST(p.id AS CHAR) LIKE ?)";
+      queryParams.push(like, like, like, like, like);
+    }
+
     // Get total count
     const [countResult] = await pool.query<any[]>(
-      `SELECT COUNT(*) as total FROM payments p WHERE ${whereClause}`,
+      `SELECT COUNT(*) as total
+       FROM payments p
+       JOIN patients pat ON p.patient_id = pat.id
+       LEFT JOIN appointments a ON p.appointment_id = a.id
+       LEFT JOIN services s ON a.service_id = s.id
+       WHERE ${whereClause}`,
       queryParams,
     );
 
@@ -5557,31 +5912,64 @@ const getAdminPaymentById: RequestHandler = async (req, res) => {
  */
 const createPayment: RequestHandler = async (req, res) => {
   try {
-    const { appointment_id, amount, payment_method, notes } = req.body;
+    const { appointment_id, patient_id, amount, payment_method, notes } =
+      req.body;
+    const processedBy = getAdminFromRequest(req)?.id || null;
 
-    if (!appointment_id || !amount) {
+    if (!amount || parseFloat(amount) <= 0) {
       return res.status(400).json({
         success: false,
-        message: "Appointment ID and amount are required",
+        message: "Un monto válido es requerido",
       });
     }
 
-    // For now, just update the appointment with payment info
-    await pool.query(
-      `UPDATE appointments 
-       SET estimated_price = ?, 
-           notes = CONCAT(COALESCE(notes, ''), 
-           CASE WHEN notes IS NULL OR notes = '' THEN '' ELSE '\n' END, 
-           'Payment recorded: ', ?, ' via ', COALESCE(?, 'unknown'), 
-           CASE WHEN ? IS NOT NULL THEN CONCAT(' - ', ?) ELSE '' END),
-           updated_at = NOW()
-       WHERE id = ?`,
-      [amount, amount, payment_method, notes, notes, appointment_id],
+    let resolvedPatientId = patient_id ? Number(patient_id) : 0;
+    let resolvedAppointmentId = appointment_id ? Number(appointment_id) : null;
+
+    if (resolvedAppointmentId) {
+      const [appts] = await pool.query<any[]>(
+        "SELECT id, patient_id FROM appointments WHERE id = ?",
+        [resolvedAppointmentId],
+      );
+      if (appts.length === 0) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Appointment not found" });
+      }
+      resolvedPatientId = appts[0].patient_id;
+    }
+
+    if (!resolvedPatientId) {
+      return res.status(400).json({
+        success: false,
+        message: "Selecciona un paciente o una cita",
+      });
+    }
+
+    const method = normalizePaymentMethod(payment_method);
+    const [result] = await pool.query<any>(
+      `INSERT INTO payments
+         (appointment_id, patient_id, amount, payment_method, payment_status, notes, processed_by, processed_at)
+       VALUES (?, ?, ?, ?, 'completed', ?, ?, NOW())`,
+      [
+        resolvedAppointmentId,
+        resolvedPatientId,
+        parseFloat(amount),
+        method,
+        notes || null,
+        processedBy,
+      ],
     );
 
-    res.json({
+    const [created] = await pool.query<any[]>(
+      "SELECT * FROM payments WHERE id = ?",
+      [result.insertId],
+    );
+
+    res.status(201).json({
       success: true,
-      message: "Payment recorded successfully",
+      message: "Pago registrado",
+      data: created[0],
     });
   } catch (error) {
     console.error("Error creating payment:", error);
@@ -5605,16 +5993,26 @@ const updatePaymentStatus: RequestHandler = async (req, res) => {
       });
     }
 
-    // Update appointment with payment status info
+    const [existing] = await pool.query<any[]>(
+      "SELECT id FROM payments WHERE id = ?",
+      [id],
+    );
+    if (existing.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Payment not found" });
+    }
+
     await pool.query(
-      `UPDATE appointments 
-       SET notes = CONCAT(COALESCE(notes, ''), 
-       CASE WHEN notes IS NULL OR notes = '' THEN '' ELSE '\n' END, 
-       'Payment status updated to: ', ?, 
-       CASE WHEN ? IS NOT NULL THEN CONCAT(' - ', ?) ELSE '' END),
-       updated_at = NOW()
+      `UPDATE payments
+       SET payment_status = ?,
+           notes = CASE
+             WHEN ? IS NULL OR ? = '' THEN notes
+             ELSE CONCAT(COALESCE(notes, ''), CASE WHEN notes IS NULL OR notes = '' THEN '' ELSE '\n' END, ?)
+           END,
+           updated_at = NOW()
        WHERE id = ?`,
-      [status, notes, notes, id],
+      [status, notes, notes, notes, id],
     );
 
     res.json({
@@ -5635,10 +6033,7 @@ const processRefund: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
     const { amount, reason } = req.body;
-    const adminUser = JSON.parse(
-      (req.headers["x-admin-user"] as string) || "{}",
-    );
-    const adminId = adminUser?.id || null;
+    const adminId = getAdminFromRequest(req)?.id || null;
 
     if (!amount || parseFloat(amount) <= 0) {
       return res
@@ -5694,10 +6089,7 @@ const processRefund: RequestHandler = async (req, res) => {
 const approveRefund: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
-    const adminUser = JSON.parse(
-      (req.headers["x-admin-user"] as string) || "{}",
-    );
-    const adminId = adminUser?.id || null;
+    const adminId = getAdminFromRequest(req)?.id || null;
 
     const [existing] = await pool.query<any[]>(
       "SELECT * FROM payments WHERE id = ?",
@@ -5717,13 +6109,35 @@ const approveRefund: RequestHandler = async (req, res) => {
       });
     }
 
-    await pool.query(
-      `UPDATE payments
-       SET refund_status = 'approved', refund_approved_by = ?, refund_approved_at = NOW(),
-           payment_status = 'refunded', refunded_at = NOW(), updated_at = NOW()
-       WHERE id = ?`,
-      [adminId, id],
-    );
+    const refundAmount = Number(payment.refund_amount || payment.amount);
+    if (
+      payment.payment_method === "stripe" &&
+      payment.stripe_payment_intent_id
+    ) {
+      try {
+        await issueStripeRefund({
+          paymentIntentId: payment.stripe_payment_intent_id,
+          amountCents: Math.round(refundAmount * 100),
+          reason: payment.refund_reason || "Approved by admin",
+        });
+      } catch (stripeErr: any) {
+        const code = stripeErr?.code || "";
+        if (code !== "charge_already_refunded") {
+          console.error("[approve-refund] Stripe refund failed:", stripeErr.message);
+          return res.status(502).json({
+            success: false,
+            message: `No se pudo procesar el reembolso en Stripe: ${stripeErr.message}`,
+          });
+        }
+      }
+    }
+
+    await markPaymentRefundedInDb({
+      paymentId: Number(id),
+      refundAmount,
+      reason: payment.refund_reason,
+      approvedBy: adminId,
+    });
 
     res.json({ success: true, message: "Refund approved successfully" });
   } catch (error) {
@@ -5960,6 +6374,7 @@ const updateInvoiceRequest: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
     const { status, pdf_url, xml_url, notes, processed_by } = req.body;
+    const processedBy = processed_by || getAdminFromRequest(req)?.id || null;
 
     const updates: string[] = [];
     const values: any[] = [];
@@ -5984,9 +6399,9 @@ const updateInvoiceRequest: RequestHandler = async (req, res) => {
       values.push(notes);
     }
 
-    if (processed_by) {
+    if (processedBy) {
       updates.push("processed_by = ?");
-      values.push(processed_by);
+      values.push(processedBy);
     }
 
     // If marking as completed or processing, set processed_at
@@ -6184,22 +6599,17 @@ const createCoupon: RequestHandler = async (req, res) => {
       valid_until,
       is_active = true,
       applicable_services,
-      created_by, // Admin user ID
     } = req.body;
+    const createdBy = getAdminFromRequest(req)?.id;
 
     // Validation
-    if (
-      !code ||
-      !discount_type ||
-      discount_value === undefined ||
-      !created_by
-    ) {
+    if (!code || !discount_type || discount_value === undefined) {
       return res.status(400).json({
         success: false,
-        message:
-          "Missing required fields: code, discount_type, discount_value, created_by",
+        message: "Missing required fields: code, discount_type, discount_value",
       });
     }
+    if (!createdBy) return missingAdminActorResponse(res);
 
     if (!["percentage", "fixed_amount"].includes(discount_type)) {
       return res.status(400).json({
@@ -6259,7 +6669,7 @@ const createCoupon: RequestHandler = async (req, res) => {
         valid_until || null,
         is_active ? 1 : 0,
         applicable_services ? JSON.stringify(applicable_services) : null,
-        created_by,
+        createdBy,
       ],
     );
 
@@ -6566,9 +6976,18 @@ const updateBusinessHours: RequestHandler = async (req, res) => {
     for (const hour of hours) {
       await pool.query(
         `UPDATE business_hours 
-         SET is_open = ?, open_time = ?, close_time = ?
+         SET is_open = ?, open_time = ?, close_time = ?,
+             break_start = ?, break_end = ?, notes = ?
          WHERE day_of_week = ?`,
-        [hour.is_open, hour.open_time, hour.close_time, hour.day_of_week],
+        [
+          hour.is_open ? 1 : 0,
+          hour.open_time || null,
+          hour.close_time || null,
+          hour.break_start || null,
+          hour.break_end || null,
+          hour.notes || null,
+          hour.day_of_week,
+        ],
       );
     }
 
@@ -6671,7 +7090,8 @@ const getContentPages: RequestHandler = async (req, res) => {
 const createContentPage: RequestHandler = async (req, res) => {
   try {
     const { slug, title, content, is_published } = req.body;
-    const userId = (req as any).adminUser?.id || null;
+    const userId = getAdminFromRequest(req)?.id;
+    if (!userId) return missingAdminActorResponse(res);
 
     const [result] = await pool.query<any>(
       `INSERT INTO content_pages (slug, title, content, is_published, created_by, created_at, updated_at)
@@ -6698,7 +7118,7 @@ const updateContentPage: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
     const { title, content, is_published } = req.body;
-    const userId = (req as any).adminUser?.id || null;
+    const userId = getAdminFromRequest(req)?.id || null;
 
     await pool.query(
       `UPDATE content_pages SET
@@ -6760,7 +7180,7 @@ const getAdminUsers: RequestHandler = async (req, res) => {
       `SELECT id, email, role, first_name, last_name, phone, employee_id,
               specialization, is_active, is_email_verified, created_at, last_login
        FROM users
-       WHERE role IN ('admin', 'general_admin', 'receptionist', 'doctor')
+       WHERE role IN (${STAFF_LOGIN_ROLES_SQL})
        ORDER BY created_at DESC`,
     );
 
@@ -6976,10 +7396,18 @@ const toggleAdminUserActive: RequestHandler = async (req, res) => {
       `UPDATE users SET is_active = NOT is_active, updated_at = NOW() WHERE id = ?`,
       [id],
     );
+    const [rows] = await pool.query<any[]>(
+      `SELECT id, is_active FROM users WHERE id = ?`,
+      [id],
+    );
 
     res.json({
       success: true,
       message: "User status toggled successfully",
+      data: {
+        id: Number(id),
+        is_active: Boolean(rows[0]?.is_active),
+      },
     });
   } catch (error) {
     console.error("Error toggling user status:", error);
@@ -7223,8 +7651,13 @@ const createBlockedDate: RequestHandler = async (req, res) => {
       });
     }
 
-    // Use created_by from request body (sent by frontend) or fallback to auth middleware
-    const userId = created_by || (req as any).user?.id || null;
+    const userId = getAdminFromRequest(req)?.id || created_by || null;
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "No se pudo identificar al administrador",
+      });
+    }
 
     const [result] = await pool.query<any>(
       `INSERT INTO blocked_dates (start_date, end_date, start_time, end_time, all_day, reason, notes, created_by, created_at, updated_at)
@@ -7468,13 +7901,22 @@ const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
 
     const service = serviceRows[0];
     const appointmentDuration = duration_minutes || service.duration_minutes;
-
-    // Don't check for overlaps here - frontend already filters booked slots
-    // Only check for overlaps in confirmPayment to handle race conditions
-
-    // Create Stripe payment intent with all booking details in metadata
-    // Don't create appointment yet - only create it after payment succeeds
-    const amountInCents = Math.round(payment_amount * 100); // Convert to cents
+    const catalogAmount = Number(service.price);
+    if (!Number.isFinite(catalogAmount) || catalogAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: "El servicio no tiene un precio válido",
+      });
+    }
+    const amountInCents = Math.round(catalogAmount * 100);
+    if (
+      payment_amount != null &&
+      Math.abs(Number(payment_amount) - catalogAmount) > 0.009
+    ) {
+      console.warn(
+        `[book-with-payment] Client amount ${payment_amount} ignored; charging catalog price ${catalogAmount}`,
+      );
+    }
 
     // Ensure this patient has a Stripe customer so payment methods can be saved
     const patient = patientRows[0];
@@ -7497,25 +7939,30 @@ const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
     );
     let paymentIntent;
     try {
-      paymentIntent = await stripe.paymentIntents.create({
-        amount: amountInCents,
-        currency: currency.toLowerCase(),
-        customer: stripeCustomerId,
-        setup_future_usage: "on_session",
-        metadata: {
-          patient_id: finalPatientId.toString(),
-          service_id: service_id.toString(),
-          scheduled_at: scheduled_at,
-          duration_minutes: appointmentDuration.toString(),
-          notes: notes || "",
-          created_by: finalPatientId.toString(),
-          booked_for_self: booked_for_self ? "1" : "0",
+      paymentIntent = await stripe.paymentIntents.create(
+        {
+          amount: amountInCents,
+          currency: currency.toLowerCase(),
+          customer: stripeCustomerId,
+          setup_future_usage: "on_session",
+          metadata: {
+            patient_id: finalPatientId.toString(),
+            service_id: service_id.toString(),
+            scheduled_at: scheduled_at,
+            duration_minutes: appointmentDuration.toString(),
+            notes: notes || "",
+            created_by: finalPatientId.toString(),
+            booked_for_self: booked_for_self ? "1" : "0",
+          },
+          automatic_payment_methods: {
+            enabled: true,
+            allow_redirects: "never",
+          },
         },
-        automatic_payment_methods: {
-          enabled: true,
-          allow_redirects: "never",
+        {
+          idempotencyKey: `book-${finalPatientId}-${service_id}-${String(scheduled_at).slice(0, 32)}`,
         },
-      });
+      );
     } catch (stripeError: any) {
       console.error("Stripe payment intent creation failed:", stripeError);
       return res.status(500).json({
@@ -7578,7 +8025,7 @@ const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
       data: {
         clientSecret: paymentIntent.client_secret,
         customerSessionClientSecret,
-        amount: payment_amount,
+        amount: catalogAmount,
         payment_intent_id: paymentIntent.id,
       },
     });
@@ -7607,215 +8054,85 @@ const confirmPayment: RequestHandler = async (req, res) => {
       });
     }
 
-    // Retrieve the payment intent from Stripe
     const paymentIntent =
       await stripe.paymentIntents.retrieve(payment_intent_id);
-
-    if (paymentIntent.status !== "succeeded") {
-      return res.status(400).json({
+    const result = await fulfillSucceededPaymentIntent(paymentIntent);
+    if (result.ok === false) {
+      return res.status(result.status).json({
         success: false,
-        error: "Payment has not been completed",
+        error: result.error,
       });
     }
 
-    // Get booking details from metadata
-    const {
-      patient_id,
-      service_id,
-      scheduled_at,
-      duration_minutes,
-      notes,
-      created_by,
-      booked_for_self,
-    } = paymentIntent.metadata;
-
-    if (!patient_id || !service_id || !scheduled_at || !duration_minutes) {
-      return res.status(400).json({
-        success: false,
-        error: "Missing booking information in payment metadata",
-      });
-    }
-
-    // **CRITICAL: Re-check slot availability before creating appointment**
-    // This prevents race conditions where payment was initiated but slot was taken during checkout
-    //
-    // IMPORTANT: keep all datetime strings as naive local (no UTC conversion) to match DB storage.
-    // Using toISOString() here would produce UTC strings that mismatch the naive local datetimes
-    // stored in MySQL, causing false conflicts on servers with a non-UTC timezone offset.
-    const scheduledDate = new Date(scheduled_at); // parsed as local time
-    const scheduledEndTime = new Date(
-      scheduledDate.getTime() + parseInt(duration_minutes) * 60000,
-    );
-    const pad = (n: number) => String(n).padStart(2, "0");
-    // Format end time as naive local datetime string matching DB storage
-    const scheduledEndStr = `${scheduledEndTime.getFullYear()}-${pad(scheduledEndTime.getMonth() + 1)}-${pad(scheduledEndTime.getDate())} ${pad(scheduledEndTime.getHours())}:${pad(scheduledEndTime.getMinutes())}:${pad(scheduledEndTime.getSeconds())}`;
-    // Normalise start string (T → space) for consistent MySQL comparison
-    const scheduledAtStr = scheduled_at.replace("T", " ");
-
-    console.log("🔍 Checking slot availability:", {
-      scheduled_at: scheduledAtStr,
-      scheduled_end: scheduledEndStr,
-      duration_minutes,
-    });
-
-    const [overlapping] = await pool.query<any[]>(
-      `SELECT id, scheduled_at, duration_minutes, status 
-       FROM appointments 
-       WHERE service_id = ?
-       AND status IN ('confirmed', 'scheduled', 'in_progress')
-       AND scheduled_at < ?
-       AND DATE_ADD(scheduled_at, INTERVAL duration_minutes MINUTE) > ?`,
-      [service_id, scheduledEndStr, scheduledAtStr],
-    );
-
-    if (overlapping.length > 0) {
-      // Slot was taken by someone else - refund the payment
-      console.error("❌ Time slot conflict during payment confirmation:", {
-        requested_time: scheduled_at,
-        overlapping_appointments: overlapping,
-      });
-
-      try {
-        await stripe.refunds.create({
-          payment_intent: payment_intent_id,
-          reason: "requested_by_customer",
-        });
-        console.log(
-          `💸 Refunded payment ${payment_intent_id} - slot no longer available`,
-        );
-      } catch (refundError) {
-        console.error("Error creating refund:", refundError);
-      }
-
-      return res.status(409).json({
-        success: false,
-        error:
-          "Lo sentimos, este horario ya fue reservado. Tu pago será reembolsado automáticamente.",
-      });
-    }
-
-    // Create the appointment with confirmed status
-    const [appointmentResult] = await pool.query<any>(
-      `INSERT INTO appointments 
-       (patient_id, service_id, scheduled_at, duration_minutes, notes, status, created_by, booked_for_self)
-       VALUES (?, ?, ?, ?, ?, 'confirmed', ?, ?)`,
-      [
-        patient_id,
-        service_id,
-        scheduled_at,
-        duration_minutes,
-        notes || null,
-        null, // NULL for patient self-bookings (created_by FK references users.id)
-        booked_for_self === "1" ? 1 : 0,
-      ],
-    );
-
-    const appointmentId = appointmentResult.insertId;
-
-    console.log("✅ Appointment created successfully:", appointmentId);
-
-    // Create payment record now that payment is confirmed and appointment is created
-    // Note: Both stripe_payment_id and stripe_payment_intent_id store the payment intent ID
-    await pool.query(
-      `INSERT INTO payments 
-       (appointment_id, patient_id, amount, payment_method, payment_status, stripe_payment_id, stripe_payment_intent_id, processed_by, processed_at, created_at, updated_at)
-       VALUES (?, ?, ?, 'stripe', 'completed', ?, ?, ?, NOW(), NOW(), NOW())`,
-      [
-        appointmentId,
-        patient_id,
-        (paymentIntent.amount / 100).toFixed(2),
-        payment_intent_id,
-        payment_intent_id,
-        null, // NULL for Stripe self-service payments (processed_by FK references users.id)
-      ],
-    );
-
-    console.log("💰 Payment record created for appointment:", appointmentId);
-
-    // Explicitly ensure the payment method used is saved on the customer with the
-    // correct allow_redisplay flag so it appears in future PaymentElement checkouts.
-    // setup_future_usage:"on_session" on the PI handles attachment, but Stripe may
-    // still set allow_redisplay:"unspecified" in some flows — this guarantees "limited".
-    try {
-      const pmId =
-        typeof paymentIntent.payment_method === "string"
-          ? paymentIntent.payment_method
-          : (paymentIntent.payment_method as any)?.id;
-      if (pmId) {
-        await stripe.paymentMethods.update(pmId, {
-          allow_redisplay: "limited",
-        });
-        console.log(
-          `[confirm-payment] ✅ Set allow_redisplay:limited on payment method ${pmId}`,
-        );
-      }
-    } catch (pmErr: any) {
-      // Non-fatal — appointment and payment are already confirmed
-      console.warn(
-        `[confirm-payment] ⚠️  Could not update payment method allow_redisplay:`,
-        pmErr.message,
-      );
-    }
-
-    // Fetch appointment details for email
-    const [appointmentDetails] = await pool.query<any[]>(
-      `SELECT 
-        a.id,
-        a.scheduled_at,
-        a.duration_minutes,
-        s.name as service_name,
-        s.price as service_price,
-        p.first_name,
-        p.last_name,
-        p.email
-       FROM appointments a
-       JOIN services s ON a.service_id = s.id
-       JOIN patients p ON a.patient_id = p.id
-       WHERE a.id = ?`,
-      [appointmentId],
-    );
-
-    // Send confirmation email
-    if (appointmentDetails.length > 0) {
-      const appointment = appointmentDetails[0];
-      const patientName = `${appointment.first_name} ${appointment.last_name}`;
-      const scheduledDate = new Date(appointment.scheduled_at);
-      const appointmentDate = scheduledDate.toISOString().split("T")[0];
-      const appointmentTime = scheduledDate
-        .toTimeString()
-        .split(" ")[0]
-        .substring(0, 5);
-
-      try {
-        await sendAppointmentConfirmationEmail(appointment.email, patientName, {
-          serviceName: appointment.service_name,
-          date: appointmentDate,
-          time: appointmentTime,
-          duration: appointment.duration_minutes,
-          amount: parseFloat(appointment.service_price),
-        });
-        console.log("📧 Confirmation email sent to:", appointment.email);
-      } catch (emailError) {
-        console.error(
-          "⚠️ Failed to send confirmation email, but appointment was created:",
-          emailError,
-        );
-        // Don't fail the request if email fails - appointment is already confirmed
-      }
-    }
-
-    res.json({
+    return res.json({
       success: true,
-      message: "Payment confirmed and appointment scheduled",
+      message: result.alreadyFulfilled
+        ? "Payment already confirmed"
+        : "Payment confirmed and appointment scheduled",
       data: {
-        appointment_id: appointmentId,
-        appointmentId: appointmentId,
+        appointment_id: result.appointmentId,
+        appointmentId: result.appointmentId,
         status: "confirmed",
       },
     });
   } catch (error) {
     console.error("Error confirming payment:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+const handleStripeWebhook: RequestHandler = async (req, res) => {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!secret) {
+    console.error("[stripe:webhook] STRIPE_WEBHOOK_SECRET is not configured");
+    return res.status(500).json({ error: "Webhook not configured" });
+  }
+  const signature = req.headers["stripe-signature"];
+  if (!signature || !Buffer.isBuffer(req.body)) {
+    return res.status(400).json({ error: "Invalid webhook payload" });
+  }
+
+  let event: Stripe.Event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, signature, secret);
+  } catch (err: any) {
+    console.warn("[stripe:webhook] signature failed:", err.message);
+    return res.status(400).json({ error: "Invalid signature" });
+  }
+
+  try {
+    if (event.type === "payment_intent.succeeded") {
+      const paymentIntent = event.data.object as Stripe.PaymentIntent;
+      if (paymentIntent.metadata?.service_id && paymentIntent.metadata?.scheduled_at) {
+        const result = await fulfillSucceededPaymentIntent(paymentIntent);
+        if (result.ok === false && result.status >= 500) {
+          return res.status(500).json({ error: result.error });
+        }
+      }
+    } else if (event.type === "charge.refunded") {
+      const charge = event.data.object as Stripe.Charge;
+      const piId =
+        typeof charge.payment_intent === "string"
+          ? charge.payment_intent
+          : charge.payment_intent?.id;
+      if (piId) {
+        const refunded = (charge.amount_refunded || 0) / 100;
+        await pool.query(
+          `UPDATE payments
+           SET payment_status = ?,
+               refund_amount = ?,
+               refunded_at = COALESCE(refunded_at, NOW()),
+               refund_status = 'approved',
+               updated_at = NOW()
+           WHERE stripe_payment_intent_id = ?`,
+          [charge.refunded ? "refunded" : "partially_refunded", refunded, piId],
+        );
+      }
+    }
+    res.json({ received: true });
+  } catch (err) {
+    console.error("[stripe:webhook] handler failed:", err);
+    res.status(500).json({ error: "Webhook handler failed" });
   }
 };
 
@@ -7847,6 +8164,75 @@ const getAllServicesAdmin: RequestHandler = async (req, res) => {
   }
 };
 
+const uploadAdminFile: RequestHandler = async (req, res) => {
+  try {
+    const { filename, content_type, data_base64, folder } = req.body as {
+      filename?: string;
+      content_type?: string;
+      data_base64?: string;
+      folder?: string;
+    };
+
+    if (!filename || !content_type || !data_base64) {
+      return res.status(400).json({
+        success: false,
+        message: "filename, content_type y data_base64 son requeridos",
+      });
+    }
+
+    if (!ALLOWED_UPLOAD_TYPES.has(content_type)) {
+      return res.status(400).json({
+        success: false,
+        message: "Tipo de archivo no permitido",
+      });
+    }
+
+    if (!process.env.BLOB_READ_WRITE_TOKEN && !process.env.BLOB_STORE_ID) {
+      return res.status(503).json({
+        success: false,
+        message: "Almacenamiento no configurado (BLOB_READ_WRITE_TOKEN)",
+      });
+    }
+
+    const raw = String(data_base64).replace(/^data:[^;]+;base64,/, "");
+    const buffer = Buffer.from(raw, "base64");
+    const maxBytes = Number(process.env.MAX_FILE_SIZE || 10 * 1024 * 1024);
+    if (!buffer.length) {
+      return res.status(400).json({
+        success: false,
+        message: "Archivo vacío o data_base64 inválido",
+      });
+    }
+    if (buffer.length > maxBytes) {
+      return res.status(400).json({
+        success: false,
+        message: "El archivo excede el tamaño máximo",
+      });
+    }
+
+    const safeFolder = UPLOAD_FOLDERS.has(String(folder))
+      ? String(folder)
+      : "uploads";
+    const pathname = `beauty/${safeFolder}/${Date.now()}-${sanitizeUploadName(filename)}`;
+    const blob = await put(pathname, buffer, {
+      access: "public",
+      contentType: content_type,
+      addRandomSuffix: false,
+    });
+
+    res.json({
+      success: true,
+      data: { url: blob.url, pathname: blob.pathname },
+    });
+  } catch (error) {
+    console.error("Error uploading file:", error);
+    res.status(500).json({
+      success: false,
+      message: "No se pudo subir el archivo",
+    });
+  }
+};
+
 const createService: RequestHandler = async (req, res) => {
   try {
     const {
@@ -7856,6 +8242,7 @@ const createService: RequestHandler = async (req, res) => {
       price,
       duration_minutes,
       is_active = true,
+      image_url,
     } = req.body;
 
     // Validation
@@ -7882,6 +8269,15 @@ const createService: RequestHandler = async (req, res) => {
       });
     }
 
+    const imageUrl =
+      typeof image_url === "string" ? image_url.trim() : "";
+    if (!isAllowedAssetUrl(imageUrl)) {
+      return res.status(400).json({
+        success: false,
+        message: "image_url must be a public http(s) or /assets/ path",
+      });
+    }
+
     const [result] = await pool.query<any>(
       `INSERT INTO services (
         name, 
@@ -7890,9 +8286,10 @@ const createService: RequestHandler = async (req, res) => {
         price, 
         duration_minutes, 
         is_active,
+        image_url,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
       [
         name,
         description || null,
@@ -7900,6 +8297,7 @@ const createService: RequestHandler = async (req, res) => {
         price,
         duration_minutes,
         is_active ? 1 : 0,
+        imageUrl || null,
       ],
     );
 
@@ -7931,8 +8329,15 @@ const createService: RequestHandler = async (req, res) => {
 const updateService: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, category, price, duration_minutes, is_active } =
-      req.body;
+    const {
+      name,
+      description,
+      category,
+      price,
+      duration_minutes,
+      is_active,
+      image_url,
+    } = req.body;
 
     // Check if service exists
     const [existing] = await pool.query<any[]>(
@@ -7992,6 +8397,17 @@ const updateService: RequestHandler = async (req, res) => {
     if (is_active !== undefined) {
       updates.push("is_active = ?");
       values.push(is_active ? 1 : 0);
+    }
+    if (image_url !== undefined) {
+      const imageUrl = typeof image_url === "string" ? image_url.trim() : "";
+      if (!isAllowedAssetUrl(imageUrl)) {
+        return res.status(400).json({
+          success: false,
+          message: "image_url must be a public http(s) or /assets/ path",
+        });
+      }
+      updates.push("image_url = ?");
+      values.push(imageUrl || null);
     }
 
     if (updates.length === 0) {
@@ -8093,10 +8509,12 @@ const deleteService: RequestHandler = async (req, res) => {
 const getAppointmentById: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
+    const staff = tryGetAdminFromHeader(req);
 
     const [appointments] = await pool.query<any[]>(
       `SELECT 
-         a.id, 
+         a.id,
+         a.patient_id,
          a.scheduled_at,
          DATE(a.scheduled_at) as appointment_date,
          TIME(a.scheduled_at) as appointment_time,
@@ -8122,6 +8540,16 @@ const getAppointmentById: RequestHandler = async (req, res) => {
         success: false,
         message: "Appointment not found",
       });
+    }
+
+    if (!staff) {
+      const allowed = await verifyPatientSession(appointments[0].patient_id);
+      if (!allowed) {
+        return res.status(401).json({
+          success: false,
+          message: "Authentication required",
+        });
+      }
     }
 
     const appointment = {
@@ -8150,6 +8578,12 @@ const getAppointmentById: RequestHandler = async (req, res) => {
  */
 const updateAppointmentHandler: RequestHandler = async (req, res) => {
   try {
+    if (!tryGetAdminFromHeader(req)) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
     const { id } = req.params;
     const { appointment_date, appointment_time, scheduled_at, notes, status } =
       req.body;
@@ -8226,6 +8660,12 @@ const updateAppointmentHandler: RequestHandler = async (req, res) => {
  */
 const cancelAppointmentHandler: RequestHandler = async (req, res) => {
   try {
+    if (!tryGetAdminFromHeader(req)) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
     const { id } = req.params;
 
     const [existing] = await pool.query<any[]>(
@@ -8573,11 +9013,12 @@ const cancelPatientAppointment: RequestHandler = async (req, res) => {
 
     // Get appointment details
     const [appointments] = await pool.query<any[]>(
-      `SELECT a.*, p.amount, p.payment_status, p.id as payment_id
+      `SELECT a.*, p.amount, p.payment_status, p.id as payment_id,
+              p.stripe_payment_intent_id, p.payment_method
        FROM appointments a
        LEFT JOIN payments p ON p.appointment_id = a.id
-       WHERE a.id = ? AND a.created_by = ?`,
-      [id, patient_id],
+       WHERE a.id = ? AND (a.patient_id = ? OR a.created_by = ?)`,
+      [id, patient_id, patient_id],
     );
 
     if (appointments.length === 0) {
@@ -8634,18 +9075,25 @@ const cancelPatientAppointment: RequestHandler = async (req, res) => {
       appointment.payment_status === "completed"
     ) {
       try {
-        // Update payment status to refunded
-        await pool.query(
-          `UPDATE payments 
-           SET payment_status = 'refunded', 
-               notes = CONCAT(COALESCE(notes, ''), '\nRefund issued: Full refund due to cancellation >24hrs before appointment')
-           WHERE id = ?`,
-          [appointment.payment_id],
-        );
+        if (
+          appointment.payment_method === "stripe" &&
+          appointment.stripe_payment_intent_id
+        ) {
+          await issueStripeRefund({
+            paymentIntentId: appointment.stripe_payment_intent_id,
+            amountCents: Math.round(refundAmount * 100),
+            reason: "Patient cancelled >24h before appointment",
+          });
+        }
+        await markPaymentRefundedInDb({
+          paymentId: appointment.payment_id,
+          refundAmount,
+          reason:
+            "Full refund due to cancellation >24hrs before appointment",
+        });
         refundProcessed = true;
       } catch (refundError) {
         console.error("Error processing refund:", refundError);
-        // Continue even if refund fails - appointment is still cancelled
       }
     }
 
@@ -8703,8 +9151,8 @@ const reschedulePatientAppointment: RequestHandler = async (req, res) => {
     // Get appointment details
     const [appointments] = await pool.query<any[]>(
       `SELECT * FROM appointments 
-       WHERE id = ? AND created_by = ?`,
-      [id, patient_id],
+       WHERE id = ? AND (patient_id = ? OR created_by = ?)`,
+      [id, patient_id, patient_id],
     );
 
     if (appointments.length === 0) {
@@ -8852,8 +9300,8 @@ const requestInvoice: RequestHandler = async (req, res) => {
        LEFT JOIN services s ON a.service_id = s.id
        LEFT JOIN payments p ON p.appointment_id = a.id
        LEFT JOIN patients pat ON a.patient_id = pat.id
-       WHERE a.id = ? AND a.created_by = ?`,
-      [id, patient_id],
+       WHERE a.id = ? AND (a.patient_id = ? OR a.created_by = ?)`,
+      [id, patient_id, patient_id],
     );
 
     if (appointments.length === 0) {
@@ -8865,6 +9313,18 @@ const requestInvoice: RequestHandler = async (req, res) => {
     }
 
     const appointment = appointments[0];
+
+    const [existingInvoices] = await pool.query<any[]>(
+      `SELECT id FROM invoice_requests
+       WHERE appointment_id = ? AND status IN ('pending', 'processing', 'completed')`,
+      [id],
+    );
+    if (existingInvoices.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: "Ya existe una solicitud de factura para esta cita",
+      });
+    }
 
     // Check if payment exists and is completed
     if (!appointment.payment_id || appointment.payment_status !== "completed") {
@@ -9127,6 +9587,15 @@ function createServer() {
 
   // Middleware
   expressApp.use(cors());
+  expressApp.use((req, res, next) => {
+    if (
+      req.originalUrl === "/api/stripe/webhook" ||
+      req.path === "/api/stripe/webhook"
+    ) {
+      return express.raw({ type: "application/json" })(req, res, next);
+    }
+    next();
+  });
   expressApp.use(express.json({ limit: "10mb" })); // Increase limit for PDF base64
   expressApp.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
@@ -9160,39 +9629,16 @@ function createServer() {
     res.json({ message: "pong" });
   });
 
-  // DocuSign configuration check (admin only, for debugging)
-  expressApp.get("/api/admin/docusign/status", async (_req, res) => {
-    try {
-      const { isDocuSignConfigured } = await import("../server/utils/docusign");
-
-      const integrationKey = process.env.DOCUSIGN_INTEGRATION_KEY || "";
-      const configured = isDocuSignConfigured();
-
-      const consentUrl = `https://${process.env.DOCUSIGN_AUTH_SERVER || "account-d.docusign.com"}/oauth/auth?response_type=code&scope=signature%20impersonation&client_id=${integrationKey}&redirect_uri=${process.env.APP_URL || "http://localhost:8080"}/callback`;
-
-      res.json({
-        success: true,
-        configured,
-        consentUrl: configured ? consentUrl : "DocuSign not configured",
-        message: configured
-          ? "DocuSign is configured. If you see errors, visit the consent URL to grant permissions."
-          : "DocuSign is not configured. Check your .env file.",
-        config: {
-          hasIntegrationKey: !!process.env.DOCUSIGN_INTEGRATION_KEY,
-          hasUserId: !!process.env.DOCUSIGN_USER_ID,
-          hasAccountId: !!process.env.DOCUSIGN_ACCOUNT_ID,
-          hasPrivateKey: !!process.env.DOCUSIGN_PRIVATE_KEY_PATH,
-          basePath: process.env.DOCUSIGN_BASE_PATH,
-          authServer: process.env.DOCUSIGN_AUTH_SERVER,
-        },
-      });
-    } catch (error: any) {
-      res.json({
-        success: false,
-        message: "Error checking DocuSign status",
-        error: error.message,
-      });
+  // Public brand logo for email clients that cannot load CID attachments
+  expressApp.get("/api/brand/logo", (_req, res) => {
+    const buf = loadBrandLogo();
+    if (!buf) {
+      res.status(404).json({ success: false, message: "Logo not found" });
+      return;
     }
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.send(buf);
   });
 
   // ==================== CONFIGURE API ROUTES ====================
@@ -9206,7 +9652,12 @@ function createServer() {
 
   // ==================== QR CHECK-IN ROUTES ====================
   // Generate QR token (admin only - but no auth middleware in this pattern)
-  expressApp.post("/api/check-in/generate-token", generateCheckInToken);
+  expressApp.post(
+    "/api/check-in/generate-token",
+    authenticateAdmin,
+    requireRoles(CALENDAR_ROLES),
+    generateCheckInToken,
+  );
   // Validate token (public - for patient check-in page)
   expressApp.get("/api/check-in/validate/:token", validateCheckInToken);
   // Complete check-in with signature (public - for patient check-in page)
@@ -9229,6 +9680,7 @@ function createServer() {
     bookAppointmentWithPayment,
   );
   expressApp.post("/api/appointments/confirm-payment", confirmPayment);
+  expressApp.post("/api/stripe/webhook", handleStripeWebhook);
   expressApp.post("/api/appointments", createAppointment);
   expressApp.get("/api/appointments", getAppointments);
   expressApp.get("/api/appointments/:id", getAppointmentById);
@@ -9237,6 +9689,7 @@ function createServer() {
 
   // Business Hours routes
   expressApp.get("/api/business-hours", getBusinessHours);
+  expressApp.get("/api/business-hours/day/:day", getBusinessHoursByDay);
 
   // Blocked Dates routes
   expressApp.get("/api/blocked-dates", getBlockedDates);
@@ -9261,15 +9714,22 @@ function createServer() {
   // Patient Profile
   expressApp.get("/api/patient/profile", getPatientProfile);
   expressApp.put("/api/patient/profile", updatePatientProfile);
-
-  // ==================== WEBHOOKS ====================
-  expressApp.post("/api/webhooks/docusign", handleDocuSignWebhook);
+  expressApp.get(
+    "/api/patient/contracts/:id/download",
+    downloadPatientContractPDF,
+  );
 
   // ==================== ADMIN ROUTES ====================
-  // Admin Auth
+  // Admin Auth (public — JWT is issued here)
   expressApp.post("/api/admin/auth/check-user", checkAdminUser);
   expressApp.post("/api/admin/auth/send-code", sendAdminCode);
   expressApp.post("/api/admin/auth/verify-code", verifyAdminCode);
+  expressApp.post("/api/admin/auth/refresh", refreshAdminToken);
+
+  expressApp.use("/api/admin", (req, res, next) => {
+    if (req.path.startsWith("/auth/")) return next();
+    return authenticateAdmin(req, res, () => authorizeAdmin(req, res, next));
+  });
 
   // Admin Dashboard
   expressApp.get("/api/admin/dashboard/stats", getDashboardMetrics);
@@ -9277,6 +9737,9 @@ function createServer() {
   expressApp.get("/api/admin/dashboard/revenue-chart", getRevenueChart);
   expressApp.get("/api/admin/dashboard/activity", getRecentActivity);
   expressApp.get("/api/admin/dashboard/calendar", getCalendarAppointments);
+
+  // Admin file uploads (Vercel Blob)
+  expressApp.post("/api/admin/uploads", uploadAdminFile);
 
   // Admin Services
   expressApp.get("/api/admin/services", getAllServicesAdmin);
@@ -9286,6 +9749,7 @@ function createServer() {
 
   // Admin Patient Management
   expressApp.get("/api/admin/patients", getAllAdminPatients);
+  expressApp.post("/api/admin/patients", createAdminPatient);
   expressApp.get("/api/admin/patients/:id", getAdminPatientById);
   expressApp.patch("/api/admin/patients/:id", updatePatient);
   expressApp.patch(
@@ -9347,17 +9811,10 @@ function createServer() {
   );
   expressApp.post("/api/admin/contracts/create", createContract);
   expressApp.post(
-    "/api/admin/contracts/create-and-configure",
-    createContractAndOpenDocuSign,
-  );
-  expressApp.post(
-    "/api/admin/contracts/:id/open-docusign",
-    openDocuSignForContract,
-  );
-  expressApp.post(
     "/api/admin/contracts/:id/send-for-signature",
     sendContractForSignature,
   );
+  expressApp.put("/api/admin/contracts/:id/terms", updateContractTermsHandler);
   expressApp.get("/api/admin/contracts/:id/status", getContractStatus);
   expressApp.get(
     "/api/admin/contracts/appointment/:appointmentId",
@@ -9414,12 +9871,6 @@ function createServer() {
   expressApp.put("/api/admin/blocked-dates/:id", updateBlockedDate);
   expressApp.delete("/api/admin/blocked-dates/:id", deleteBlockedDate);
 
-  // Payment Processing
-  expressApp.post(
-    "/api/appointments/book-with-payment",
-    bookAppointmentWithPayment,
-  );
-
   // 404 handler - only for API routes
   expressApp.use("/api", (_req, res, next) => {
     if (!res.headersSent) {
@@ -9459,6 +9910,12 @@ function getApp() {
   }
   return app;
 }
+
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
 
 // Export createServer for development use
 export { createServer };

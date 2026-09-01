@@ -38,7 +38,11 @@ export const fetchBlockedDates = createAsyncThunk(
       );
 
       if (response.data.success && response.data.data) {
-        return response.data.data.items;
+        const payload = response.data.data as
+          | PaginatedResponse<BlockedDate>
+          | BlockedDate[];
+        if (Array.isArray(payload)) return payload;
+        if (Array.isArray(payload.items)) return payload.items;
       }
       throw new Error("Failed to fetch blocked dates");
     } catch (error) {

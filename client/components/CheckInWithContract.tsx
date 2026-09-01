@@ -10,25 +10,26 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   FileText,
   AlertTriangle,
   CheckCircle,
   Clock,
-  ExternalLink,
 } from "lucide-react";
-import axios from "@/lib/axios";
+import { QRCodeSVG } from "qrcode.react";
 import { logger } from "@/lib/logger";
+import { useAppDispatch } from "@/store/hooks";
+import {
+  fetchContractByAppointment,
+  createAdminContract,
+  fetchContractStatus,
+} from "@/store/slices/contractsSlice";
+import {
+  generateCheckInQr,
+  checkInAdminAppointment,
+} from "@/store/slices/calendarSlice";
 
 interface CheckInWithContractProps {
   isOpen: boolean;
@@ -53,6 +54,7 @@ export default function CheckInWithContract({
   appointment,
   onCheckInSuccess,
 }: CheckInWithContractProps) {
+  const dispatch = useAppDispatch();
   const [step, setStep] = useState<"check" | "configure" | "sign" | "complete">(
     "check",
   );
@@ -60,11 +62,9 @@ export default function CheckInWithContract({
   const [error, setError] = useState<string | null>(null);
   const [contractId, setContractId] = useState<number | null>(null);
   const [contractNumber, setContractNumber] = useState<string | null>(null);
-  const [envelopeId, setEnvelopeId] = useState<string | null>(null);
-  const [signingUrl, setSigningUrl] = useState<string | null>(null);
   const [contractStatus, setContractStatus] = useState<string | null>(null);
+  const [checkInUrl, setCheckInUrl] = useState<string | null>(null);
 
-  // Contract creation form
   const [contractForm, setContractForm] = useState({
     total_amount: 0,
     sessions_included: 1,
@@ -78,15 +78,6 @@ export default function CheckInWithContract({
    - Se requiere llegar 10 minutos antes de la hora programada
    - En caso de no asistir sin previo aviso, se considerará como sesión utilizada
 
-3. POLÍTICA DE CANCELACIÓN
-   - Las cancelaciones deben hacerse con al menos 24 horas de anticipación
-   - Las cancelaciones con menos de 24 horas de anticipación podrían contar como sesión utilizada
-
-4. CUIDADOS Y RECOMENDACIONES
-   - Seguir todas las indicaciones del personal médico
-   - Informar sobre cualquier cambio en el estado de salud
-   - Acudir a todas las sesiones programadas para obtener mejores resultados
-
 5. VIGENCIA
    - Este contrato tiene una vigencia de 12 meses desde la fecha de firma
    - Las sesiones no utilizadas dentro de este período expirarán
@@ -98,6 +89,9 @@ export default function CheckInWithContract({
 Al firmar este documento, el paciente confirma haber leído, entendido y aceptado todos los términos y condiciones aquí establecidos.`,
   });
 
+  const isSigned = (status?: string | null, signedAt?: string | null) =>
+    status === "signed" || status === "completed" || Boolean(signedAt);
+
   const checkExistingContract = async () => {
     if (!appointment) return;
 
@@ -105,153 +99,70 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
     setError(null);
 
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get(
-        `/admin/contracts/appointment/${appointment.id}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
+      const contract = await dispatch(
+        fetchContractByAppointment(appointment.id),
+      ).unwrap();
 
-      if (response.data.success && response.data.data) {
-        const contract = response.data.data;
+      if (contract) {
         setContractId(contract.contract_id);
-        setContractStatus(contract.docusign_status);
-        setEnvelopeId(contract.docusign_envelope_id);
+        setContractNumber(contract.contract_number || null);
+        setContractStatus(contract.contract_status);
 
-        if (
-          contract.docusign_status === "signed" ||
-          contract.docusign_status === "completed"
-        ) {
+        if (isSigned(contract.contract_status, contract.signed_at)) {
           setStep("complete");
           await performCheckIn();
-        } else if (contract.docusign_status === "sent") {
-          setStep("sign");
         } else {
-          setStep("configure");
+          await startPatientSigning(contract.contract_id);
         }
       } else {
         setStep("configure");
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || "Error checking contract status");
+      setError(err || "Error checking contract status");
       setStep("configure");
     } finally {
       setLoading(false);
     }
   };
 
-  const createContractAndOpenDocuSign = async () => {
+  const createContractAndShowQr = async () => {
     if (!appointment) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.post(
-        "/admin/contracts/create-and-configure",
-        {
+      const created = await dispatch(
+        createAdminContract({
           patient_id: appointment.patient_id,
-          patient_name: appointment.patient_name,
-          patient_email: appointment.patient_email,
           service_id: appointment.service_id,
-          service_name: appointment.service_name,
+          appointment_id: appointment.id,
           total_amount: contractForm.total_amount,
           sessions_included: contractForm.sessions_included,
-          return_url: window.location.href,
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
+          terms_and_conditions: contractForm.terms_and_conditions,
+        }),
+      ).unwrap();
 
-      if (response.data.success) {
-        setContractId(response.data.data.contract_id);
-        setContractNumber(response.data.data.contract_number);
-        setEnvelopeId(response.data.data.envelope_id);
-        const configUrl = response.data.data.configuration_url;
-
-        const docusignWindow = window.open(
-          configUrl,
-          "_blank",
-          "width=1200,height=800",
-        );
-
-        if (docusignWindow) {
-          setStep("sign");
-          const pollInterval = setInterval(async () => {
-            const status = await checkSignatureStatus();
-            if (status === "signed" || status === "completed") {
-              clearInterval(pollInterval);
-              if (docusignWindow && !docusignWindow.closed) {
-                docusignWindow.close();
-              }
-            }
-          }, 3000);
-        } else {
-          setError(
-            "Por favor permite las ventanas emergentes para abrir DocuSign",
-          );
-        }
-      }
+      setContractId(created.contract_id);
+      setContractNumber(created.contract_number);
+      await startPatientSigning(created.contract_id);
     } catch (err: any) {
-      setError(err.response?.data?.message || "Error creating contract");
+      setError(err || "Error creating contract");
     } finally {
       setLoading(false);
     }
   };
 
-  const openDocuSignConfiguration = async () => {
-    if (!contractId || !appointment) return;
-
-    setLoading(true);
-    setError(null);
-
+  const startPatientSigning = async (id: number) => {
+    if (!appointment) return;
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.post(
-        `/admin/contracts/${contractId}/open-docusign`,
-        {
-          patient_name: appointment.patient_name,
-          patient_email: appointment.patient_email,
-          return_url: window.location.href,
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-
-      if (response.data.success) {
-        const configUrl = response.data.data.configuration_url;
-
-        const docusignWindow = window.open(
-          configUrl,
-          "_blank",
-          "width=1200,height=800",
-        );
-
-        if (docusignWindow) {
-          setStep("sign");
-          const pollInterval = setInterval(async () => {
-            const status = await checkSignatureStatus();
-            if (status === "signed" || status === "completed") {
-              clearInterval(pollInterval);
-              if (docusignWindow && !docusignWindow.closed) {
-                docusignWindow.close();
-              }
-            }
-          }, 3000);
-        } else {
-          setError(
-            "Por favor permite las ventanas emergentes para abrir DocuSign",
-          );
-        }
-      }
+      const qr = await dispatch(generateCheckInQr(appointment.id)).unwrap();
+      setCheckInUrl(qr.check_in_url);
+      setContractId(id);
+      setStep("sign");
     } catch (err: any) {
-      setError(err.response?.data?.message || "Error opening DocuSign");
-    } finally {
-      setLoading(false);
+      setError(err || "No se pudo generar el código QR de firma");
+      setStep("sign");
     }
   };
 
@@ -259,28 +170,16 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
     if (!contractId) return null;
 
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get(
-        `/admin/contracts/${contractId}/status`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
+      const data = await dispatch(fetchContractStatus(contractId)).unwrap();
+      setContractStatus(data.status);
+      setContractNumber(data.contract_number);
 
-      if (response.data.success) {
-        const status = response.data.data.docusign_status;
-        const contractStat = response.data.data.status;
-        setContractStatus(status);
-        setContractNumber(response.data.data.contract_number);
-        setEnvelopeId(response.data.data.docusign_envelope_id);
-
-        if (status === "completed" || contractStat === "signed") {
-          setStep("complete");
-          await performCheckIn();
-        }
-
-        return status;
+      if (isSigned(data.status, data.signed_at)) {
+        setStep("complete");
+        await performCheckIn();
       }
+
+      return data.status;
     } catch (err: any) {
       logger.error("Error checking signature status:", err);
     }
@@ -295,22 +194,14 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
     setError(null);
 
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      await axios.post(
-        `/admin/appointments/${appointment.id}/check-in`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-
+      await dispatch(checkInAdminAppointment(appointment.id)).unwrap();
       onCheckInSuccess();
       setTimeout(() => {
         onClose();
         resetState();
       }, 1500);
     } catch (err: any) {
-      setError(err.response?.data?.message || "Error during check-in");
+      setError(err || "Error during check-in");
     } finally {
       setLoading(false);
     }
@@ -320,9 +211,8 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
     setStep("check");
     setContractId(null);
     setContractNumber(null);
-    setEnvelopeId(null);
-    setSigningUrl(null);
     setContractStatus(null);
+    setCheckInUrl(null);
     setError(null);
     setContractForm({
       total_amount: 0,
@@ -331,10 +221,8 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
     });
   };
 
-  // Check for existing contract when dialog opens
   useEffect(() => {
     if (isOpen && appointment) {
-      // Auto-populate form with service price
       setContractForm((prev) => ({
         ...prev,
         total_amount: appointment.service_price || 0,
@@ -342,6 +230,14 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
       checkExistingContract();
     }
   }, [isOpen, appointment]);
+
+  useEffect(() => {
+    if (step !== "sign" || !contractId) return;
+    const poll = setInterval(() => {
+      void checkSignatureStatus();
+    }, 3000);
+    return () => clearInterval(poll);
+  }, [step, contractId]);
 
   return (
     <Dialog
@@ -374,7 +270,6 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
           </Alert>
         )}
 
-        {/* Step: Checking existing contract */}
         {step === "check" && (
           <div className="flex flex-col items-center justify-center py-8 space-y-4">
             <Clock className="w-16 h-16 text-gray-400 animate-pulse" />
@@ -382,14 +277,13 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
           </div>
         )}
 
-        {/* Step: Configure Contract */}
         {step === "configure" && (
           <div className="space-y-4">
             <Alert>
               <FileText className="h-4 w-4" />
               <AlertDescription>
-                Ingresa los detalles del contrato. DocuSign se abrirá para que
-                puedas subir el PDF y configurar los campos de firma.
+                Ingresa los detalles del contrato. El paciente firmará en la
+                pantalla de check-in con el código QR.
               </AlertDescription>
             </Alert>
 
@@ -424,45 +318,39 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
               </div>
             </div>
 
-            {/* <div className="p-4 bg-blue-50 rounded-lg space-y-3">
-              <p className="text-sm font-medium text-blue-900">
-                En DocuSign podrás:
-              </p>
-              <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
-                <li>Subir el archivo PDF del contrato</li>
-                <li>
-                  Arrastrar los campos de firma donde el paciente debe firmar
-                </li>
-                <li>Configurar campos adicionales (fecha, iniciales, etc.)</li>
-                <li>Enviar para que el paciente firme inmediatamente</li>
-              </ul>
-            </div> */}
-
             <DialogFooter>
               <Button variant="outline" onClick={onClose}>
                 Cancelar
               </Button>
               <Button
-                onClick={createContractAndOpenDocuSign}
+                onClick={createContractAndShowQr}
                 disabled={loading || contractForm.total_amount <= 0}
                 className="bg-primary hover:bg-primary/90"
               >
-                {loading ? "Abriendo DocuSign..." : "Abrir DocuSign"}
+                {loading ? "Preparando..." : "Generar QR de firma"}
               </Button>
             </DialogFooter>
           </div>
         )}
 
-        {/* Step: Waiting for Signature */}
         {step === "sign" && (
           <div className="space-y-4">
             <Alert>
               <FileText className="h-4 w-4" />
               <AlertDescription>
-                El contrato ha sido enviado a DocuSign. El paciente debe firmar
-                antes de proceder con el check-in.
+                Pide al paciente que escanee el código QR y firme el contrato
+                en su dispositivo. El check-in se completará al firmar.
               </AlertDescription>
             </Alert>
+
+            {checkInUrl && (
+              <div className="flex flex-col items-center gap-3 p-4 bg-gray-50 rounded-lg">
+                <QRCodeSVG value={checkInUrl} size={200} />
+                <p className="text-xs text-gray-500 break-all text-center">
+                  {checkInUrl}
+                </p>
+              </div>
+            )}
 
             {contractNumber && (
               <div className="p-4 bg-gray-50 rounded-lg">
@@ -475,41 +363,35 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
               </div>
             )}
 
-            {envelopeId && (
-              <div className="p-4 bg-blue-50 rounded-lg">
-                <p className="text-sm font-medium text-blue-900">
-                  ID de Sobre DocuSign:
-                </p>
-                <p className="text-sm text-blue-700 font-mono">{envelopeId}</p>
-              </div>
-            )}
-
             {contractStatus && (
               <div className="flex items-center gap-2">
                 <Label>Estado:</Label>
                 <Badge
                   variant={
-                    contractStatus === "completed" ||
-                    contractStatus === "signed"
+                    contractStatus === "signed" ||
+                    contractStatus === "completed"
                       ? "default"
                       : "secondary"
                   }
                 >
-                  {contractStatus === "sent" && "Enviado"}
-                  {contractStatus === "delivered" && "Entregado"}
-                  {contractStatus === "completed" && "Completado"}
+                  {contractStatus === "pending_signature" && "Pendiente de firma"}
+                  {contractStatus === "draft" && "Borrador"}
                   {contractStatus === "signed" && "Firmado"}
-                  {!["sent", "delivered", "completed", "signed"].includes(
-                    contractStatus,
-                  ) && contractStatus}
+                  {contractStatus === "completed" && "Completado"}
+                  {![
+                    "pending_signature",
+                    "draft",
+                    "signed",
+                    "completed",
+                  ].includes(contractStatus) && contractStatus}
                 </Badge>
               </div>
             )}
 
             <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
               <p className="text-sm text-yellow-800">
-                ℹ️ El estado se actualiza automáticamente cada 3 segundos
-                mientras esta ventana está abierta.
+                El estado se actualiza automáticamente cada 3 segundos mientras
+                esta ventana está abierta.
               </p>
             </div>
 
@@ -528,10 +410,9 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
           </div>
         )}
 
-        {/* Step: Complete */}
         {step === "complete" && (
           <div className="flex flex-col items-center justify-center py-8 space-y-4">
-            <CheckCircle className="w-16 h-16 text-green-500" />
+            <CheckCircle className="w-16 h-16 text-primary" />
             <p className="text-lg font-medium text-gray-900">
               ¡Check-in Completado!
             </p>

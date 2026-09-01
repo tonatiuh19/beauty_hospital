@@ -7,7 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import SignatureCanvas from "@/components/SignatureCanvas";
 import { useToast } from "@/hooks/use-toast";
-import axios from "@/lib/axios";
+import { useAppDispatch } from "@/store/hooks";
+import {
+  validateCheckInToken,
+  completeCheckIn,
+} from "@/store/slices/checkInSlice";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { jsPDF } from "jspdf";
@@ -39,6 +43,7 @@ interface AppointmentData {
 }
 
 export default function PatientCheckIn() {
+  const dispatch = useAppDispatch();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const token = searchParams.get("token");
@@ -63,23 +68,18 @@ export default function PatientCheckIn() {
   }, [token]);
 
   const fetchAppointmentData = async () => {
+    if (!token) return;
     try {
       setLoading(true);
-      const response = await axios.get(`/check-in/validate/${token}`);
-
-      if (response.data.success) {
-        setAppointment(response.data.data.appointment);
-        setContractTerms(
-          response.data.data.contract_terms ||
-            "Términos y condiciones del servicio.",
-        );
-      } else {
-        setError(response.data.message || "No se pudo validar el token");
-      }
+      const result = await dispatch(validateCheckInToken(token)).unwrap();
+      setAppointment(result.appointment);
+      setContractTerms(
+        result.contractTerms || "Términos y condiciones del servicio.",
+      );
     } catch (err: any) {
       logger.error("Error validating check-in token:", err);
       setError(
-        err.response?.data?.message ||
+        err ||
           "Token expirado o inválido. Por favor, solicite un nuevo código QR.",
       );
     } finally {
@@ -285,33 +285,25 @@ export default function PatientCheckIn() {
       // Convert PDF to base64
       const pdfBase64 = pdf.output("dataurlstring");
 
-      // Submit to backend with PDF
-      const response = await axios.post(`/check-in/complete`, {
-        token,
-        signature_data: signatureData,
-        terms_accepted: termsAccepted,
-        pdf_base64: pdfBase64,
-      });
-
-      if (response.data.success) {
-        setSuccess(true);
-        setTimeout(() => {
-          navigate("/");
-        }, 5000);
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: response.data.message || "Error al procesar el check-in",
-        });
-      }
+      await dispatch(
+        completeCheckIn({
+          token: token!,
+          signature_data: signatureData,
+          terms_accepted: termsAccepted,
+          pdf_base64: pdfBase64,
+        }),
+      ).unwrap();
+      setSuccess(true);
+      setTimeout(() => {
+        navigate("/");
+      }, 5000);
     } catch (err: any) {
       logger.error("Error completing check-in:", err);
       toast({
         variant: "destructive",
         title: "Error al completar check-in",
         description:
-          err.response?.data?.message ||
+          err ||
           "Error al completar el check-in. Por favor, intente nuevamente.",
       });
     } finally {

@@ -1,0 +1,33 @@
+---
+description: Redux data fetching — never call APIs from components
+globs: client/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Redux & Data Fetching
+
+**ALL data fetching in Redux slices via `createAsyncThunk` + axios. NEVER in components.**
+
+```typescript
+// ✅ slice
+export const fetchData = createAsyncThunk("slice/fetchData", async () => {
+  const { data } = await axios.get("/api/endpoint");
+  return data;
+});
+
+// ✅ component
+dispatch(fetchData());
+const { data, loading } = useAppSelector((s) => s.mySlice);
+```
+
+```typescript
+// ❌ NEVER
+useEffect(() => {
+  axios.get("/api/...").then((res) => setData(res.data));
+}, []);
+```
+
+- Hooks: `useAppDispatch` / `useAppSelector` from `client/store/hooks.ts`
+- Axios only from slices — never raw `fetch` for app APIs
+- Surface errors with `rejectWithValue` and `formatAxiosError` from `client/lib/axios.ts`
+- Shared state belongs in the store, not component-local state

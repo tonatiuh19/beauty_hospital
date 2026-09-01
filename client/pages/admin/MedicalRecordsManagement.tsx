@@ -89,6 +89,7 @@ export default function MedicalRecordsManagement() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedPatient, setSelectedPatient] = useState<string>("all");
+  const [patientFilter, setPatientFilter] = useState("");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -403,6 +404,12 @@ export default function MedicalRecordsManagement() {
                 <Label htmlFor="patient">
                   Paciente <span className="text-red-500">*</span>
                 </Label>
+                <Input
+                  className="mb-2"
+                  placeholder="Filtrar paciente por nombre o email..."
+                  value={patientFilter}
+                  onChange={(e) => setPatientFilter(e.target.value)}
+                />
                 <Select
                   value={createFormik.values.patient_id?.toString() || ""}
                   onValueChange={(value) => {
@@ -421,7 +428,15 @@ export default function MedicalRecordsManagement() {
                     <SelectValue placeholder="Seleccionar paciente" />
                   </SelectTrigger>
                   <SelectContent>
-                    {patients.map((patient) => (
+                    {patients
+                      .filter((patient) => {
+                        const q = patientFilter.trim().toLowerCase();
+                        if (!q) return true;
+                        return `${patient.first_name} ${patient.last_name} ${patient.email}`
+                          .toLowerCase()
+                          .includes(q);
+                      })
+                      .map((patient) => (
                       <SelectItem
                         key={patient.id}
                         value={patient.id.toString()}

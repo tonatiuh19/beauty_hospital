@@ -18,8 +18,9 @@ import {
 } from "lucide-react";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
-import axios from "@/lib/axios";
 import { logger } from "@/lib/logger";
+import { useAppDispatch } from "@/store/hooks";
+import { confirmAppointmentPayment } from "@/store/slices/appointmentApiSlice";
 
 interface SuccessState {
   serviceName: string;
@@ -73,6 +74,7 @@ function SparkleParticle({ index }: { index: number }) {
 }
 
 export default function PaymentSuccess() {
+  const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const location = useLocation();
   const stateFromWizard = location.state as SuccessState | null;
@@ -101,44 +103,36 @@ export default function PaymentSuccess() {
 
       if (redirectStatus === "succeeded" && !stateFromWizard) {
         setIsConfirming(true);
-        axios
-          .post("/appointments/confirm-payment", {
-            payment_intent_id: paymentIntentId,
-          })
-          .then((res) => {
-            if (res.data.success) {
-              // Appointment created — show generic success since we don't have all details from 3DS flow
-              setDetails({
-                serviceName: "Tu servicio",
-                date: "",
-                time: "",
-                duration: 0,
-                areas: [],
-                contactEmail: "",
-                contactPhone: "",
-                amount: 0,
-              });
-            } else {
-              setError(
-                res.data.error ||
-                  "No se pudo confirmar tu pago. Por favor contacta soporte.",
-              );
-            }
+        dispatch(confirmAppointmentPayment(paymentIntentId))
+          .unwrap()
+          .then(() => {
+            setDetails({
+              serviceName: "Tu servicio",
+              date: "",
+              time: "",
+              duration: 0,
+              areas: [],
+              contactEmail: "",
+              contactPhone: "",
+              amount: 0,
+            });
           })
           .catch((err) => {
             logger.error("3DS confirmation error:", err);
-            if (err.response?.status === 409) {
+            if (err?.status === 409) {
               navigate("/appointment/failed", {
                 replace: true,
                 state: {
                   error:
-                    err.response?.data?.error ||
+                    err.error ||
+                    err.message ||
                     "Lo sentimos, este horario ya fue reservado. Tu pago será reembolsado.",
                 },
               });
             } else {
               setError(
-                "Error al confirmar el pago. Por favor contacta soporte.",
+                err?.message ||
+                  "Error al confirmar el pago. Por favor contacta soporte.",
               );
             }
           })

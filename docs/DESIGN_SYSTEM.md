@@ -34,13 +34,13 @@
         ↓
 5. Patient pays via Stripe → appointment confirmed
         ↓
-6. Day of appointment: patient scans QR code at /check-in
+6. Staff open check-in on the calendar, create/link a contract, and show a QR
         ↓
-7. Receptionist/Admin sees check-in in the admin panel → /admin/appointments
+7. Patient scans QR at `/check-in`, signs on canvas — that signs the contract and checks them in
         ↓
-8. Doctor records medical notes in /admin/medical-records
+8. Calendar poll sees signed status; admin check-in is idempotent if the QR path already completed
         ↓
-9. Contracts are generated and signed digitally (DocuSign or in-house canvas)
+9. Doctor records medical notes in /admin/medical-records
         ↓
 10. Invoices generated and sent to patient
         ↓
@@ -54,19 +54,20 @@
 | **Landing Page**        | Public marketing site with Hero, Services, Features, Process, Testimonials, FAQ, and CTA sections.                |
 | **Appointment Booking** | Multi-step wizard: select service → select date/time → patient info → login/register → Stripe payment.            |
 | **Patient Portal**      | `/my-appointments` — patient views and manages their own appointments after logging in.                           |
-| **QR Check-In**         | `/check-in` — patients scan a QR code on arrival; staff confirm check-in; optionally sign contract.               |
+| **QR Check-In**         | `/check-in` — patient scans QR, signs the contract on canvas; that completes check-in. Staff generate the QR from the calendar (`CheckInWithContract`). |
 | **Admin Dashboard**     | KPIs and overview metrics for the clinic.                                                                         |
-| **Appointments**        | Calendar view of all appointments; admin can filter, edit, cancel, and confirm.                                   |
-| **Patient Management**  | Full CRUD for patient records including demographics, notes, and history.                                         |
-| **Contracts**           | Digital treatment contracts with in-browser signature canvas and DocuSign integration for multi-session packages. |
-| **Payments**            | Stripe-integrated payment records, refund tracking, and manual payment entries.                                   |
+| **Appointments**        | Calendar view of all appointments; `admin`, `general_admin`, receptionist, and POS can cancel (matches API). Manual “Nueva Cita” can search an existing patient or create a new one in the same modal. |
+| **Patient Management**  | List/search/edit patients, plus **Nuevo paciente** (`POST /api/admin/patients`). Manual appointments reuse the same create path. |
+| **Contracts**           | Digital treatment contracts with in-browser signature canvas for multi-session packages. |
+| **Payments**            | Online booking uses Stripe Payment Element + PaymentIntents (catalog price). Webhook `POST /api/stripe/webhook` fulfills the appointment; confirm-payment is idempotent. Admin **Aprobar reembolso** and patient cancel (>24h) refund in Stripe, not only in the DB. Walk-in **Registrar pago** writes cash/card/transfer rows. |
 | **Invoices**            | Invoice generation and management tied to appointments and payments.                                              |
-| **Medical Records**     | Doctors attach diagnoses, treatments, allergies, medications, and media (photos/files) per patient.               |
+| **Medical Records**     | Doctors attach diagnoses, treatments, and notes, optionally linked to an `appointment_id`. Patient picker loads up to 200 patients and can be filtered. |
 | **Services**            | CRUD for clinic services (laser hair removal, facials, body treatments, consultations, etc.).                     |
 | **Blocked Dates**       | Admin blocks specific dates or time ranges to prevent bookings.                                                   |
 | **Users Management**    | `general_admin` manages internal staff accounts (create, update, deactivate).                                     |
 | **Settings**            | Business hours, clinic configuration, and system-level settings.                                                  |
-| **Notifications**       | Email (Nodemailer), SMS and WhatsApp (Twilio) notifications sent at key events.                                   |
+| **Notifications**       | Email (Resend), SMS and WhatsApp (Twilio) notifications sent at key events.                                       |
+| **Storage**             | Catalog images stay in `public/assets/`. Only new admin uploads go to Vercel Blob. Emails embed `public/assets/logo-header.png` via CID (fallback `{APP_URL}/api/brand/logo`). No emoji in email HTML. |
 
 ### Tech Stack Summary
 
@@ -75,11 +76,12 @@
 | Frontend       | React 18, TypeScript, Vite, TailwindCSS 3, Redux Toolkit, React Router v6, Framer Motion |
 | UI Components  | Radix UI primitives + shadcn/ui component library                                        |
 | Backend        | Node.js, Express 5 (single `api/index.ts` serverless function)                           |
-| Database       | MySQL 8.0 (hosted on HostGator cPanel)                                                   |
+| Database       | TiDB Cloud Serverless (MySQL 8.0 compatible)                                             |
 | Payments       | Stripe (`@stripe/react-stripe-js`, `@stripe/stripe-js`, `stripe` server SDK)             |
-| Notifications  | Nodemailer (email), Twilio (SMS + WhatsApp)                                              |
-| Contracts      | DocuSign SDK (`docusign-esign`), in-browser `react-signature-canvas`                     |
-| Deployment     | Vercel (frontend + serverless API) + HostGator MySQL                                     |
+| Notifications  | Resend (email), Twilio (SMS + WhatsApp)                                                  |
+| Contracts      | In-browser signature canvas (`react-signature-canvas`) + QR check-in                     |
+| Storage        | Vercel Blob (uploads) + `public/assets/` (brand/service images)                          |
+| Deployment     | Vercel (frontend + serverless API) + TiDB Cloud                                          |
 | OTP Auth       | Passwordless — 6-digit numeric code delivered via email                                  |
 | PDF Generation | `jspdf`, `pdfkit`                                                                        |
 | QR Code        | `qrcode.react`, `html5-qrcode` (scanner)                                                 |
@@ -110,6 +112,8 @@
 | Usage              | Path / URL                                   |
 | ------------------ | -------------------------------------------- |
 | Primary logo (PNG) | `client/assets/images/logos/logo-header.png` |
+| Email / public PNG | `public/assets/logo-header.png`              |
+| Email logo URL     | CID `brand-logo`, or `GET /api/brand/logo`   |
 | Logo component     | `client/components/Logo.tsx`                 |
 | Brand name         | All Beauty Luxury & Wellness                 |
 
@@ -437,7 +441,7 @@ Reusable section/feature components used across the public site and booking flow
 | `EditAppointmentModal`         | `EditAppointmentModal.tsx`         | `/my-appointments`      |
 | `AuthModal`                    | `AuthModal.tsx`                    | Booking flow            |
 | `StripeCheckoutForm`           | `StripeCheckoutForm.tsx`           | Booking payment         |
-| `CheckInWithContract`          | `CheckInWithContract.tsx`          | `/check-in`             |
+| `CheckInWithContract`          | `CheckInWithContract.tsx`          | Admin calendar modal    |
 | `SignatureCanvas`              | `SignatureCanvas.tsx`              | Contracts, check-in     |
 | `InvoiceRequestModal`          | `InvoiceRequestModal.tsx`          | Patient portal          |
 | `LoadingMask`                  | `LoadingMask.tsx`                  | Global (always mounted) |
@@ -497,7 +501,7 @@ The app has **two completely separate auth systems** — one for patients (publi
 | ------ | ----------------------- | -------------------------------------- |
 | `POST` | `/api/auth/check-user`  | Check if patient exists by email       |
 | `POST` | `/api/auth/send-code`   | Send 6-digit OTP to patient's email    |
-| `POST` | `/api/auth/verify-code` | Verify OTP and return patient + tokens |
+| `POST` | `/api/auth/verify-code` | Verify OTP and return patient (session row) |
 | `POST` | `/api/auth/create-user` | Register new patient inline            |
 
 #### Session Persistence
@@ -619,7 +623,7 @@ interface AdminUser {
 | Storage key            | `user`                               | `adminUser`, `adminAccessToken`, `adminRefreshToken` |
 | Tokens                 | Stateless (user JSON only)           | JWT access + refresh tokens                          |
 | Post-login destination | Booking flow / `/my-appointments`    | `/admin/dashboard`                                   |
-| Redux slice            | `auth`                               | Component-local state in `DashboardLayout`           |
+| Redux slice            | `auth` / `authApi`                   | `adminAuth` (+ `adminUser` in `DashboardLayout`)     |
 | New user flow          | Register inline during booking       | N/A (staff created by `general_admin`)               |
 
 ---
@@ -805,7 +809,7 @@ The app is a **SPA** using React Router v6. Routes are defined in `client/routes
 
 ### Admin Routes (`/admin/*`)
 
-All wrapped in `DashboardLayout` (nested route via `<Outlet />`). Require valid `localStorage["adminUser"]`.
+All wrapped in `DashboardLayout` (nested route via `<Outlet />`). Require `adminUser` **and** `adminAccessToken`. The API enforces the same role map as this table. Expired access tokens are refreshed via `POST /api/admin/auth/refresh`. Settings includes a Horarios tab for `business_hours`. Dashboard shows recent activity from appointments, payments, and contracts. Clinic “today” uses `CLINIC_TIMEZONE` (default `America/Mexico_City`).
 
 | Path                           | Page                       | Role Access                                     |
 | ------------------------------ | -------------------------- | ----------------------------------------------- |

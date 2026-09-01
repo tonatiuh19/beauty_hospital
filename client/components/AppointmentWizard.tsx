@@ -54,8 +54,10 @@ import { StripeCheckoutForm } from "./StripeCheckoutForm";
 import { AppointmentConfirmationModal } from "./AppointmentConfirmationModal";
 import { ErrorModal } from "./ErrorModal";
 import { PhoneInput } from "./ui/phone-input";
-import axios from "@/lib/axios";
-import type { ApiResponse, StripePaymentResponse } from "@shared/api";
+import {
+  bookAppointmentWithPayment,
+  confirmAppointmentPayment,
+} from "@/store/slices/appointmentApiSlice";
 
 // Initialize Stripe - get publishable key from environment
 const stripePromise = loadStripe(
@@ -175,12 +177,17 @@ export function AppointmentWizard() {
     dispatch(fetchBusinessHours());
   }, [dispatch]);
 
-  // Fetch blocked dates for the next 3 months
+  // Fetch blocked dates for the next 3 months (clinic timezone, not UTC)
   useEffect(() => {
-    const startDate = new Date().toISOString().split("T")[0];
-    const endDate = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split("T")[0];
+    const ymd = (date: Date) =>
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Mexico_City",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(date);
+    const startDate = ymd(new Date());
+    const endDate = ymd(new Date(Date.now() + 90 * 24 * 60 * 60 * 1000));
     dispatch(fetchBlockedDates({ start_date: startDate, end_date: endDate }));
   }, [dispatch]);
 
@@ -225,13 +232,9 @@ export function AppointmentWizard() {
 
   useEffect(() => {
     if (blockedDatesError) {
-      toast({
-        variant: "destructive",
-        title: "Error al cargar fechas bloqueadas",
-        description: blockedDatesError,
-      });
+      logger.warn("Blocked dates unavailable; booking continues:", blockedDatesError);
     }
-  }, [blockedDatesError, toast]);
+  }, [blockedDatesError]);
 
   useEffect(() => {
     if (bookedSlotsState.error) {
@@ -376,77 +379,59 @@ export function AppointmentWizard() {
       // When booking for self, send the logged-in user's patient_id
       const patient_id = appointment.bookedForSelf ? user?.id : undefined;
 
-      const response = await axios.post<ApiResponse<StripePaymentResponse>>(
-        "/appointments/book-with-payment",
-        {
-          patient_id, // Include patient_id when booking for self
+      const data = await dispatch(
+        bookAppointmentWithPayment({
+          patient_id,
           service_id: appointment.service,
           scheduled_at,
           duration_minutes: getServiceDuration(appointment.service),
           notes: appointment.notes || undefined,
           booked_for_self: appointment.bookedForSelf,
-          patient_info, // Include patient info when booking for someone else
+          patient_info,
           selected_areas: appointment.selectedAreas,
           accepted_terms: acceptedTerms,
           accepted_privacy: acceptedPrivacy,
           payment_amount: getServicePrice(appointment.service),
           currency: "mxn",
-        },
-      );
+        }),
+      ).unwrap();
 
-      if (response.data.success && response.data.data) {
-        const {
-          clientSecret: cs,
-          customerSessionClientSecret: csscs,
-          paymentId: pid,
-        } = response.data.data;
-        logger.log("[AppointmentWizard] Payment intent response:", {
-          clientSecret: cs ? `${cs.slice(0, 20)}...` : "MISSING",
-          customerSessionClientSecret: csscs
-            ? `${csscs.slice(0, 20)}...`
-            : "MISSING — saved card will NOT appear",
-          paymentId: pid,
-        });
-        setClientSecret(cs);
-        setCustomerSessionClientSecret(csscs ?? null);
-        setPaymentId(pid);
-      } else {
-        const errorMsg =
-          response.data.error ||
-          response.data.message ||
-          "Failed to create payment";
-        logger.error("Payment creation failed:", response.data);
-        setErrorModalConfig({
-          title: "Error al Procesar el Pago",
-          message: errorMsg,
-          showRetry: true,
-          onRetry: createPaymentIntent,
-        });
-        setShowErrorModal(true);
-      }
+      const {
+        clientSecret: cs,
+        customerSessionClientSecret: csscs,
+        paymentId: pid,
+      } = data;
+      logger.log("[AppointmentWizard] Payment intent response:", {
+        clientSecret: cs ? `${cs.slice(0, 20)}...` : "MISSING",
+        customerSessionClientSecret: csscs
+          ? `${csscs.slice(0, 20)}...`
+          : "MISSING — saved card will NOT appear",
+        paymentId: pid,
+      });
+      setClientSecret(cs);
+      setCustomerSessionClientSecret(csscs ?? null);
+      setPaymentId(pid);
     } catch (error: any) {
       logger.error("Payment creation error:", error);
-      logger.error("Error response:", error.response?.data);
+      logger.error("Error response:", error);
 
-      // Handle specific error cases
-      if (error.response?.status === 409) {
-        // Slot conflict - show user-friendly message and go back to step 2
+      if (error?.status === 409) {
         setPaymentError(
-          error.response?.data?.error ||
+          error.error ||
+            error.message ||
             "Este horario ya no está disponible. Por favor selecciona otro horario.",
         );
 
-        // Automatically redirect user back to date/time selection after 3 seconds
         setTimeout(() => {
-          dispatch(setTime("")); // Clear the selected time
-          dispatch(previousStep()); // Go back to step 2 (date/time selection)
-          dispatch(previousStep()); // Go back to step 2 from step 3
+          dispatch(setTime(""));
+          dispatch(previousStep());
+          dispatch(previousStep());
           setPaymentError(null);
         }, 3000);
       } else {
-        // Show error modal for generic errors
         const errorMessage =
-          error.response?.data?.error ||
+          error?.error ||
+          error?.message ||
           "Error al crear el pago. Por favor intenta de nuevo.";
 
         setErrorModalConfig({
@@ -466,43 +451,37 @@ export function AppointmentWizard() {
   const handlePaymentSuccess = async () => {
     setIsConfirmingReservation(true);
     try {
-      // Confirm payment on backend
-      const response = await axios.post("/appointments/confirm-payment", {
-        payment_intent_id: clientSecret?.split("_secret_")[0],
-      });
+      await dispatch(
+        confirmAppointmentPayment(clientSecret?.split("_secret_")[0] || ""),
+      ).unwrap();
 
-      if (response.data.success) {
-        // Capture appointment details before resetting state
-        const successState = {
-          serviceName: getServiceName(appointment.service),
-          date: appointment.date,
-          time: appointment.time,
-          duration: getServiceDuration(appointment.service),
-          areas: getAreaLabels(appointment.selectedAreas),
-          contactEmail: user?.email || appointment.email,
-          contactPhone: user?.phone || appointment.phone,
-          amount: getServicePrice(appointment.service),
-        };
+      const successState = {
+        serviceName: getServiceName(appointment.service),
+        date: appointment.date,
+        time: appointment.time,
+        duration: getServiceDuration(appointment.service),
+        areas: getAreaLabels(appointment.selectedAreas),
+        contactEmail: user?.email || appointment.email,
+        contactPhone: user?.phone || appointment.phone,
+        amount: getServicePrice(appointment.service),
+      };
 
-        // Reset form state
-        dispatch(resetAppointment());
-        setClientSecret(null);
-        setCustomerSessionClientSecret(null);
-        setPaymentId(null);
-        setAcceptedTerms(false);
-        setAcceptedPrivacy(false);
+      dispatch(resetAppointment());
+      setClientSecret(null);
+      setCustomerSessionClientSecret(null);
+      setPaymentId(null);
+      setAcceptedTerms(false);
+      setAcceptedPrivacy(false);
 
-        // Navigate to dedicated success page with appointment details
-        navigate("/appointment/success", { state: successState });
-      }
+      navigate("/appointment/success", { state: successState });
     } catch (error: any) {
       logger.error("Payment confirmation error:", error);
       setIsConfirmingReservation(false);
 
-      if (error.response?.status === 409) {
-        // Slot was taken while user was completing payment
+      if (error?.status === 409) {
         const conflictMessage =
-          error.response?.data?.error ||
+          error.error ||
+          error.message ||
           "Lo sentimos, este horario fue reservado por otro cliente. Tu pago será reembolsado automáticamente.";
 
         setErrorModalConfig({
@@ -512,7 +491,6 @@ export function AppointmentWizard() {
         });
         setShowErrorModal(true);
 
-        // Redirect to date/time selection after error modal
         setTimeout(() => {
           dispatch(setTime(""));
           dispatch(previousStep());
@@ -520,7 +498,8 @@ export function AppointmentWizard() {
         }, 5000);
       } else {
         const errorMsg =
-          error.response?.data?.error ||
+          error?.error ||
+          error?.message ||
           "Ocurrió un error al confirmar tu pago. Por favor contacta a soporte.";
         navigate("/appointment/failed", { state: { error: errorMsg } });
       }

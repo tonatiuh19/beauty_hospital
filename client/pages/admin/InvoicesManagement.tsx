@@ -40,11 +40,16 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import axios from "@/lib/axios";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
 import { logger } from "@/lib/logger";
+import { useAppDispatch } from "@/store/hooks";
+import {
+  fetchAdminInvoices,
+  fetchInvoiceStats,
+  updateInvoiceRequest,
+} from "@/store/slices/invoicesSlice";
 
 interface InvoiceRequest {
   id: number;
@@ -125,6 +130,7 @@ const paymentTypeLabels: Record<string, string> = {
 };
 
 export default function InvoicesManagement() {
+  const dispatch = useAppDispatch();
   const { toast } = useToast();
   const [invoices, setInvoices] = useState<InvoiceRequest[]>([]);
   const [stats, setStats] = useState<InvoiceStats | null>(null);
@@ -167,9 +173,9 @@ export default function InvoicesManagement() {
         params.status = statusFilter;
       }
 
-      const response = await axios.get("/admin/invoices", { params });
-      setInvoices(response.data.data.items);
-      setTotalPages(response.data.data.pagination.totalPages);
+      const result = await dispatch(fetchAdminInvoices(params)).unwrap();
+      setInvoices(result.items);
+      setTotalPages(result.totalPages);
     } catch (error) {
       logger.error("Error fetching invoices:", error);
       toast({
@@ -184,8 +190,8 @@ export default function InvoicesManagement() {
 
   const fetchStats = async () => {
     try {
-      const response = await axios.get("/admin/invoices/stats");
-      setStats(response.data.data);
+      const data = await dispatch(fetchInvoiceStats()).unwrap();
+      setStats(data);
     } catch (error) {
       logger.error("Error fetching invoice stats:", error);
     }
@@ -224,13 +230,14 @@ export default function InvoicesManagement() {
         updateData.xml_url = xmlUrl;
       }
 
-      // Get admin user ID from session (you may need to get this from auth state)
-      const adminUser = JSON.parse(localStorage.getItem("user") || "{}");
+      const adminUser = JSON.parse(localStorage.getItem("adminUser") || "{}");
       if (adminUser.id) {
         updateData.processed_by = adminUser.id;
       }
 
-      await axios.patch(`/admin/invoices/${selectedInvoice.id}`, updateData);
+      await dispatch(
+        updateInvoiceRequest({ id: selectedInvoice.id, data: updateData }),
+      ).unwrap();
 
       toast({
         title: "Éxito",
@@ -257,12 +264,17 @@ export default function InvoicesManagement() {
     newStatus: string,
   ) => {
     try {
-      const adminUser = JSON.parse(localStorage.getItem("user") || "{}");
+      const adminUser = JSON.parse(localStorage.getItem("adminUser") || "{}");
 
-      await axios.patch(`/admin/invoices/${invoiceId}`, {
-        status: newStatus,
-        processed_by: adminUser.id,
-      });
+      await dispatch(
+        updateInvoiceRequest({
+          id: invoiceId,
+          data: {
+            status: newStatus,
+            processed_by: adminUser.id,
+          },
+        }),
+      ).unwrap();
 
       toast({
         title: "Éxito",

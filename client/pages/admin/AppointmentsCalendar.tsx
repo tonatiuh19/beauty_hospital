@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Calendar as CalendarIcon,
@@ -54,8 +54,23 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { ChevronsUpDown, Check } from "lucide-react";
+import { Formik, Form, Field, type FormikProps } from "formik";
 import { useToast } from "@/hooks/use-toast";
-import axios from "@/lib/axios";
+import { useAppDispatch } from "@/store/hooks";
+import {
+  newPatientSchema,
+  type NewPatientValues,
+} from "@/store/slices/patientsSlice";
+import {
+  fetchCalendarAppointments,
+  searchAdminPatients,
+  fetchAppointmentPaymentInfo,
+  rescheduleAdminAppointment,
+  cancelAdminAppointment,
+  generateCheckInQr,
+  createManualAppointment,
+} from "@/store/slices/calendarSlice";
+import { fetchServices } from "@/store/slices/servicesSlice";
 import {
   format,
   parseISO,
@@ -145,6 +160,7 @@ const statusLabels = {
 };
 
 export default function AppointmentsCalendar() {
+  const dispatch = useAppDispatch();
   const { toast } = useToast();
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [view, setView] = useState<View>("month");
@@ -183,10 +199,17 @@ export default function AppointmentsCalendar() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [patientSearch, setPatientSearch] = useState("");
   const [patientComboOpen, setPatientComboOpen] = useState(false);
+  const [isNewPatient, setIsNewPatient] = useState(false);
+  const [creatingAppointment, setCreatingAppointment] = useState(false);
+  const newPatientFormRef = useRef<FormikProps<NewPatientValues>>(null);
 
-  // Super-admin check (role === 'admin' is the top role)
   const adminUser = JSON.parse(localStorage.getItem("adminUser") || "{}");
-  const isSuperAdmin = adminUser?.role === "admin";
+  const canCancelAppointment = [
+    "admin",
+    "general_admin",
+    "receptionist",
+    "pos",
+  ].includes(adminUser?.role);
 
   // Create appointment form
   const [newAppointment, setNewAppointment] = useState({
@@ -204,7 +227,7 @@ export default function AppointmentsCalendar() {
 
   useEffect(() => {
     fetchAppointments();
-    fetchServices();
+    loadServices();
   }, [currentDate, view]);
 
   useEffect(() => {
@@ -237,7 +260,6 @@ export default function AppointmentsCalendar() {
   const fetchAppointments = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem("adminAccessToken");
 
       // Get date range based on current view
       let startDate: string;
@@ -254,14 +276,13 @@ export default function AppointmentsCalendar() {
         endDate = format(currentDate, "yyyy-MM-dd");
       }
 
-      const response = await axios.get("/admin/dashboard/calendar", {
-        headers: { Authorization: `Bearer ${token}` },
-        params: { start_date: startDate, end_date: endDate },
-      });
-
-      if (response.data.success) {
-        setAppointments(response.data.data);
-      }
+      const data = await dispatch(
+        fetchCalendarAppointments({
+          start_date: startDate,
+          end_date: endDate,
+        }),
+      ).unwrap();
+      setAppointments(data);
     } catch (error) {
       logger.error("Error fetching appointments:", error);
     } finally {
@@ -269,12 +290,10 @@ export default function AppointmentsCalendar() {
     }
   };
 
-  const fetchServices = async () => {
+  const loadServices = async () => {
     try {
-      const response = await axios.get("/services");
-      if (response.data.success) {
-        setServices(response.data.data);
-      }
+      const list = await dispatch(fetchServices()).unwrap();
+      setServices(list);
     } catch (error) {
       logger.error("Error fetching services:", error);
     }
@@ -287,21 +306,8 @@ export default function AppointmentsCalendar() {
     }
 
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get("/admin/patients", {
-        headers: { Authorization: `Bearer ${token}` },
-        params: { search: query, limit: 10 },
-      });
-
-      if (response.data.success) {
-        const mapped = (response.data.data || []).map((p: any) => ({
-          id: p.id,
-          name: `${p.first_name} ${p.last_name}`,
-          email: p.email,
-          phone: p.phone,
-        }));
-        setPatients(mapped);
-      }
+      const mapped = await dispatch(searchAdminPatients(query)).unwrap();
+      setPatients(mapped);
     } catch (error) {
       logger.error("Error searching patients:", error);
     }
@@ -336,15 +342,11 @@ export default function AppointmentsCalendar() {
     setOfferRefund(false);
     setLoadingPaymentInfo(true);
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get(
-        `/admin/appointments/${appointmentId}/payment-info`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      if (response.data.success) {
-        setStripePaymentInfo(response.data);
-        if (response.data.has_stripe_payment) setOfferRefund(true);
-      }
+      const response = await dispatch(
+        fetchAppointmentPaymentInfo(appointmentId),
+      ).unwrap();
+      setStripePaymentInfo(response);
+      if (response.has_stripe_payment) setOfferRefund(true);
     } catch {
       // non-critical, proceed without refund info
     } finally {
@@ -356,66 +358,45 @@ export default function AppointmentsCalendar() {
     if (!selectedAppointment) return;
     setEditLoading(true);
     try {
-      const token = localStorage.getItem("adminAccessToken");
       if (editMode === "reschedule") {
-        const response = await axios.post(
-          `/admin/appointments/${selectedAppointment.id}/reschedule`,
-          {
+        await dispatch(
+          rescheduleAdminAppointment({
+            id: selectedAppointment.id,
             appointment_date: editForm.appointment_date,
             appointment_time: editForm.appointment_time,
             notes: editForm.notes || undefined,
-          },
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
-        if (response.data.success) {
-          toast({
-            title: "Cita reprogramada",
-            description:
-              "La cita fue reprogramada y el paciente fue notificado por email.",
-          });
-          fetchAppointments();
-          setIsEditOpen(false);
-        } else {
-          toast({
-            variant: "destructive",
-            title: "Error",
-            description:
-              response.data.message || "No se pudo reprogramar la cita.",
-          });
-        }
+          }),
+        ).unwrap();
+        toast({
+          title: "Cita reprogramada",
+          description:
+            "La cita fue reprogramada y el paciente fue notificado por email.",
+        });
+        fetchAppointments();
+        setIsEditOpen(false);
       } else if (editMode === "cancel") {
-        const response = await axios.post(
-          `/admin/appointments/${selectedAppointment.id}/cancel`,
-          {
+        const result = await dispatch(
+          cancelAdminAppointment({
+            id: selectedAppointment.id,
             cancellation_reason: editForm.cancellation_reason || undefined,
             refund: offerRefund && stripePaymentInfo?.has_stripe_payment,
-          },
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
-        if (response.data.success) {
-          const refundMsg = response.data.refund_issued
-            ? " Se procesó el reembolso al paciente."
-            : "";
-          toast({
-            title: "Cita cancelada",
-            description: `La cita fue cancelada y el paciente fue notificado por email.${refundMsg}`,
-          });
-          fetchAppointments();
-          setIsEditOpen(false);
-        } else {
-          toast({
-            variant: "destructive",
-            title: "Error",
-            description:
-              response.data.message || "No se pudo cancelar la cita.",
-          });
-        }
+          }),
+        ).unwrap();
+        const refundMsg = result.refund_issued
+          ? " Se procesó el reembolso al paciente."
+          : "";
+        toast({
+          title: "Cita cancelada",
+          description: `La cita fue cancelada y el paciente fue notificado por email.${refundMsg}`,
+        });
+        fetchAppointments();
+        setIsEditOpen(false);
       }
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: error.response?.data?.message || "Ocurrió un error.",
+        description: error || "Ocurrió un error.",
       });
     } finally {
       setEditLoading(false);
@@ -424,32 +405,17 @@ export default function AppointmentsCalendar() {
 
   const handleGenerateQR = async (appointment: CalendarAppointment) => {
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.post(
-        "/check-in/generate-token",
-        { appointment_id: appointment.id },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-
-      if (response.data.success) {
-        setCheckInUrl(response.data.data.check_in_url);
-        setSelectedAppointment(appointment);
-        setIsDetailsOpen(false);
-        setIsQRModalOpen(true);
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: response.data.message || "Error al generar código QR",
-        });
-      }
+      const data = await dispatch(generateCheckInQr(appointment.id)).unwrap();
+      setCheckInUrl(data.check_in_url);
+      setSelectedAppointment(appointment);
+      setIsDetailsOpen(false);
+      setIsQRModalOpen(true);
     } catch (error: any) {
       logger.error("Error generating QR:", error);
       toast({
         variant: "destructive",
         title: "Error al generar QR",
-        description:
-          error.response?.data?.message || "No se pudo generar el código QR",
+        description: error || "No se pudo generar el código QR",
       });
     }
   };
@@ -460,32 +426,67 @@ export default function AppointmentsCalendar() {
   };
 
   const handleCreateAppointment = async () => {
-    try {
-      const token = localStorage.getItem("adminAccessToken");
-      const adminUser = JSON.parse(localStorage.getItem("adminUser") || "{}");
-      const response = await axios.post(
-        "/admin/appointments/manual",
-        { ...newAppointment, created_by: adminUser?.id || null },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
+    if (!newAppointment.service_id || !newAppointment.scheduled_date || !newAppointment.scheduled_time) {
+      toast({
+        variant: "destructive",
+        title: "Datos incompletos",
+        description: "Servicio, fecha y hora son requeridos",
+      });
+      return;
+    }
 
-      if (response.data.success) {
-        fetchAppointments();
-        setIsCreateOpen(false);
-        resetCreateForm();
-        toast({
-          title: "Cita creada",
-          description: "La cita se creó exitosamente",
+    let payload: Record<string, unknown> = {
+      service_id: newAppointment.service_id,
+      scheduled_date: newAppointment.scheduled_date,
+      scheduled_time: newAppointment.scheduled_time,
+      notes: newAppointment.notes,
+      payment_amount: newAppointment.payment_amount,
+      payment_method: newAppointment.payment_method,
+    };
+
+    if (isNewPatient) {
+      const form = newPatientFormRef.current;
+      if (!form) return;
+      const errors = await form.validateForm();
+      if (Object.keys(errors).length > 0) {
+        form.setTouched({
+          first_name: true,
+          last_name: true,
+          email: true,
+          phone: true,
         });
+        return;
       }
+      payload = { ...payload, new_patient: form.values };
+    } else if (newAppointment.patient_id) {
+      payload = { ...payload, patient_id: newAppointment.patient_id };
+    } else {
+      toast({
+        variant: "destructive",
+        title: "Selecciona un paciente",
+        description: "Busca un paciente existente o crea uno nuevo",
+      });
+      return;
+    }
+
+    setCreatingAppointment(true);
+    try {
+      await dispatch(createManualAppointment(payload)).unwrap();
+      fetchAppointments();
+      setIsCreateOpen(false);
+      resetCreateForm();
+      toast({
+        title: "Cita creada",
+        description: "La cita se creó exitosamente",
+      });
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: error.response?.data?.message || "Error al crear cita",
+        description: error || "Error al crear cita",
       });
+    } finally {
+      setCreatingAppointment(false);
     }
   };
 
@@ -505,6 +506,8 @@ export default function AppointmentsCalendar() {
     setPatients([]);
     setPatientSearch("");
     setPatientComboOpen(false);
+    setIsNewPatient(false);
+    newPatientFormRef.current?.resetForm();
   };
 
   // Event style getter for react-big-calendar
@@ -920,7 +923,7 @@ export default function AppointmentsCalendar() {
               {/* Action selector */}
               {!editMode && (
                 <div
-                  className={`grid gap-3 ${isSuperAdmin ? "grid-cols-2" : "grid-cols-1"}`}
+                  className={`grid gap-3 ${canCancelAppointment ? "grid-cols-2" : "grid-cols-1"}`}
                 >
                   <button
                     onClick={() => setEditMode("reschedule")}
@@ -945,7 +948,7 @@ export default function AppointmentsCalendar() {
                       Reprogramar
                     </span>
                   </button>
-                  {isSuperAdmin ? (
+                  {canCancelAppointment ? (
                     <button
                       onClick={() =>
                         handleSelectCancelMode(selectedAppointment.id)
@@ -1367,119 +1370,229 @@ export default function AppointmentsCalendar() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="col-span-1 sm:col-span-2">
-                <Label>Paciente *</Label>
-                <Popover
-                  open={patientComboOpen}
-                  onOpenChange={setPatientComboOpen}
-                >
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className={`w-full flex items-center justify-between px-3 py-2 text-sm border rounded-md bg-white hover:border-primary transition-colors ${
-                        newAppointment.patient_id
-                          ? "border-green-500 text-gray-900"
-                          : "border-input text-muted-foreground"
-                      }`}
-                    >
-                      <span
-                        className={
-                          newAppointment.patient_id
-                            ? "text-gray-900"
-                            : "text-gray-400"
-                        }
-                      >
-                        {newAppointment.patient_name || "Buscar paciente..."}
-                      </span>
-                      <ChevronsUpDown className="w-4 h-4 text-gray-400 shrink-0" />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    className="w-[--radix-popover-trigger-width] p-0"
-                    align="start"
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <Label>Paciente *</Label>
+                  <button
+                    type="button"
+                    className="text-xs text-primary underline"
+                    onClick={() => {
+                      setIsNewPatient((prev) => !prev);
+                      setNewAppointment({
+                        ...newAppointment,
+                        patient_id: "",
+                        patient_name: "",
+                        patient_email: "",
+                        patient_phone: "",
+                      });
+                    }}
                   >
-                    <Command shouldFilter={false}>
-                      <CommandInput
-                        placeholder="Nombre, email o teléfono..."
-                        value={patientSearch}
-                        onValueChange={(val) => {
-                          setPatientSearch(val);
-                          searchPatients(val);
-                        }}
-                      />
-                      <CommandList>
-                        <CommandEmpty className="py-4 text-center text-sm text-gray-500">
-                          {patientSearch.length < 2
-                            ? "Escribe al menos 2 caracteres"
-                            : "Sin resultados"}
-                        </CommandEmpty>
-                        {patients.length > 0 && (
-                          <CommandGroup heading="Pacientes">
-                            {patients.map((patient) => (
-                              <CommandItem
-                                key={patient.id}
-                                value={patient.id.toString()}
-                                onSelect={() => {
-                                  setNewAppointment({
-                                    ...newAppointment,
-                                    patient_id: patient.id.toString(),
-                                    patient_name: patient.name,
-                                    patient_email: patient.email,
-                                    patient_phone: patient.phone,
-                                  });
-                                  setPatientSearch("");
-                                  setPatients([]);
-                                  setPatientComboOpen(false);
-                                }}
-                                className="flex items-center justify-between cursor-pointer"
-                              >
-                                <div>
-                                  <p className="font-medium text-sm">
-                                    {patient.name}
-                                  </p>
-                                  <p className="text-xs text-gray-500">
-                                    {patient.email} · {patient.phone}
-                                  </p>
-                                </div>
-                                {newAppointment.patient_id ===
-                                  patient.id.toString() && (
-                                  <Check className="w-4 h-4 text-green-600" />
-                                )}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        )}
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-                {newAppointment.patient_id && (
-                  <div className="mt-2 flex items-center justify-between px-3 py-2 bg-green-50 border border-green-200 rounded-md">
-                    <div>
-                      <p className="text-sm font-medium text-green-800">
-                        {newAppointment.patient_name}
-                      </p>
-                      <p className="text-xs text-green-600">
-                        {newAppointment.patient_email} ·{" "}
-                        {newAppointment.patient_phone}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNewAppointment({
-                          ...newAppointment,
-                          patient_id: "",
-                          patient_name: "",
-                          patient_email: "",
-                          patient_phone: "",
-                        });
-                        setPatientSearch("");
-                      }}
-                      className="text-green-600 hover:text-green-800 text-xs underline ml-3"
+                    {isNewPatient
+                      ? "Buscar existente"
+                      : "Crear paciente nuevo"}
+                  </button>
+                </div>
+                {isNewPatient ? (
+                  <Formik
+                    innerRef={newPatientFormRef}
+                    initialValues={{
+                      first_name: "",
+                      last_name: "",
+                      email: "",
+                      phone: "",
+                    }}
+                    validationSchema={newPatientSchema}
+                    onSubmit={() => undefined}
+                  >
+                    {({ errors, touched }) => (
+                      <Form className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2 p-3 rounded-md border bg-muted/30">
+                        <div>
+                          <Label htmlFor="np-first">Nombre *</Label>
+                          <Field
+                            as={Input}
+                            id="np-first"
+                            name="first_name"
+                            placeholder="Nombre"
+                          />
+                          {touched.first_name && errors.first_name && (
+                            <p className="text-xs text-destructive mt-1">
+                              {errors.first_name}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <Label htmlFor="np-last">Apellido *</Label>
+                          <Field
+                            as={Input}
+                            id="np-last"
+                            name="last_name"
+                            placeholder="Apellido"
+                          />
+                          {touched.last_name && errors.last_name && (
+                            <p className="text-xs text-destructive mt-1">
+                              {errors.last_name}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <Label htmlFor="np-email">Correo *</Label>
+                          <Field
+                            as={Input}
+                            id="np-email"
+                            name="email"
+                            type="email"
+                            placeholder="correo@ejemplo.com"
+                          />
+                          {touched.email && errors.email && (
+                            <p className="text-xs text-destructive mt-1">
+                              {errors.email}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <Label htmlFor="np-phone">Teléfono *</Label>
+                          <Field
+                            as={Input}
+                            id="np-phone"
+                            name="phone"
+                            placeholder="5512345678"
+                          />
+                          {touched.phone && errors.phone && (
+                            <p className="text-xs text-destructive mt-1">
+                              {errors.phone}
+                            </p>
+                          )}
+                        </div>
+                      </Form>
+                    )}
+                  </Formik>
+                ) : (
+                  <>
+                    <Popover
+                      open={patientComboOpen}
+                      onOpenChange={setPatientComboOpen}
                     >
-                      Cambiar
-                    </button>
-                  </div>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          className={`w-full flex items-center justify-between px-3 py-2 text-sm border rounded-md bg-background hover:border-primary transition-colors ${
+                            newAppointment.patient_id
+                              ? "border-primary text-foreground"
+                              : "border-input text-muted-foreground"
+                          }`}
+                        >
+                          <span>
+                            {newAppointment.patient_name ||
+                              "Buscar paciente..."}
+                          </span>
+                          <ChevronsUpDown className="w-4 h-4 text-muted-foreground shrink-0" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        className="w-[--radix-popover-trigger-width] p-0"
+                        align="start"
+                      >
+                        <Command shouldFilter={false}>
+                          <CommandInput
+                            placeholder="Nombre, email o teléfono..."
+                            value={patientSearch}
+                            onValueChange={(val) => {
+                              setPatientSearch(val);
+                              searchPatients(val);
+                            }}
+                          />
+                          <CommandList>
+                            <CommandEmpty className="py-4 text-center text-sm text-muted-foreground">
+                              {patientSearch.length < 2 ? (
+                                "Escribe al menos 2 caracteres"
+                              ) : (
+                                <div className="space-y-2">
+                                  <p>Sin resultados</p>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setIsNewPatient(true);
+                                      setPatientComboOpen(false);
+                                    }}
+                                  >
+                                    <Plus className="w-3 h-3 mr-1" />
+                                    Crear paciente nuevo
+                                  </Button>
+                                </div>
+                              )}
+                            </CommandEmpty>
+                            {patients.length > 0 && (
+                              <CommandGroup heading="Pacientes">
+                                {patients.map((patient) => (
+                                  <CommandItem
+                                    key={patient.id}
+                                    value={patient.id.toString()}
+                                    onSelect={() => {
+                                      setNewAppointment({
+                                        ...newAppointment,
+                                        patient_id: patient.id.toString(),
+                                        patient_name: patient.name,
+                                        patient_email: patient.email,
+                                        patient_phone: patient.phone,
+                                      });
+                                      setPatientSearch("");
+                                      setPatients([]);
+                                      setPatientComboOpen(false);
+                                      setIsNewPatient(false);
+                                    }}
+                                    className="flex items-center justify-between cursor-pointer"
+                                  >
+                                    <div>
+                                      <p className="font-medium text-sm">
+                                        {patient.name}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {patient.email} · {patient.phone}
+                                      </p>
+                                    </div>
+                                    {newAppointment.patient_id ===
+                                      patient.id.toString() && (
+                                      <Check className="w-4 h-4 text-primary" />
+                                    )}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            )}
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                    {newAppointment.patient_id && (
+                      <div className="mt-2 flex items-center justify-between px-3 py-2 bg-primary/10 border border-primary/30 rounded-md">
+                        <div>
+                          <p className="text-sm font-medium">
+                            {newAppointment.patient_name}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {newAppointment.patient_email} ·{" "}
+                            {newAppointment.patient_phone}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewAppointment({
+                              ...newAppointment,
+                              patient_id: "",
+                              patient_name: "",
+                              patient_email: "",
+                              patient_phone: "",
+                            });
+                            setPatientSearch("");
+                          }}
+                          className="text-primary hover:underline text-xs ml-3"
+                        >
+                          Cambiar
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
               <div>
@@ -1567,7 +1680,7 @@ export default function AppointmentsCalendar() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="cash">Efectivo</SelectItem>
-                    <SelectItem value="card">Tarjeta</SelectItem>
+                    <SelectItem value="credit_card">Tarjeta</SelectItem>
                     <SelectItem value="transfer">Transferencia</SelectItem>
                   </SelectContent>
                 </Select>
@@ -1593,9 +1706,10 @@ export default function AppointmentsCalendar() {
             </Button>
             <Button
               onClick={handleCreateAppointment}
+              disabled={creatingAppointment}
               className="bg-primary hover:bg-primary/90"
             >
-              Crear Cita
+              {creatingAppointment ? "Creando..." : "Crear Cita"}
             </Button>
           </DialogFooter>
         </DialogContent>

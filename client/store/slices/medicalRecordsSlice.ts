@@ -83,8 +83,11 @@ export const fetchPatients = createAsyncThunk(
   "medicalRecords/fetchPatients",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await axios.get("/admin/patients");
-      return response.data.data || response.data;
+      const response = await axios.get("/admin/patients", {
+        params: { limit: 200 },
+      });
+      const rows = response.data.data || response.data;
+      return Array.isArray(rows) ? rows : [];
     } catch (error: any) {
       return rejectWithValue(
         error.response?.data?.message || "Failed to fetch patients",
@@ -101,7 +104,8 @@ export const fetchAppointments = createAsyncThunk(
         ? `/admin/appointments?patient_id=${patientId}`
         : "/admin/appointments";
       const response = await axios.get(url);
-      return response.data.data || response.data;
+      const rows = response.data.data || response.data;
+      return Array.isArray(rows) ? rows : [];
     } catch (error: any) {
       return rejectWithValue(
         error.response?.data?.message || "Failed to fetch appointments",

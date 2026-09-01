@@ -9,6 +9,7 @@ import {
   Tag,
   FileText,
   Sliders,
+  Clock,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -40,10 +41,22 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import axios from "@/lib/axios";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { logger } from "@/lib/logger";
+import { useAppDispatch } from "@/store/hooks";
+import {
+  fetchCoupons as fetchCouponsThunk,
+  saveCoupon,
+  deleteCoupon,
+  fetchSettings as fetchSettingsThunk,
+  updateSetting,
+  fetchContentPages as fetchContentPagesThunk,
+  saveContentPage,
+  deleteContentPage,
+  fetchAdminBusinessHours,
+  saveAdminBusinessHours,
+} from "@/store/slices/settingsSlice";
 
 interface Coupon {
   id: number;
@@ -79,6 +92,7 @@ interface ContentPage {
 }
 
 export default function SettingsManagement() {
+  const dispatch = useAppDispatch();
   const [activeTab, setActiveTab] = useState("coupons");
   const [adminUser, setAdminUser] = useState<any>(null);
 
@@ -113,6 +127,27 @@ export default function SettingsManagement() {
     is_published: true,
   });
 
+  const dayLabels = [
+    "Domingo",
+    "Lunes",
+    "Martes",
+    "Miércoles",
+    "Jueves",
+    "Viernes",
+    "Sábado",
+  ];
+  const [hoursForm, setHoursForm] = useState<
+    Array<{
+      day_of_week: number;
+      is_open: boolean;
+      open_time: string;
+      close_time: string;
+      break_start: string;
+      break_end: string;
+      notes: string;
+    }>
+  >([]);
+
   useEffect(() => {
     const user = localStorage.getItem("adminUser");
     if (user) {
@@ -124,18 +159,14 @@ export default function SettingsManagement() {
     if (activeTab === "coupons") fetchCoupons();
     else if (activeTab === "settings") fetchSettings();
     else if (activeTab === "pages") fetchContentPages();
+    else if (activeTab === "hours") fetchHours();
   }, [activeTab]);
 
   // Coupons Functions
   const fetchCoupons = async () => {
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get("/admin/settings/coupons", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.data.success) {
-        setCoupons(response.data.data.items || []);
-      }
+      const items = await dispatch(fetchCouponsThunk()).unwrap();
+      setCoupons(items);
     } catch (error) {
       logger.error("Error fetching coupons:", error);
       setCoupons([]);
@@ -144,40 +175,29 @@ export default function SettingsManagement() {
 
   const handleSaveCoupon = async () => {
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const adminUser = JSON.parse(localStorage.getItem("adminUser") || "{}");
-      const payload = { ...couponForm, created_by: adminUser?.id || null };
-      if (editingCoupon) {
-        await axios.put(
-          `/admin/settings/coupons/${editingCoupon.id}`,
-          payload,
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
-      } else {
-        await axios.post("/admin/settings/coupons", payload, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-      }
+      await dispatch(
+        saveCoupon({
+          id: editingCoupon?.id,
+          payload: { ...couponForm },
+        }),
+      ).unwrap();
       alert("Cupón guardado exitosamente");
       fetchCoupons();
       setIsCouponModalOpen(false);
       resetCouponForm();
     } catch (error: any) {
-      alert(error.response?.data?.message || "Error al guardar cupón");
+      alert(error || "Error al guardar cupón");
     }
   };
 
   const handleDeleteCoupon = async (id: number) => {
     if (!confirm("¿Está seguro de eliminar este cupón?")) return;
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      await axios.delete(`/admin/settings/coupons/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      await dispatch(deleteCoupon(id)).unwrap();
       alert("Cupón eliminado exitosamente");
       fetchCoupons();
     } catch (error: any) {
-      alert(error.response?.data?.message || "Error al eliminar cupón");
+      alert(error || "Error al eliminar cupón");
     }
   };
 
@@ -199,13 +219,8 @@ export default function SettingsManagement() {
   // Settings Functions
   const fetchSettings = async () => {
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get("/admin/settings", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.data.success) {
-        setSettings(response.data.data || {});
-      }
+      const data = await dispatch(fetchSettingsThunk()).unwrap();
+      setSettings(data);
     } catch (error) {
       logger.error("Error fetching settings:", error);
       setSettings({});
@@ -214,32 +229,25 @@ export default function SettingsManagement() {
 
   const handleUpdateSetting = async (setting: Setting) => {
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      await axios.put(
-        `/api/admin/settings/${setting.id}`,
-        {
-          setting_value: setting.setting_value,
-        },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
+      await dispatch(
+        updateSetting({
+          key: setting.setting_key,
+          value: setting.setting_value,
+        }),
+      ).unwrap();
       alert("Configuración actualizada");
       fetchSettings();
       setEditingSetting(null);
     } catch (error: any) {
-      alert(error.response?.data?.message || "Error al actualizar");
+      alert(error || "Error al actualizar");
     }
   };
 
   // Content Pages Functions
   const fetchContentPages = async () => {
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      const response = await axios.get("/admin/settings/content-pages", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.data.success) {
-        setContentPages(response.data.data || []);
-      }
+      const pages = await dispatch(fetchContentPagesThunk()).unwrap();
+      setContentPages(pages);
     } catch (error) {
       logger.error("Error fetching content pages:", error);
       setContentPages([]);
@@ -248,38 +256,61 @@ export default function SettingsManagement() {
 
   const handleSavePage = async () => {
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      if (editingPage) {
-        await axios.put(
-          `/api/admin/settings/content-pages/${editingPage.id}`,
-          pageForm,
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
-      } else {
-        await axios.post("/admin/settings/content-pages", pageForm, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-      }
+      await dispatch(
+        saveContentPage({
+          id: editingPage?.id,
+          payload: { ...pageForm },
+        }),
+      ).unwrap();
       alert("Página guardada exitosamente");
       fetchContentPages();
       setIsPageModalOpen(false);
       resetPageForm();
     } catch (error: any) {
-      alert(error.response?.data?.message || "Error al guardar página");
+      alert(error || "Error al guardar página");
     }
   };
 
   const handleDeletePage = async (id: number) => {
     if (!confirm("¿Está seguro de eliminar esta página?")) return;
     try {
-      const token = localStorage.getItem("adminAccessToken");
-      await axios.delete(`/admin/settings/content-pages/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      await dispatch(deleteContentPage(id)).unwrap();
       alert("Página eliminada exitosamente");
       fetchContentPages();
     } catch (error: any) {
-      alert(error.response?.data?.message || "Error al eliminar página");
+      alert(error || "Error al eliminar página");
+    }
+  };
+
+  const fetchHours = async () => {
+    try {
+      const rows = await dispatch(fetchAdminBusinessHours()).unwrap();
+      const mapped = [0, 1, 2, 3, 4, 5, 6].map((day) => {
+        const existing = (rows as any[]).find((h) => h.day_of_week === day);
+        return {
+          day_of_week: day,
+          is_open: Boolean(existing?.is_open),
+          open_time: existing?.open_time || "09:00",
+          close_time: existing?.close_time || "18:00",
+          break_start: existing?.break_start || "",
+          break_end: existing?.break_end || "",
+          notes: existing?.notes || "",
+        };
+      });
+      setHoursForm(mapped);
+    } catch (error) {
+      logger.error("Error fetching business hours:", error);
+      setHoursForm([]);
+    }
+  };
+
+  const handleSaveHours = async () => {
+    try {
+      await dispatch(saveAdminBusinessHours(hoursForm)).unwrap();
+      alert("Horarios actualizados");
+      fetchHours();
+    } catch (error: any) {
+      alert(error || "Error al guardar horarios");
     }
   };
 
@@ -305,10 +336,14 @@ export default function SettingsManagement() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
           <TabsTrigger value="coupons">
             <Tag className="w-4 h-4 mr-2" />
             Cupones
+          </TabsTrigger>
+          <TabsTrigger value="hours">
+            <Clock className="w-4 h-4 mr-2" />
+            Horarios
           </TabsTrigger>
           <TabsTrigger value="settings">
             <Sliders className="w-4 h-4 mr-2" />
@@ -441,6 +476,105 @@ export default function SettingsManagement() {
                   </TableBody>
                 </Table>
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="hours" className="space-y-4">
+          <div className="flex justify-end">
+            <Button
+              onClick={handleSaveHours}
+              className="bg-primary hover:bg-primary/90"
+            >
+              <Save className="w-4 h-4 mr-2" />
+              Guardar horarios
+            </Button>
+          </div>
+          <Card>
+            <CardContent className="p-4 space-y-4">
+              {hoursForm.map((hour, index) => (
+                <div
+                  key={hour.day_of_week}
+                  className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end border-b border-border pb-4 last:border-0"
+                >
+                  <div className="md:col-span-1">
+                    <Label>{dayLabels[hour.day_of_week]}</Label>
+                    <div className="flex items-center gap-2 mt-2">
+                      <Switch
+                        checked={hour.is_open}
+                        onCheckedChange={(checked) => {
+                          const next = [...hoursForm];
+                          next[index] = { ...hour, is_open: checked };
+                          setHoursForm(next);
+                        }}
+                      />
+                      <span className="text-sm text-muted-foreground">
+                        {hour.is_open ? "Abierto" : "Cerrado"}
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <Label>Apertura</Label>
+                    <Input
+                      type="time"
+                      value={hour.open_time}
+                      disabled={!hour.is_open}
+                      onChange={(e) => {
+                        const next = [...hoursForm];
+                        next[index] = { ...hour, open_time: e.target.value };
+                        setHoursForm(next);
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <Label>Cierre</Label>
+                    <Input
+                      type="time"
+                      value={hour.close_time}
+                      disabled={!hour.is_open}
+                      onChange={(e) => {
+                        const next = [...hoursForm];
+                        next[index] = { ...hour, close_time: e.target.value };
+                        setHoursForm(next);
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <Label>Descanso inicio</Label>
+                    <Input
+                      type="time"
+                      value={hour.break_start}
+                      disabled={!hour.is_open}
+                      onChange={(e) => {
+                        const next = [...hoursForm];
+                        next[index] = {
+                          ...hour,
+                          break_start: e.target.value,
+                        };
+                        setHoursForm(next);
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <Label>Descanso fin</Label>
+                    <Input
+                      type="time"
+                      value={hour.break_end}
+                      disabled={!hour.is_open}
+                      onChange={(e) => {
+                        const next = [...hoursForm];
+                        next[index] = { ...hour, break_end: e.target.value };
+                        setHoursForm(next);
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+              {hoursForm.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-6">
+                  No hay horarios configurados
+                </p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
