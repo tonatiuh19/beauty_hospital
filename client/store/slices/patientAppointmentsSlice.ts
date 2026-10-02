@@ -194,7 +194,15 @@ export const cancelAppointment = createAsyncThunk(
         },
       );
       if (response.data.success) {
-        return appointmentId;
+        return {
+          appointmentId,
+          refund_eligible: Boolean(response.data.data?.refund_eligible),
+          refund_processed: Boolean(response.data.data?.refund_processed),
+          penalization_applied: Boolean(
+            response.data.data?.penalization_applied,
+          ),
+          penalization_message: response.data.data?.penalization_message || null,
+        };
       }
       return rejectWithValue("No se pudo cancelar la cita");
     } catch (error: any) {
@@ -334,7 +342,7 @@ const patientAppointmentsSlice = createSlice({
       // Cancel appointment
       .addCase(cancelAppointment.fulfilled, (state, action) => {
         state.appointments = state.appointments.map((apt) =>
-          apt.id === action.payload
+          apt.id === action.payload.appointmentId
             ? {
                 ...apt,
                 status: "cancelled",

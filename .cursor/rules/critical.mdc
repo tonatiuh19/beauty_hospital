@@ -16,8 +16,10 @@ alwaysApply: true
 - **Fix root causes** — never patch around type errors or bugs
 - **No breaking changes**
 - **Email is Resend** (`RESEND_API_KEY` + `SMTP_FROM`) — do not add Nodemailer/SMTP transports
-- **API + swagger**: if `api/swagger.yaml` exists, update it when routes/behavior change
-- **Design system**: relevant UI changes → update `docs/DESIGN_SYSTEM.md`
+- **Swagger (always with API changes)**: any change to `api/index.ts` routes, request/response shapes, or behavior → **update `api/swagger.yaml` in the same change**
+- **DESIGN_SYSTEM.md (always with UI/brand/email/flow changes)**: any change to visuals, branding, email templates, public pages, or product flows → **update `docs/DESIGN_SYSTEM.md` in the same change**
+- **Tests**: under `VITEST=true`, emails MUST dry-run (never hit Resend). Integration suites that insert TiDB rows MUST clean fixtures in `afterAll` via `api/testDbCleanup.ts` (safe `@example.test` emails only)
 - **Review chat history** before changing code so you do not reintroduce fixed issues
 - Prefer reusable components/utilities when it avoids debt
-- Frontend: mobile-responsive, clean UX; UI logs via `client/lib/logger.ts`
+- **Mobile (mandatory):** public + admin UI must fit ~320px+ without document horizontal scroll; contain intentional sideways scroll in wrappers (`overflow-x: auto`). Fluid layouts, collapsing grids, wrapping actions. Validate narrow viewports before finishing UI work
+- Frontend: clean UX; UI logs via `client/lib/logger.ts`

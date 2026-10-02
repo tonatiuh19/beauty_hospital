@@ -85,6 +85,21 @@ paths:
       responses:
         "200":
           description: image/png
+  /content/{slug}:
+    get:
+      tags: [Public]
+      summary: Published content page (terms, privacy)
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Published page
+        "404":
+          description: Unpublished or missing
         "404":
           description: Logo file not bundled on this host
 
@@ -272,7 +287,7 @@ paths:
     post:
       tags: [Appointments]
       summary: Create Stripe PaymentIntent for online booking
-      description: Charges the catalog `services.price` (client `payment_amount` is ignored). Appointment is created only after payment succeeds.
+      description: Charges the catalog `services.price` (client `payment_amount` is ignored). Appointment is created only after payment succeeds. `booked_by_patient_id` is stored when booking for someone else so Mis Citas lists it. `selected_areas` is appended to notes. PaymentIntents use `automatic_payment_methods.enabled` without `allow_redirects: never` so OXXO and redirect wallets can appear.
       responses:
         "200":
           description: OK
@@ -310,6 +325,7 @@ paths:
     get:
       tags: [Check-in]
       summary: Validate public check-in token
+      description: Returns linked contract terms when `appointments.contract_id` is set; otherwise default clinic terms.
       parameters:
         - in: path
           name: token
@@ -331,6 +347,7 @@ paths:
     get:
       tags: [Patient]
       summary: List the logged-in patient's appointments
+      description: Includes rows where the patient is `patient_id` or `booked_by_patient_id`. `can_edit` is true for upcoming scheduled or confirmed appointments.
       responses:
         "200":
           description: OK
@@ -338,9 +355,16 @@ paths:
     patch:
       tags: [Patient]
       summary: Cancel own appointment
+      description: Refunds Stripe when notice is greater than 24 hours. Stripe rows without a PaymentIntent or charge are not marked refunded. Response includes refund_eligible, refund_processed, and penalization_applied.
       responses:
         "200":
-          description: OK
+          description: Cancelled
+        "400":
+          description: Past appointment
+        "401":
+          description: No session
+        "404":
+          description: Not found / not owned
   /patient/appointments/{id}/reschedule:
     patch:
       tags: [Patient]
@@ -615,6 +639,7 @@ paths:
       security:
         - adminBearer: []
       summary: Update patient
+      description: Whitelist includes `notes` (patients.notes). Unknown columns are ignored.
       parameters:
         - in: path
           name: id
@@ -624,6 +649,8 @@ paths:
       responses:
         "200":
           description: OK
+        "400":
+          description: No valid fields
   /admin/patients/{id}/toggle-active:
     patch:
       tags: [Admin Patients]
@@ -1069,6 +1096,7 @@ paths:
       security:
         - adminBearer: []
       summary: Request refund
+      description: Stripe rows without a PaymentIntent or charge id are rejected (400). Cash/card/transfer can go pending.
       parameters:
         - in: path
           name: id
@@ -1078,12 +1106,15 @@ paths:
       responses:
         "200":
           description: OK
+        "400":
+          description: Invalid amount, reason, or Stripe row missing PI/charge
   /admin/payments/{id}/approve-refund:
     post:
       tags: [Admin Payments]
       security:
         - adminBearer: []
       summary: Approve refund
+      description: Stripe payments must refund in Stripe first. Missing PaymentIntent/charge returns 400 and does not mark the DB refunded.
       parameters:
         - in: path
           name: id
@@ -1092,7 +1123,11 @@ paths:
             type: integer
       responses:
         "200":
-          description: OK
+          description: Refunded
+        "400":
+          description: No pending refund, or Stripe row missing PI/charge
+        "502":
+          description: Stripe refund failed
 
   /admin/invoices:
     get:

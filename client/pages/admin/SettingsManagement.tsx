@@ -44,6 +44,7 @@ import { Switch } from "@/components/ui/switch";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { logger } from "@/lib/logger";
+import { useToast } from "@/hooks/use-toast";
 import { useAppDispatch } from "@/store/hooks";
 import {
   fetchCoupons as fetchCouponsThunk,
@@ -93,6 +94,7 @@ interface ContentPage {
 
 export default function SettingsManagement() {
   const dispatch = useAppDispatch();
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("coupons");
   const [adminUser, setAdminUser] = useState<any>(null);
 
@@ -102,7 +104,7 @@ export default function SettingsManagement() {
   const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null);
   const [couponForm, setCouponForm] = useState({
     code: "",
-    discount_type: "" as "" | "percentage" | "fixed_amount",
+    discount_type: "percentage" as "" | "percentage" | "fixed_amount",
     discount_value: 0,
     min_purchase_amount: 0,
     max_discount_amount: 0,
@@ -174,6 +176,13 @@ export default function SettingsManagement() {
   };
 
   const handleSaveCoupon = async () => {
+    if (!couponForm.discount_type) {
+      toast({
+        variant: "destructive",
+        title: "Tipo de descuento requerido",
+      });
+      return;
+    }
     try {
       await dispatch(
         saveCoupon({
@@ -181,12 +190,15 @@ export default function SettingsManagement() {
           payload: { ...couponForm },
         }),
       ).unwrap();
-      alert("Cupón guardado exitosamente");
+      toast({ title: "Cupón guardado exitosamente" });
       fetchCoupons();
       setIsCouponModalOpen(false);
       resetCouponForm();
     } catch (error: any) {
-      alert(error || "Error al guardar cupón");
+      toast({
+        variant: "destructive",
+        title: error || "Error al guardar cupón",
+      });
     }
   };
 
@@ -194,10 +206,13 @@ export default function SettingsManagement() {
     if (!confirm("¿Está seguro de eliminar este cupón?")) return;
     try {
       await dispatch(deleteCoupon(id)).unwrap();
-      alert("Cupón eliminado exitosamente");
+      toast({ title: "Cupón eliminado exitosamente" });
       fetchCoupons();
     } catch (error: any) {
-      alert(error || "Error al eliminar cupón");
+      toast({
+        variant: "destructive",
+        title: error || "Error al eliminar cupón",
+      });
     }
   };
 
@@ -235,11 +250,14 @@ export default function SettingsManagement() {
           value: setting.setting_value,
         }),
       ).unwrap();
-      alert("Configuración actualizada");
+      toast({ title: "Configuración actualizada" });
       fetchSettings();
       setEditingSetting(null);
     } catch (error: any) {
-      alert(error || "Error al actualizar");
+      toast({
+        variant: "destructive",
+        title: error || "Error al actualizar",
+      });
     }
   };
 
@@ -262,12 +280,15 @@ export default function SettingsManagement() {
           payload: { ...pageForm },
         }),
       ).unwrap();
-      alert("Página guardada exitosamente");
+      toast({ title: "Página guardada exitosamente" });
       fetchContentPages();
       setIsPageModalOpen(false);
       resetPageForm();
     } catch (error: any) {
-      alert(error || "Error al guardar página");
+      toast({
+        variant: "destructive",
+        title: error || "Error al guardar página",
+      });
     }
   };
 
@@ -275,10 +296,13 @@ export default function SettingsManagement() {
     if (!confirm("¿Está seguro de eliminar esta página?")) return;
     try {
       await dispatch(deleteContentPage(id)).unwrap();
-      alert("Página eliminada exitosamente");
+      toast({ title: "Página eliminada exitosamente" });
       fetchContentPages();
     } catch (error: any) {
-      alert(error || "Error al eliminar página");
+      toast({
+        variant: "destructive",
+        title: error || "Error al eliminar página",
+      });
     }
   };
 
@@ -307,10 +331,13 @@ export default function SettingsManagement() {
   const handleSaveHours = async () => {
     try {
       await dispatch(saveAdminBusinessHours(hoursForm)).unwrap();
-      alert("Horarios actualizados");
+      toast({ title: "Horarios actualizados" });
       fetchHours();
     } catch (error: any) {
-      alert(error || "Error al guardar horarios");
+      toast({
+        variant: "destructive",
+        title: error || "Error al guardar horarios",
+      });
     }
   };
 

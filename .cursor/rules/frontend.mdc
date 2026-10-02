@@ -14,8 +14,20 @@ alwaysApply: false
 - **Never** arbitrary colors (`text-emerald-500`, `bg-amber-400`, etc.)
 - Use semantic tokens: `primary`, `accent`, `destructive`, `muted`, `secondary`, `foreground`, `background`, `border`, `card`, `input`, `ring`
 - Prefer existing `client/components/ui/` (Radix + Tailwind); Lucide icons first, `react-icons` if needed
-- Mobile-responsive; keep UX clean and engaging
 - Relevant visual changes → update `docs/DESIGN_SYSTEM.md`
+
+## Mobile responsiveness (mandatory on every UI change)
+- Design and verify for phones (~320–430px CSS px) and tablets — not desktop-only then “hope”
+- **No document-level horizontal scrolling** (`html`/`body`/`#root` stay within viewport width)
+- Prefer `minmax(0, 1fr)`, `width: 100%`, `max-width: 100%`, wrapping flex (`flex-wrap`), and single-column grids under ~760–900px
+- Avoid fixed widths that exceed the viewport; long text uses `overflow-wrap` / truncation inside cards
+- Intentional sideways scroll (calendar, tables, chip nav) MUST live inside a local `overflow-x: auto` wrapper — never leak to the page
+- Touch targets: keep primary actions tappable; stack footer actions on small screens when needed
+- **CSS cascade:** put responsive overrides **after** the base rules for the same selectors (or use mobile-first `min-width` queries)
+- Before finishing a UI change: spot-check at ~375px width for overflow, clipped CTAs, and unusable tables/forms
+
+## Design docs (mandatory on UI/brand/email changes)
+- **ALWAYS update `docs/DESIGN_SYSTEM.md`** in the same change when visuals, branding, email chrome, public pages, or product flows change
 
 ## Forms
 - Formik + Yup; reusable schemas; submit via Redux thunks

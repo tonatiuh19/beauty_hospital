@@ -325,7 +325,9 @@ const authorizeAdmin: RequestHandler = (req, res, next) => {
   const rule = ADMIN_ROLE_RULES.find((r) =>
     r.test(req.path, req.method.toUpperCase()),
   );
-  if (!rule) return next();
+  if (!rule) {
+    return requireRoles(["admin", "general_admin"])(req, res, next);
+  }
   return requireRoles(rule.roles)(req, res, next);
 };
 
@@ -501,20 +503,41 @@ type FulfillPaymentResult =
   | { ok: true; appointmentId: number; alreadyFulfilled: boolean }
   | { ok: false; status: number; error: string };
 
+function resolveStripeRefundRef(payment: {
+  stripe_payment_intent_id?: string | null;
+  stripe_payment_id?: string | null;
+}): { paymentIntentId?: string; chargeId?: string } | null {
+  const pi = String(payment.stripe_payment_intent_id || "").trim();
+  const sid = String(payment.stripe_payment_id || "").trim();
+  if (pi.startsWith("pi_")) return { paymentIntentId: pi };
+  if (sid.startsWith("pi_")) return { paymentIntentId: sid };
+  if (sid.startsWith("ch_")) return { chargeId: sid };
+  return null;
+}
+
 async function issueStripeRefund(opts: {
-  paymentIntentId: string;
+  paymentIntentId?: string;
+  chargeId?: string;
   amountCents?: number;
   reason?: string;
 }): Promise<void> {
+  const target = opts.paymentIntentId
+    ? { payment_intent: opts.paymentIntentId }
+    : opts.chargeId
+      ? { charge: opts.chargeId }
+      : null;
+  if (!target) {
+    throw new Error("Missing Stripe refund target");
+  }
   await stripe.refunds.create(
     {
-      payment_intent: opts.paymentIntentId,
+      ...target,
       ...(opts.amountCents ? { amount: opts.amountCents } : {}),
       reason: "requested_by_customer",
       metadata: { reason: (opts.reason || "").slice(0, 500) },
     },
     {
-      idempotencyKey: `refund-${opts.paymentIntentId}-${opts.amountCents ?? "full"}`,
+      idempotencyKey: `refund-${opts.paymentIntentId || opts.chargeId}-${opts.amountCents ?? "full"}`,
     },
   );
 }
@@ -581,6 +604,7 @@ async function fulfillSucceededPaymentIntent(
     duration_minutes,
     notes,
     booked_for_self,
+    booked_by_patient_id,
   } = paymentIntent.metadata || {};
 
   if (!patient_id || !service_id || !scheduled_at || !duration_minutes) {
@@ -628,8 +652,8 @@ async function fulfillSucceededPaymentIntent(
 
   const [appointmentResult] = await pool.query<any>(
     `INSERT INTO appointments
-       (patient_id, service_id, scheduled_at, duration_minutes, notes, status, created_by, booked_for_self)
-     VALUES (?, ?, ?, ?, ?, 'confirmed', ?, ?)`,
+       (patient_id, service_id, scheduled_at, duration_minutes, notes, status, created_by, booked_for_self, booked_by_patient_id)
+     VALUES (?, ?, ?, ?, ?, 'confirmed', ?, ?, ?)`,
     [
       patient_id,
       service_id,
@@ -638,6 +662,7 @@ async function fulfillSucceededPaymentIntent(
       notes || null,
       null,
       booked_for_self === "1" ? 1 : 0,
+      booked_by_patient_id ? Number(booked_by_patient_id) : null,
     ],
   );
   const appointmentId = appointmentResult.insertId;
@@ -2341,15 +2366,18 @@ function normalizeClockTime(raw: unknown): string {
   return `${match[1].padStart(2, "0")}:${match[2]}:${match[3] || "00"}`;
 }
 
-function normalizePaymentMethod(raw: unknown): string {
-  const value = String(raw || "cash").toLowerCase();
+function normalizePaymentMethod(raw: unknown): string | null {
+  const value = String(raw ?? "cash")
+    .toLowerCase()
+    .trim();
+  if (!value || value === "cash") return "cash";
   if (value === "card" || value === "credit" || value === "credit_card") {
     return "credit_card";
   }
   if (value === "debit" || value === "debit_card") return "debit_card";
   if (value === "transfer") return "transfer";
   if (value === "stripe") return "stripe";
-  return "cash";
+  return null;
 }
 
 async function insertPatientRow(fields: {
@@ -3259,12 +3287,9 @@ const updatePatient: RequestHandler = async (req, res) => {
       "city",
       "state",
       "zip_code",
-      "country",
       "emergency_contact_name",
       "emergency_contact_phone",
-      "medical_notes",
-      "allergies",
-      "blood_type",
+      "notes",
       "is_active",
     ]);
 
@@ -3977,11 +4002,9 @@ const getAllContracts: RequestHandler = async (req, res) => {
     const total = countResult[0].total;
     const totalPages = Math.ceil(total / Number(limit));
 
-    // Map status for frontend
     const mappedContracts = contracts.map((contract) => ({
       ...contract,
-      status: contract.status === "signed" ? "active" : "pending",
-      end_date: null,
+      end_date: contract.end_date ?? null,
     }));
 
     res.json({
@@ -4900,6 +4923,12 @@ const createManualAppointment: RequestHandler = async (req, res) => {
 
     const scheduledAt = `${scheduled_date} ${normalizeClockTime(scheduled_time)}`;
     const paymentMethod = normalizePaymentMethod(payment_method);
+    if (!paymentMethod) {
+      return res.status(400).json({
+        success: false,
+        message: "Método de pago inválido",
+      });
+    }
 
     // Create appointment
     const [result] = await pool.query<any>(
@@ -5404,10 +5433,12 @@ const validateCheckInToken: RequestHandler = async (req, res) => {
         s.name as service_name,
         s.price as service_price,
         DATE(a.scheduled_at) as scheduled_date,
-        TIME(a.scheduled_at) as scheduled_time
+        TIME(a.scheduled_at) as scheduled_time,
+        c.terms_and_conditions as contract_terms_custom
        FROM appointments a 
        JOIN patients p ON a.patient_id = p.id 
        JOIN services s ON a.service_id = s.id
+       LEFT JOIN contracts c ON c.id = a.contract_id
        WHERE a.check_in_token = ?`,
       [token],
     );
@@ -5453,9 +5484,10 @@ const validateCheckInToken: RequestHandler = async (req, res) => {
     );
 
     const contractTerms =
-      defaultTerms.length > 0
+      appointment.contract_terms_custom ||
+      (defaultTerms.length > 0
         ? defaultTerms[0].setting_value
-        : "Términos y condiciones del servicio.";
+        : "Términos y condiciones del servicio.");
 
     res.json({
       success: true,
@@ -5947,6 +5979,12 @@ const createPayment: RequestHandler = async (req, res) => {
     }
 
     const method = normalizePaymentMethod(payment_method);
+    if (!method) {
+      return res.status(400).json({
+        success: false,
+        message: "Método de pago inválido",
+      });
+    }
     const [result] = await pool.query<any>(
       `INSERT INTO payments
          (appointment_id, patient_id, amount, payment_method, payment_status, notes, processed_by, processed_at)
@@ -6064,6 +6102,17 @@ const processRefund: RequestHandler = async (req, res) => {
       });
     }
 
+    if (
+      payment.payment_method === "stripe" &&
+      !resolveStripeRefundRef(payment)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Este pago de Stripe no tiene PaymentIntent ni cargo. No se puede solicitar reembolso sin reembolsar en Stripe.",
+      });
+    }
+
     await pool.query(
       `UPDATE payments
        SET refund_amount = ?, refund_reason = ?, refunded_by = ?,
@@ -6110,13 +6159,18 @@ const approveRefund: RequestHandler = async (req, res) => {
     }
 
     const refundAmount = Number(payment.refund_amount || payment.amount);
-    if (
-      payment.payment_method === "stripe" &&
-      payment.stripe_payment_intent_id
-    ) {
+    if (payment.payment_method === "stripe") {
+      const stripeRef = resolveStripeRefundRef(payment);
+      if (!stripeRef) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Este pago de Stripe no tiene PaymentIntent ni cargo. No se puede marcar reembolsado sin reembolsar en Stripe.",
+        });
+      }
       try {
         await issueStripeRefund({
-          paymentIntentId: payment.stripe_payment_intent_id,
+          ...stripeRef,
           amountCents: Math.round(refundAmount * 100),
           reason: payment.refund_reason || "Approved by admin",
         });
@@ -7059,6 +7113,47 @@ const updateSetting: RequestHandler = async (req, res) => {
  * GET /api/admin/settings/content-pages
  * Get all content pages
  */
+/**
+ * GET /api/content/:slug
+ * Published legal/content pages (terms, privacy) — no auth.
+ */
+const getPublishedContentPage: RequestHandler = async (req, res) => {
+  try {
+    const slug = String(req.params.slug || "")
+      .trim()
+      .toLowerCase();
+    if (!slug) {
+      return res.status(400).json({
+        success: false,
+        message: "Slug is required",
+      });
+    }
+
+    const [pages] = await pool.query<any[]>(
+      `SELECT slug, title, content, meta_description, updated_at
+       FROM content_pages
+       WHERE slug = ? AND is_published = 1
+       LIMIT 1`,
+      [slug],
+    );
+
+    if (pages.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Page not found",
+      });
+    }
+
+    return res.json({ success: true, data: pages[0] });
+  } catch (error) {
+    console.error("Error fetching published content page:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 const getContentPages: RequestHandler = async (req, res) => {
   try {
     const [pages] = await pool.query<any[]>(
@@ -7795,6 +7890,7 @@ const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
       duration_minutes,
       notes,
       booked_for_self = true,
+      booked_by_patient_id,
       selected_areas,
       accepted_terms = true, // Default to true since we don't have UI for this in simple version
       accepted_privacy = true, // Default to true since we don't have UI for this in simple version
@@ -7909,6 +8005,11 @@ const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
       });
     }
     const amountInCents = Math.round(catalogAmount * 100);
+    const areaNote =
+      Array.isArray(selected_areas) && selected_areas.length > 0
+        ? `Áreas: ${selected_areas.join(", ")}`
+        : "";
+    const notesWithAreas = [areaNote, notes].filter(Boolean).join("\n") || "";
     if (
       payment_amount != null &&
       Math.abs(Number(payment_amount) - catalogAmount) > 0.009
@@ -7935,7 +8036,7 @@ const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
     );
 
     console.log(
-      `[book-with-payment] Creating PaymentIntent: amount=${amountInCents} currency=${currency.toLowerCase()} customer=${stripeCustomerId} setup_future_usage=on_session`,
+      `[book-with-payment] Creating PaymentIntent: amount=${amountInCents} currency=${currency.toLowerCase()} customer=${stripeCustomerId}`,
     );
     let paymentIntent;
     try {
@@ -7944,19 +8045,22 @@ const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
           amount: amountInCents,
           currency: currency.toLowerCase(),
           customer: stripeCustomerId,
-          setup_future_usage: "on_session",
           metadata: {
             patient_id: finalPatientId.toString(),
             service_id: service_id.toString(),
             scheduled_at: scheduled_at,
             duration_minutes: appointmentDuration.toString(),
-            notes: notes || "",
+            notes: notesWithAreas,
             created_by: finalPatientId.toString(),
             booked_for_self: booked_for_self ? "1" : "0",
+            booked_by_patient_id: String(
+              booked_by_patient_id ||
+                (booked_for_self ? finalPatientId : "") ||
+                "",
+            ),
           },
           automatic_payment_methods: {
             enabled: true,
-            allow_redirects: "never",
           },
         },
         {
@@ -7979,15 +8083,9 @@ const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
     // Don't create payment record yet - only create after payment is confirmed
     // This prevents pending payments cluttering the database
 
-    // Create a CustomerSession so PaymentElement can display saved payment methods.
-    // IMPORTANT: payment_method_save is intentionally DISABLED here.
-    // When both setup_future_usage on the PaymentIntent AND payment_method_save:"enabled"
-    // are set together, the PaymentElement checkbox controls the outcome: if the user
-    // unchecks "save card", the PaymentElement removes setup_future_usage from the PI
-    // before confirming, resulting in allow_redisplay:"unspecified" — so the method never
-    // appears in future checkouts. By disabling the checkbox we let setup_future_usage
-    // on the PI always take effect (allow_redisplay:"limited"), and payment_method_redisplay
-    // ensures the saved method shows up on subsequent bookings.
+    // CustomerSession redisplays cards already on the customer.
+    // Do not set setup_future_usage or allow_redirects:"never" — those hide
+    // OXXO and other redirect methods Stripe enables for MXN.
     let customerSessionClientSecret: string | undefined;
     try {
       const customerSession = await stripe.customerSessions.create({
@@ -8892,6 +8990,7 @@ const getPatientAppointments: RequestHandler = async (req, res) => {
         a.notes,
         a.created_by,
         a.booked_for_self,
+        a.booked_by_patient_id,
         a.created_at,
         a.updated_at,
         s.name as service_name,
@@ -8913,9 +9012,9 @@ const getPatientAppointments: RequestHandler = async (req, res) => {
       LEFT JOIN patients p ON a.patient_id = p.id
       LEFT JOIN payments py ON py.appointment_id = a.id
       LEFT JOIN contracts c ON a.contract_id = c.id
-      WHERE a.created_by = ? OR a.patient_id = ?
+      WHERE a.patient_id = ? OR a.booked_by_patient_id = ? OR a.created_by = ?
       ORDER BY a.scheduled_at DESC`,
-      [patient_id, patient_id],
+      [patient_id, patient_id, patient_id],
     );
 
     // Format appointments with categorization
@@ -8962,7 +9061,9 @@ const getPatientAppointments: RequestHandler = async (req, res) => {
         is_past: isPast,
         is_upcoming: isUpcoming,
         can_cancel: isUpcoming,
-        can_edit: isUpcoming && apt.status === "scheduled",
+        can_edit:
+          isUpcoming &&
+          (apt.status === "scheduled" || apt.status === "confirmed"),
         created_at: apt.created_at,
         updated_at: apt.updated_at,
       };
@@ -9014,7 +9115,7 @@ const cancelPatientAppointment: RequestHandler = async (req, res) => {
     // Get appointment details
     const [appointments] = await pool.query<any[]>(
       `SELECT a.*, p.amount, p.payment_status, p.id as payment_id,
-              p.stripe_payment_intent_id, p.payment_method
+              p.stripe_payment_intent_id, p.stripe_payment_id, p.payment_method
        FROM appointments a
        LEFT JOIN payments p ON p.appointment_id = a.id
        WHERE a.id = ? AND (a.patient_id = ? OR a.created_by = ?)`,
@@ -9075,23 +9176,35 @@ const cancelPatientAppointment: RequestHandler = async (req, res) => {
       appointment.payment_status === "completed"
     ) {
       try {
-        if (
-          appointment.payment_method === "stripe" &&
-          appointment.stripe_payment_intent_id
-        ) {
-          await issueStripeRefund({
-            paymentIntentId: appointment.stripe_payment_intent_id,
-            amountCents: Math.round(refundAmount * 100),
-            reason: "Patient cancelled >24h before appointment",
+        if (appointment.payment_method === "stripe") {
+          const stripeRef = resolveStripeRefundRef(appointment);
+          if (!stripeRef) {
+            console.error(
+              "[patient-cancel] Stripe payment has no PaymentIntent or charge; skipping DB refund",
+            );
+          } else {
+            await issueStripeRefund({
+              ...stripeRef,
+              amountCents: Math.round(refundAmount * 100),
+              reason: "Patient cancelled >24h before appointment",
+            });
+            await markPaymentRefundedInDb({
+              paymentId: appointment.payment_id,
+              refundAmount,
+              reason:
+                "Full refund due to cancellation >24hrs before appointment",
+            });
+            refundProcessed = true;
+          }
+        } else {
+          await markPaymentRefundedInDb({
+            paymentId: appointment.payment_id,
+            refundAmount,
+            reason:
+              "Full refund due to cancellation >24hrs before appointment",
           });
+          refundProcessed = true;
         }
-        await markPaymentRefundedInDb({
-          paymentId: appointment.payment_id,
-          refundAmount,
-          reason:
-            "Full refund due to cancellation >24hrs before appointment",
-        });
-        refundProcessed = true;
       } catch (refundError) {
         console.error("Error processing refund:", refundError);
       }
@@ -9628,6 +9741,7 @@ function createServer() {
   expressApp.get("/api/ping", (_req, res) => {
     res.json({ message: "pong" });
   });
+  expressApp.get("/api/content/:slug", getPublishedContentPage);
 
   // Public brand logo for email clients that cannot load CID attachments
   expressApp.get("/api/brand/logo", (_req, res) => {

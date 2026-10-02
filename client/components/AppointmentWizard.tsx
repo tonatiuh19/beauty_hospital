@@ -387,6 +387,7 @@ export function AppointmentWizard() {
           duration_minutes: getServiceDuration(appointment.service),
           notes: appointment.notes || undefined,
           booked_for_self: appointment.bookedForSelf,
+          booked_by_patient_id: user?.id,
           patient_info,
           selected_areas: appointment.selectedAreas,
           accepted_terms: acceptedTerms,

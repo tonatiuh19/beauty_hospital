@@ -92,14 +92,20 @@ interface ContractSession {
   notes: string | null;
 }
 
-const statusColors = {
+const statusColors: Record<string, string> = {
+  draft: "bg-gray-100 text-gray-700",
+  pending_signature: "bg-orange-100 text-orange-700",
+  signed: "bg-green-100 text-green-700",
   active: "bg-green-100 text-green-700",
   completed: "bg-blue-100 text-blue-700",
   cancelled: "bg-red-100 text-red-700",
   expired: "bg-gray-100 text-gray-700",
 };
 
-const statusLabels = {
+const statusLabels: Record<string, string> = {
+  draft: "Borrador",
+  pending_signature: "Pendiente de firma",
+  signed: "Firmado",
   active: "Activo",
   completed: "Completado",
   cancelled: "Cancelado",
@@ -403,10 +409,13 @@ export default function ContractsManagement() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos los estados</SelectItem>
-                <SelectItem value="active">Activos</SelectItem>
+                <SelectItem value="draft">Borrador</SelectItem>
+                <SelectItem value="pending_signature">
+                  Pendiente de firma
+                </SelectItem>
+                <SelectItem value="signed">Firmados</SelectItem>
                 <SelectItem value="completed">Completados</SelectItem>
                 <SelectItem value="cancelled">Cancelados</SelectItem>
-                <SelectItem value="expired">Vencidos</SelectItem>
               </SelectContent>
             </Select>
           </div>

@@ -135,6 +135,7 @@ CREATE TABLE `appointments` (
   `notes` text COLLATE utf8mb4_unicode_ci,
   `created_by` int(11) DEFAULT NULL COMMENT 'Admin/user ID who created the appointment, NULL for patient self-bookings',
   `booked_for_self` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Whether appointment is for the logged-in user (1) or someone else (0)',
+  `booked_by_patient_id` int(11) DEFAULT NULL COMMENT 'Patient who booked/paid when booked_for_self = 0',
   `booking_source` enum('online','receptionist','phone','walk_in') COLLATE utf8mb4_unicode_ci DEFAULT 'online',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -828,7 +829,7 @@ INSERT INTO `users` (`id`, `email`, `password_hash`, `role`, `first_name`, `last
 (12, 'axgoomez@gmail.com', '', 'general_admin', 'Alex', 'Gomez', '+1234567893', NULL, NULL, 'ADM001', 1, 1, '2025-11-12 04:42:13', '2026-03-24 02:41:12', '2026-03-24 02:41:12'),
 (13, 'hebert@trueduplora.com', '', 'general_admin', 'Hebert', 'Montecinos', '', NULL, '', 'ADM002', 1, 1, '2025-11-19 22:15:46', '2026-08-31 19:30:15', '2026-08-31 19:30:15'),
 (14, 'aleezajazmin99@gmail.com', '', 'general_admin', 'Ale', 'Admin', '933119862', NULL, 'enfermera', '', 1, 1, '2026-03-06 02:45:29', '2026-08-31 22:45:29', '2026-03-06 03:55:18'),
-(60008, 'enfeliana1714@gmail.com', '', 'general_admin', 'Enfeliaana', 'Admin', NULL, NULL, NULL, NULL, 1, 1, '2026-08-31 22:45:29', '2026-08-31 22:45:29', NULL);
+(60008, 'enfeliana1714@gmail.com', '', 'general_admin', 'Enfeliana', 'Admin', NULL, NULL, NULL, NULL, 1, 1, '2026-08-31 22:45:29', '2026-08-31 22:45:29', NULL);
 
 -- --------------------------------------------------------
 
@@ -882,6 +883,7 @@ ALTER TABLE `appointments`
   ADD KEY `idx_service_id` (`service_id`),
   ADD KEY `idx_scheduled_at` (`scheduled_at`),
   ADD KEY `idx_booked_for_self` (`booked_for_self`),
+  ADD KEY `idx_booked_by_patient_id` (`booked_by_patient_id`),
   ADD KEY `idx_created_by` (`created_by`),
   ADD KEY `idx_check_in_at` (`check_in_at`),
   ADD KEY `idx_check_in_by` (`check_in_by`),
@@ -1300,7 +1302,8 @@ ALTER TABLE `appointments`
   ADD CONSTRAINT `appointments_ibfk_5` FOREIGN KEY (`check_in_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   ADD CONSTRAINT `appointments_ibfk_6` FOREIGN KEY (`contract_id`) REFERENCES `contracts` (`id`) ON DELETE SET NULL,
   ADD CONSTRAINT `appointments_ibfk_7` FOREIGN KEY (`cancelled_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
-  ADD CONSTRAINT `appointments_ibfk_8` FOREIGN KEY (`rescheduled_from`) REFERENCES `appointments` (`id`) ON DELETE SET NULL;
+  ADD CONSTRAINT `appointments_ibfk_8` FOREIGN KEY (`rescheduled_from`) REFERENCES `appointments` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `appointments_ibfk_booked_by_patient` FOREIGN KEY (`booked_by_patient_id`) REFERENCES `patients` (`id`) ON DELETE SET NULL;
 
 --
 -- Constraints for table `appointment_reminders`

@@ -82,6 +82,18 @@ describe("check-in contract link", () => {
     }
   });
 
+  it("returns linked contract terms on validate", async () => {
+    const res = await request(app).get(`/api/check-in/validate/${TOKEN}`);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.contract_terms).toBe("Términos de prueba check-in");
+  });
+
+  it("rejects an invalid check-in token", async () => {
+    const res = await request(app).get("/api/check-in/validate/not-a-real-token");
+    expect(res.status).toBe(404);
+  });
+
   it("requires signature fields", async () => {
     const res = await request(app).post("/api/check-in/complete").send({
       token: TOKEN,

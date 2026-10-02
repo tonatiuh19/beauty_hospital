@@ -11,8 +11,10 @@
 - **NEVER touch schema.sql, any database changes must be made through migration files in `database/migrations/`**
 - **When using any console logging for debugging use logger functions from `client/lib/logger.ts` for consistent formatting and log levels only in UI components**
 - **NEVER Patch issues, always fix the root cause of type errors or bugs immediately**
-- **if any update is made to api/index.ts, update swagger.yaml accordingly**
-- **if any update is needed in DESIGN_SYSTEM.md, update it immediately and ensure changes are reflected in client/global.css and tailwind.config.ts**
+- **if any update is made to api/index.ts, ALWAYS update `api/swagger.yaml` in the same change**
+- **if any UI, branding, email chrome, or public-flow change is made, ALWAYS update `docs/DESIGN_SYSTEM.md` in the same change**
+- **Mobile (mandatory):** public + admin UI must fit ~320px+ without document-level horizontal scroll
+- **Tests: `VITEST=true` must never send live Resend email. Integration tests that write to TiDB must clean fixtures in `afterAll` using `api/testDbCleanup.ts` (only `@example.test`)**
 
 ### Package Manager
 
@@ -29,6 +31,7 @@
 - **If any database update is made based on schema.sql, generate a migration file** in `database/migrations/` with timestamp prefix (e.g., `YYYYMMDD_HHMMSS_description.sql`) for **TiDB Cloud Serverless** (MySQL 8.0 compatible)
 - **Email is Resend** (`RESEND_API_KEY` + `SMTP_FROM`) — do not add Nodemailer/SMTP transports
 - **All required API logic stays inline in `api/index.ts`** — `import type` only from `shared/`; do not add new routes in `server/`
+- **Stripe**: charge catalog `services.price`; fulfill on `POST /api/stripe/webhook`; do not set `allow_redirects: "never"`; do not mark a Stripe payment refunded in the DB without a PaymentIntent/charge refund
 - **If a type issue is generated, fix it immediately** - ensure all TypeScript types are correct and consistent across client, api/index.ts, and shared
 
 ## Project Structure

@@ -40,13 +40,29 @@ export const fetchAdminPatientById = createAsyncThunk(
     try {
       const response = await axios.get(`/admin/patients/${patientId}`);
       if (response.data.success) {
+        const appointments = (response.data.data.appointments || []).map(
+          (a: Record<string, unknown>) => ({
+            ...a,
+            scheduled_date:
+              a.appointment_date_formatted || a.scheduled_date || a.scheduled_at,
+            scheduled_time:
+              a.appointment_time_formatted || a.scheduled_time,
+          }),
+        );
+        const contracts = (response.data.data.contracts || []).map(
+          (c: Record<string, unknown>) => ({
+            ...c,
+            total_sessions: c.sessions_included ?? c.total_sessions,
+            completed_sessions: c.sessions_completed ?? c.completed_sessions,
+          }),
+        );
         return {
           patient: {
             ...response.data.data.patient,
-            appointments: response.data.data.appointments || [],
+            appointments,
             payments: response.data.data.payments || [],
             medical_records: response.data.data.medicalRecords || [],
-            contracts: response.data.data.contracts || [],
+            contracts,
           },
           raw: response.data.data.patient,
         };

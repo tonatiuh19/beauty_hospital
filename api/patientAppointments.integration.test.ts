@@ -128,6 +128,65 @@ describe("patient cancel ownership", () => {
     expect(rows[0]?.status).toBe("cancelled");
   });
 
+  it("allows reschedule of a confirmed upcoming appointment", async () => {
+    const confirmedId = await insertTestAppointment(pool, {
+      patientId: ownerId,
+      createdBy: null,
+      scheduledAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+      status: "confirmed",
+    });
+    const res = await request(app)
+      .get("/api/patient/appointments")
+      .query({ patient_id: ownerId });
+    expect(res.status).toBe(200);
+    const found = res.body.data.appointments.find(
+      (a: { id: number }) => Number(a.id) === confirmedId,
+    );
+    expect(found?.can_edit).toBe(true);
+  });
+
+  it("lists a booking paid for someone else under the booker", async () => {
+    const giftedId = await insertTestAppointment(pool, {
+      patientId: otherId,
+      createdBy: null,
+      bookedByPatientId: ownerId,
+      scheduledAt: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000),
+      status: "confirmed",
+    });
+    const res = await request(app)
+      .get("/api/patient/appointments")
+      .query({ patient_id: ownerId });
+    expect(res.status).toBe(200);
+    const ids = res.body.data.appointments.map((a: { id: number }) =>
+      Number(a.id),
+    );
+    expect(ids).toContain(giftedId);
+  });
+
+  it("cancels with less than 24h notice without a refund", async () => {
+    const soonId = await insertTestAppointment(pool, {
+      patientId: ownerId,
+      createdBy: null,
+      scheduledAt: new Date(Date.now() + 10 * 60 * 60 * 1000),
+    });
+    await pool.query(
+      `INSERT INTO payments
+         (appointment_id, patient_id, amount, payment_method, payment_status)
+       VALUES (?, ?, 1500.00, 'cash', 'completed')`,
+      [soonId, ownerId],
+    );
+    const res = await request(app)
+      .patch(`/api/patient/appointments/${soonId}/cancel`)
+      .send({
+        patient_id: ownerId,
+        cancellation_reason: "Menos de 24h",
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.data.refund_eligible).toBe(false);
+    expect(res.body.data.penalization_applied).toBe(true);
+    expect(res.body.data.refund_processed).toBe(false);
+  });
+
   it("does not cancel past appointments", async () => {
     const res = await request(app)
       .patch(`/api/patient/appointments/${pastAppointmentId}/cancel`)

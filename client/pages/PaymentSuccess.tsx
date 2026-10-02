@@ -81,9 +81,10 @@ export default function PaymentSuccess() {
 
   const [details, setDetails] = useState<SuccessState | null>(stateFromWizard);
   const [isConfirming, setIsConfirming] = useState(false);
+  const [awaitingPayment, setAwaitingPayment] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Handle 3DS redirect: URL params contain payment_intent
+  // 3DS / OXXO / wallet redirect: URL params contain payment_intent
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const paymentIntentId = params.get("payment_intent");
@@ -101,7 +102,12 @@ export default function PaymentSuccess() {
         return;
       }
 
-      if (redirectStatus === "succeeded" && !stateFromWizard) {
+      if (redirectStatus === "pending" || redirectStatus === "processing") {
+        setAwaitingPayment(true);
+        return;
+      }
+
+      if (!stateFromWizard) {
         setIsConfirming(true);
         dispatch(confirmAppointmentPayment(paymentIntentId))
           .unwrap()
@@ -118,7 +124,7 @@ export default function PaymentSuccess() {
             });
           })
           .catch((err) => {
-            logger.error("3DS confirmation error:", err);
+            logger.error("Redirect confirmation error:", err);
             if (err?.status === 409) {
               navigate("/appointment/failed", {
                 replace: true,
@@ -130,19 +136,39 @@ export default function PaymentSuccess() {
                 },
               });
             } else {
-              setError(
-                err?.message ||
-                  "Error al confirmar el pago. Por favor contacta soporte.",
-              );
+              setAwaitingPayment(true);
             }
           })
           .finally(() => setIsConfirming(false));
       }
     } else if (!stateFromWizard) {
-      // No state and no URL params — redirect to home
       navigate("/", { replace: true });
     }
   }, []);
+
+  if (awaitingPayment) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-[#FFF8EF] to-[#FFF3E0] flex items-center justify-center px-4">
+        <div className="text-center max-w-md">
+          <Loader2 className="w-12 h-12 animate-spin text-[#C9A159] mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-[#3D2E1F] mb-2">
+            Pago en proceso
+          </h2>
+          <p className="text-gray-600 mb-6">
+            Si pagaste con OXXO u otro método con redirección, tu cita se
+            confirmará cuando Stripe confirme el pago. Revisa tu correo o Mis
+            Citas.
+          </p>
+          <button
+            onClick={() => navigate("/my-appointments")}
+            className="px-6 py-3 bg-primary text-white font-bold rounded-xl hover:opacity-90 transition"
+          >
+            Ir a Mis Citas
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (isConfirming) {
     return (

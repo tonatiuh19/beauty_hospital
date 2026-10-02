@@ -120,6 +120,12 @@ axiosInstance.interceptors.response.use(
       !isCheckInTokenRequest(url)
     ) {
       localStorage.removeItem("token");
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("refreshToken");
+      localStorage.removeItem("user");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("patient-session-expired"));
+      }
     }
 
     return Promise.reject(error);

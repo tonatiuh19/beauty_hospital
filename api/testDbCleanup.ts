@@ -248,6 +248,7 @@ export async function insertTestAppointment(
     serviceId?: number;
     scheduledAt?: Date;
     createdBy?: number | null;
+    bookedByPatientId?: number | null;
     checkInToken?: string | null;
     checkInExpiresAt?: Date | null;
     contractId?: number | null;
@@ -259,14 +260,16 @@ export async function insertTestAppointment(
   const [r] = await pool.query<ResultSetHeader>(
     `INSERT INTO appointments
        (patient_id, service_id, status, scheduled_at, duration_minutes,
-        created_by, booking_source, check_in_token, check_in_token_expires_at, contract_id)
-     VALUES (?, ?, ?, ?, 60, ?, 'online', ?, ?, ?)`,
+        created_by, booked_by_patient_id, booking_source, check_in_token,
+        check_in_token_expires_at, contract_id)
+     VALUES (?, ?, ?, ?, 60, ?, ?, 'online', ?, ?, ?)`,
     [
       opts.patientId,
       opts.serviceId ?? 3,
       opts.status ?? "scheduled",
       scheduledAt,
       opts.createdBy ?? null,
+      opts.bookedByPatientId ?? null,
       opts.checkInToken ?? null,
       opts.checkInExpiresAt ?? null,
       opts.contractId ?? null,

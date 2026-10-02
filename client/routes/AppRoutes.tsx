@@ -28,6 +28,7 @@ import PatientCheckIn from "@/pages/PatientCheckIn";
 import PaymentSuccess from "@/pages/PaymentSuccess";
 import PaymentFailed from "@/pages/PaymentFailed";
 import NotFound from "@/pages/NotFound";
+import PublicContentPage from "@/pages/PublicContentPage";
 
 export function AppRoutes() {
   return (
@@ -40,6 +41,9 @@ export function AppRoutes() {
         <Route path="/appointment/failed" element={<PaymentFailed />} />
         <Route path="/my-appointments" element={<MyAppointments />} />
         <Route path="/check-in" element={<PatientCheckIn />} />
+        <Route path="/terminos" element={<PublicContentPage />} />
+        <Route path="/privacidad" element={<PublicContentPage />} />
+        <Route path="/content/:slug" element={<PublicContentPage />} />
         <Route path="/admin/login" element={<AdminLogin />} />
 
         {/* Admin Dashboard Routes */}

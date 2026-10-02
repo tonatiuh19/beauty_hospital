@@ -69,6 +69,7 @@ import {
   cancelAdminAppointment,
   generateCheckInQr,
   createManualAppointment,
+  updateAdminAppointmentStatus,
 } from "@/store/slices/calendarSlice";
 import { fetchServices } from "@/store/slices/servicesSlice";
 import {
@@ -231,8 +232,14 @@ export default function AppointmentsCalendar() {
   }, [currentDate, view]);
 
   useEffect(() => {
-    // Convert appointments to calendar events
-    const events: CalendarEvent[] = appointments.map((apt) => {
+    const q = searchQuery.trim().toLowerCase();
+    const filtered = appointments.filter((apt) => {
+      const matchesStatus =
+        statusFilter === "all" || apt.status === statusFilter;
+      const haystack = `${apt.patient_name || ""} ${apt.service_name || ""} ${apt.patient_email || ""}`.toLowerCase();
+      return matchesStatus && (!q || haystack.includes(q));
+    });
+    const events: CalendarEvent[] = filtered.map((apt) => {
       // Extract just the date part if scheduled_date is a datetime
       let dateStr = apt.scheduled_date;
       if (dateStr.includes("T")) {
@@ -255,7 +262,7 @@ export default function AppointmentsCalendar() {
     });
 
     setCalendarEvents(events);
-  }, [appointments]);
+  }, [appointments, searchQuery, statusFilter]);
 
   const fetchAppointments = async () => {
     try {
@@ -317,6 +324,28 @@ export default function AppointmentsCalendar() {
     setSelectedAppointment(appointment);
     setIsDetailsOpen(false);
     setIsCheckInOpen(true);
+  };
+
+  const handleUpdateStatus = async (
+    appointment: CalendarAppointment,
+    status: CalendarAppointment["status"],
+  ) => {
+    try {
+      await dispatch(
+        updateAdminAppointmentStatus({ id: appointment.id, status }),
+      ).unwrap();
+      setSelectedAppointment({ ...appointment, status });
+      setAppointments((prev) =>
+        prev.map((apt) => (apt.id === appointment.id ? { ...apt, status } : apt)),
+      );
+      toast({ title: "Estado actualizado" });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "No se pudo actualizar el estado",
+        description: String(error || ""),
+      });
+    }
   };
 
   const handleOpenEdit = (appointment: CalendarAppointment) => {
@@ -864,6 +893,50 @@ export default function AppointmentsCalendar() {
                       Editar Cita
                     </Button>
                     <Button
+                      onClick={() => handleCheckIn(selectedAppointment)}
+                      className="w-full bg-primary hover:bg-primary/90"
+                    >
+                      Check-in con contrato
+                    </Button>
+                    {["scheduled", "confirmed", "in_progress"].includes(
+                      selectedAppointment.status,
+                    ) && (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        {selectedAppointment.status === "scheduled" && (
+                          <Button
+                            variant="outline"
+                            onClick={() =>
+                              handleUpdateStatus(
+                                selectedAppointment,
+                                "confirmed",
+                              )
+                            }
+                          >
+                            Confirmar
+                          </Button>
+                        )}
+                        <Button
+                          variant="outline"
+                          onClick={() =>
+                            handleUpdateStatus(
+                              selectedAppointment,
+                              "completed",
+                            )
+                          }
+                        >
+                          Completada
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() =>
+                            handleUpdateStatus(selectedAppointment, "no_show")
+                          }
+                        >
+                          No asistió
+                        </Button>
+                      </div>
+                    )}
+                    <Button
                       onClick={() => handleGenerateQR(selectedAppointment)}
                       className="w-full bg-gradient-to-r from-primary to-primary/80 hover:shadow-lg transition-all"
                     >
@@ -992,9 +1065,9 @@ export default function AppointmentsCalendar() {
                         </svg>
                       </div>
                       <span className="text-xs font-medium text-gray-400 text-center leading-tight">
-                        Solo super admin
+                        Recepción, POS y
                         <br />
-                        puede cancelar
+                        admin pueden cancelar
                       </span>
                     </div>
                   )}

@@ -10,9 +10,10 @@
 - **NEVER edit `database/schema.sql` directly for schema changes** — write a migration in `database/migrations/` first, apply it, then update `schema.sql` to match
 - **UI logging**: use `client/lib/logger.ts` only (not raw `console.*` in components)
 - **NEVER patch issues** — fix the root cause of type errors or bugs immediately
-- **If `api/swagger.yaml` exists**, update it whenever `api/index.ts` routes or behavior change
-- **Relevant UI changes** → update `docs/DESIGN_SYSTEM.md` (and tokens in `client/global.css` / `tailwind.config.ts` when colors or components change)
-- **Mobile-responsive**, clean, engaging UI/UX on frontend changes
+- **if any update is made to api/index.ts, ALWAYS update `api/swagger.yaml` in the same change**
+- **if any UI, branding, email chrome, or public-flow change is made, ALWAYS update `docs/DESIGN_SYSTEM.md` in the same change**
+- **Mobile (mandatory, no exceptions):** every public page, admin shell, form, table, modal, and wizard MUST work on phones (~320–430px) and tablets without layout breaks, clipped controls, or **document-level horizontal scrolling**. Prefer fluid widths (`minmax(0, …)`, `%`, `clamp`), collapsing grids, and wrapping toolbars. If a region must scroll sideways (calendar, tables), contain it with `overflow-x: auto` on an inner wrapper. Validate new UI at a narrow viewport before finishing.
+- **Tests: `VITEST=true` must never send live Resend email. Integration tests that write to TiDB must clean fixtures in `afterAll` using `api/testDbCleanup.ts` (only `@example.test`).**
 - Prefer reusable components/utilities when it avoids debt
 - **Avoid breaking changes**
 - Review chat history before changing code so previously fixed issues are not reintroduced
@@ -33,7 +34,7 @@
 - **If a type issue is generated, fix it immediately** — keep types consistent across `client/`, `api/index.ts`, and `shared/`
 - Email is **Resend** (`RESEND_API_KEY` + `SMTP_FROM`). Do not add Nodemailer/SMTP transports
 - Map DB errors to friendly API responses (409 duplicate, 400 FK) — never leak raw MySQL/TiDB messages
-- **Stripe**: charge catalog `services.price` (never trust client `payment_amount`). Fulfill bookings from `POST /api/stripe/webhook` (`payment_intent.succeeded`) with signature verification + raw body; `confirm-payment` is an idempotent fallback. Admin approve-refund and patient cancel (>24h) must call `stripe.refunds.create`. Do not add `payment_method_types` on PaymentIntents.
+- **Stripe**: charge catalog `services.price` (never trust client `payment_amount`). Fulfill bookings from `POST /api/stripe/webhook` (`payment_intent.succeeded`) with signature verification + raw body; `confirm-payment` is an idempotent fallback. Admin approve-refund and patient cancel (>24h) must call `stripe.refunds.create`. Do not add `payment_method_types` on PaymentIntents. Do not set `allow_redirects: "never"` (blocks OXXO/redirect wallets). Do not mark a Stripe payment refunded in the DB unless Stripe was refunded or the row has a PaymentIntent/charge.
 
 ### Running Migrations (TiDB Cloud)
 
@@ -63,7 +64,7 @@ mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" \
 npm run deploy:prod
 ```
 
-Runs the Vercel inline-monolith gate, `typecheck`, tests, `vercel --prod`, then writes `system_settings.app_version`.
+Preflight: api inline check → typecheck → vitest → purge `@example.test` fixtures → `vercel --prod` → stamp `system_settings.app_version`.
 
 ### API integration tests
 

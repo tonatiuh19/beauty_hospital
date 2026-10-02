@@ -8,15 +8,18 @@ import { Provider } from "react-redux";
 import { HelmetProvider } from "react-helmet-async";
 import { store } from "@/store";
 import { AppRoutes } from "@/routes/AppRoutes";
-import { restoreUser } from "@/store/slices/authSlice";
+import { clearUser, restoreUser } from "@/store/slices/authSlice";
 import LoadingMask from "@/components/LoadingMask";
 
 const queryClient = new QueryClient();
 
 function AppContent() {
   useEffect(() => {
-    // Restore user from localStorage on app init
     store.dispatch(restoreUser());
+    const onExpired = () => store.dispatch(clearUser());
+    window.addEventListener("patient-session-expired", onExpired);
+    return () =>
+      window.removeEventListener("patient-session-expired", onExpired);
   }, []);
 
   return (

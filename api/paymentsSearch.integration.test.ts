@@ -106,6 +106,17 @@ describe("admin payments search", () => {
     expect(ids).toContain(paymentId);
   });
 
+  it("lists payments when search is empty", async () => {
+    const token = signTestAdminAccessToken(admin);
+    const res = await request(app)
+      .get("/api/admin/payments")
+      .query({ search: "" })
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(Array.isArray(res.body.data)).toBe(true);
+  });
+
   it("does not return the fixture for an unrelated search", async () => {
     const token = signTestAdminAccessToken(admin);
     const res = await request(app)

@@ -155,7 +155,7 @@ export default function MyAppointments() {
     if (!selectedAppointment || !user?.id) return;
     try {
       setIsProcessing(true);
-      await dispatch(
+      const result = await dispatch(
         cancelAppointment({
           appointmentId: selectedAppointment.id,
           patientId: user.id,
@@ -164,7 +164,14 @@ export default function MyAppointments() {
       ).unwrap();
       toast({
         title: "Cita cancelada",
-        description: "La cita ha sido cancelada exitosamente",
+        description: result.penalization_applied
+          ? result.penalization_message ||
+            "Cancelada. No hay reembolso (menos de 24 horas)."
+          : result.refund_processed
+            ? "Cancelada. El reembolso se procesó en Stripe."
+            : result.refund_eligible
+              ? "Cancelada. El reembolso no se pudo completar; contacta a la clínica."
+              : "La cita ha sido cancelada exitosamente",
       });
       setShowCancelModal(false);
       setCancellationReason("");

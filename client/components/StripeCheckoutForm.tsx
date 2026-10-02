@@ -59,14 +59,22 @@ export function StripeCheckoutForm({
         onProcessingChange?.(false);
         onError(error.message || "Payment failed");
       } else if (paymentIntent && paymentIntent.status === "succeeded") {
-        // Lock the form permanently — navigation will happen via onSuccess
         setPaymentCompleted(true);
         setMessage("Confirmando tu reserva...");
         setPaymentStatus("success");
-        // Keep isProcessing = true so button stays locked during backend confirmation
         onSuccess();
+      } else if (
+        paymentIntent &&
+        (paymentIntent.status === "processing" ||
+          paymentIntent.status === "requires_action")
+      ) {
+        setPaymentCompleted(true);
+        setMessage(
+          "Sigue las instrucciones de pago. Tu cita se confirmará cuando Stripe confirme el cargo.",
+        );
+        setPaymentStatus("processing");
+        onProcessingChange?.(false);
       } else {
-        // Requires further action (e.g. 3DS redirect handled by Stripe)
         setMessage("El pago está siendo procesado...");
         setPaymentStatus("processing");
         setIsProcessing(false);

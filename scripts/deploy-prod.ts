@@ -84,7 +84,11 @@ async function runPreDeployChecks() {
   await runCommand("npm", ["run", "typecheck"]);
   console.log("\n✅ Typecheck passed.\n");
   await runCommand("npm", ["test"]);
-  console.log("\n✅ Tests passed. Continuing to deploy...\n");
+  console.log("\n✅ Tests passed.\n");
+  // Leave shared TiDB without vitest staff/patients so Settings/People stay clean.
+  console.log("🧹 Purging leftover integration-test fixtures...\n");
+  await runCommand("npm", ["run", "test:cleanup-fixtures"]);
+  console.log("\n✅ Fixture cleanup done. Continuing to deploy...\n");
 }
 
 async function promptForVersion(currentVersion: string | null): Promise<string> {
@@ -153,6 +157,7 @@ async function writeAppVersion(deployVersion: string): Promise<void> {
 }
 
 async function main() {
+  // Validate DB env early (before long typecheck/deploy).
   dbConfig();
 
   const cliArgs = process.argv.slice(2);
@@ -177,6 +182,8 @@ async function main() {
     );
   }
 
+  // Short-lived connection — do not hold open across vercel --prod
+  // (TiDB Serverless closes idle sockets → "connection is in closed state").
   const currentVersion = await readAppVersion();
   const deployVersion = explicitVersion
     ? normalizeVersion(explicitVersion)

@@ -53,19 +53,20 @@
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | **Landing Page**        | Public marketing site with Hero, Services, Features, Process, Testimonials, FAQ, and CTA sections.                |
 | **Appointment Booking** | Multi-step wizard: select service → select date/time → patient info → login/register → Stripe payment.            |
-| **Patient Portal**      | `/my-appointments` — patient views and manages their own appointments after logging in.                           |
+| **Patient Portal**      | `/my-appointments` — lists appointments the patient owns or booked for someone else (`booked_by_patient_id`). Confirmed upcoming citas can be rescheduled. Cancel toast reports refund vs 24h penalty. |
 | **QR Check-In**         | `/check-in` — patient scans QR, signs the contract on canvas; that completes check-in. Staff generate the QR from the calendar (`CheckInWithContract`). |
 | **Admin Dashboard**     | KPIs and overview metrics for the clinic.                                                                         |
-| **Appointments**        | Calendar view of all appointments; `admin`, `general_admin`, receptionist, and POS can cancel (matches API). Manual “Nueva Cita” can search an existing patient or create a new one in the same modal. |
-| **Patient Management**  | List/search/edit patients, plus **Nuevo paciente** (`POST /api/admin/patients`). Manual appointments reuse the same create path. |
-| **Contracts**           | Digital treatment contracts with in-browser signature canvas for multi-session packages. |
-| **Payments**            | Online booking uses Stripe Payment Element + PaymentIntents (catalog price). Webhook `POST /api/stripe/webhook` fulfills the appointment; confirm-payment is idempotent. Admin **Aprobar reembolso** and patient cancel (>24h) refund in Stripe, not only in the DB. Walk-in **Registrar pago** writes cash/card/transfer rows. |
+| **Appointments**        | Calendar search/status filters apply to events. Details modal: **Check-in con contrato**, confirm/complete/no-show, plus QR. `admin`, `general_admin`, receptionist, and POS can cancel (matches API). Manual “Nueva Cita” can search an existing patient or create a new one in the same modal. |
+| **Patient Management**  | List/search/edit patients, plus **Nuevo paciente** (`POST /api/admin/patients`). Detail tabs map API `appointment_date_formatted` and `sessions_included`. **Notas** persist to `patients.notes`. |
+| **Contracts**           | Filters use DB statuses (`draft`, `pending_signature`, `signed`, `completed`, `cancelled`). QR check-in shows the linked contract terms when present. |
+| **Legal pages**         | `/terminos` and `/privacidad` load published `content_pages` (`terms-and-conditions`, `privacy-policy`) via `GET /api/content/:slug`. |
+| **Payments**            | Online booking uses Stripe Payment Element + PaymentIntents (catalog price). Redirect methods (OXXO, wallets) are allowed; `/appointment/success` shows “pago en proceso” until the webhook fulfills. Webhook `POST /api/stripe/webhook` fulfills the appointment; confirm-payment is idempotent. Admin **Aprobar reembolso** and patient cancel (>24h) refund in Stripe — a Stripe row without a PaymentIntent/charge is rejected, not marked refunded in the DB. Walk-in **Registrar pago** writes cash/card/transfer rows. |
 | **Invoices**            | Invoice generation and management tied to appointments and payments.                                              |
 | **Medical Records**     | Doctors attach diagnoses, treatments, and notes, optionally linked to an `appointment_id`. Patient picker loads up to 200 patients and can be filtered. |
 | **Services**            | CRUD for clinic services (laser hair removal, facials, body treatments, consultations, etc.).                     |
 | **Blocked Dates**       | Admin blocks specific dates or time ranges to prevent bookings.                                                   |
 | **Users Management**    | `general_admin` manages internal staff accounts (create, update, deactivate).                                     |
-| **Settings**            | Business hours, clinic configuration, and system-level settings.                                                  |
+| **Settings**            | Business hours, clinic configuration, coupons, and content pages. Feedback uses toasts (not `alert()`).           |
 | **Notifications**       | Email (Resend), SMS and WhatsApp (Twilio) notifications sent at key events.                                       |
 | **Storage**             | Catalog images stay in `public/assets/`. Only new admin uploads go to Vercel Blob. Emails embed `public/assets/logo-header.png` via CID (fallback `{APP_URL}/api/brand/logo`). No emoji in email HTML. |
 

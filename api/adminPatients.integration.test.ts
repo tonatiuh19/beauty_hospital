@@ -251,6 +251,49 @@ describe("admin patients and manual appointments", () => {
     ]);
   });
 
+  it("persists patient notes on PATCH", async () => {
+    const email = uniqueTestEmail(RUN_ID, "notes");
+    const token = signTestAdminAccessToken(staff);
+    const created = await request(app)
+      .post("/api/admin/patients")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        first_name: "Notas",
+        last_name: RUN_ID,
+        email,
+        phone: "5566667777",
+      });
+    expect(created.status).toBe(201);
+    const patientId = created.body.data.id;
+    patientIds.push(patientId);
+
+    const patch = await request(app)
+      .patch(`/api/admin/patients/${patientId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ notes: "Alergia a lidocaína" });
+    expect(patch.status).toBe(200);
+
+    const [rows] = await pool.query<RowDataPacket[]>(
+      "SELECT notes FROM patients WHERE id = ?",
+      [patientId],
+    );
+    expect(rows[0].notes).toBe("Alergia a lidocaína");
+  });
+
+  it("rejects an unknown payment method instead of storing cash", async () => {
+    const token = signTestAdminAccessToken(staff);
+    const res = await request(app)
+      .post("/api/admin/payments")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        patient_id: patientIds[0],
+        amount: 100,
+        payment_method: "bogus",
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/método de pago/i);
+  });
+
   it("rejects manual appointment without patient or new_patient", async () => {
     const token = signTestAdminAccessToken(staff);
     const res = await request(app)

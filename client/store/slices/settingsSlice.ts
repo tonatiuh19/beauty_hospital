@@ -1,6 +1,21 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios, { formatAxiosError } from "@/lib/axios";
 
+export const fetchPublishedContentPage = createAsyncThunk(
+  "settings/fetchPublishedContentPage",
+  async (slug: string, { rejectWithValue }) => {
+    try {
+      const response = await axios.get(`/content/${slug}`);
+      if (response.data.success) return response.data.data;
+      return rejectWithValue("Página no encontrada");
+    } catch (error) {
+      return rejectWithValue(
+        formatAxiosError(error, "Página no encontrada"),
+      );
+    }
+  },
+);
+
 export const fetchCoupons = createAsyncThunk(
   "settings/fetchCoupons",
   async (_, { rejectWithValue }) => {
@@ -171,6 +186,13 @@ interface SettingsState {
   settings: Record<string, any>;
   contentPages: any[];
   businessHours: any[];
+  publishedPage: {
+    slug: string;
+    title: string;
+    content: string;
+    meta_description?: string | null;
+  } | null;
+  publishedPageLoading: boolean;
   loading: boolean;
   error: string | null;
 }
@@ -180,6 +202,8 @@ const initialState: SettingsState = {
   settings: {},
   contentPages: [],
   businessHours: [],
+  publishedPage: null,
+  publishedPageLoading: false,
   loading: false,
   error: null,
 };
@@ -216,6 +240,19 @@ const settingsSlice = createSlice({
       })
       .addCase(saveAdminBusinessHours.fulfilled, (state, action) => {
         state.businessHours = action.payload;
+      })
+      .addCase(fetchPublishedContentPage.pending, (state) => {
+        state.publishedPageLoading = true;
+        state.error = null;
+      })
+      .addCase(fetchPublishedContentPage.fulfilled, (state, action) => {
+        state.publishedPageLoading = false;
+        state.publishedPage = action.payload;
+      })
+      .addCase(fetchPublishedContentPage.rejected, (state, action) => {
+        state.publishedPageLoading = false;
+        state.publishedPage = null;
+        state.error = action.payload as string;
       });
   },
 });
