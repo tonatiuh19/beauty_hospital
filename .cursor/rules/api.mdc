@@ -18,4 +18,4 @@ alwaysApply: false
 - Email: `sendEmail()` via Resend — never Nodemailer
 - DB pool must use SSL when `DB_SSL=true` (TiDB Cloud)
 - Vitest: never send live Resend mail; clean TiDB fixtures via `api/testDbCleanup.ts`
-- **Stripe**: charge catalog `services.price`; fulfill on `POST /api/stripe/webhook`; `confirm-payment` is idempotent; admin/patient refunds must call Stripe. Do not set `allow_redirects: "never"`. Do not mark a Stripe payment refunded in the DB without a PaymentIntent/charge refund
+- **Stripe**: `POST /api/appointments/quote` is the catalog quote (Bliss/Legacy `services.price`, or the sum of selected Velocity area prices; `amount` is 0 when remaining sessions or an active 90% guarantee apply). Charge that catalog amount on book-with-payment; fulfill on `POST /api/stripe/webhook`; `confirm-payment` is idempotent; admin/patient refunds must call Stripe. Do not set `allow_redirects: "never"`. Do not mark a Stripe payment refunded in the DB without a PaymentIntent/charge refund

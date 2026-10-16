@@ -63,6 +63,7 @@ export const fetchAdminPatientById = createAsyncThunk(
             payments: response.data.data.payments || [],
             medical_records: response.data.data.medicalRecords || [],
             contracts,
+            consents: response.data.data.consents || [],
           },
           raw: response.data.data.patient,
         };

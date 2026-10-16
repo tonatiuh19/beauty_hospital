@@ -57,6 +57,8 @@ import { PhoneInput } from "./ui/phone-input";
 import {
   bookAppointmentWithPayment,
   confirmAppointmentPayment,
+  fetchPatientPackages,
+  quoteAppointmentPackage,
 } from "@/store/slices/appointmentApiSlice";
 
 // Initialize Stripe - get publishable key from environment
@@ -68,15 +70,44 @@ const stripePromise = loadStripe(
   },
 );
 
-const BODY_AREAS = [
-  { id: "face", label: "Cara" },
-  { id: "underarms", label: "Axilas" },
-  { id: "bikini", label: "Bikini" },
-  { id: "legs", label: "Piernas" },
-  { id: "arms", label: "Brazos" },
-  { id: "back", label: "Espalda" },
-  { id: "full", label: "Cuerpo Completo" },
-];
+type WizardArea = {
+  id: string;
+  label: string;
+  size?: string;
+  price?: number;
+};
+
+type WizardService = {
+  id: number;
+  name: string;
+  price: number;
+  duration_minutes: number;
+  package_sessions?: number;
+  legal_template?: string | null;
+  area_catalog?: WizardArea[];
+};
+
+type PatientPackage = {
+  contract_id: number;
+  service_id: number;
+  legal_template?: string | null;
+  zone?: string | null;
+  zones?: WizardArea[];
+  remaining: number;
+  guarantee_status?: string;
+  suggested_next_date?: string | null;
+};
+
+type PackageQuote = {
+  amount: number;
+  catalog_amount: number;
+  duration_minutes: number;
+  skip_payment?: boolean;
+  remaining_sessions?: number | null;
+  suggested_next_date?: string | null;
+  guarantee_status?: string | null;
+  selected_key?: string;
+};
 
 interface WizardData {
   service: number | null;
@@ -142,6 +173,8 @@ export function AppointmentWizard() {
 
   // Error modal state
   const [showErrorModal, setShowErrorModal] = useState(false);
+  const [patientPackages, setPatientPackages] = useState<PatientPackage[]>([]);
+  const [packageQuote, setPackageQuote] = useState<PackageQuote | null>(null);
   const [errorModalConfig, setErrorModalConfig] = useState<{
     title: string;
     message: string;
@@ -246,6 +279,49 @@ export function AppointmentWizard() {
     }
   }, [bookedSlotsState.error, toast]);
 
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id) {
+      setPatientPackages([]);
+      return;
+    }
+    dispatch(fetchPatientPackages(user.id))
+      .unwrap()
+      .then((rows) => setPatientPackages(Array.isArray(rows) ? rows : []))
+      .catch(() => setPatientPackages([]));
+  }, [dispatch, isAuthenticated, user?.id]);
+
+  useEffect(() => {
+    if (!appointment.service || appointment.selectedAreas.length === 0) {
+      setPackageQuote(null);
+      return;
+    }
+    setPackageQuote(null);
+    const selectedKey = [...appointment.selectedAreas].sort().join(",");
+    let cancelled = false;
+    dispatch(
+      quoteAppointmentPackage({
+        service_id: appointment.service,
+        selected_areas: appointment.selectedAreas,
+        patient_id: user?.id,
+      }),
+    )
+      .unwrap()
+      .then((data) => {
+        if (!cancelled) {
+          setPackageQuote({
+            ...(data as PackageQuote),
+            selected_key: selectedKey,
+          });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPackageQuote(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [appointment.service, appointment.selectedAreas, dispatch, user?.id]);
+
   const handleServiceSelect = (serviceId: number) => {
     dispatch(selectServiceAction(serviceId));
     dispatch(setService(serviceId));
@@ -253,7 +329,15 @@ export function AppointmentWizard() {
   };
 
   const handleAreaToggle = (areaId: string) => {
-    dispatch(toggleArea(areaId));
+    const selected = (services as WizardService[]).find(
+      (item) => item.id === appointment.service,
+    );
+    dispatch(
+      toggleArea({
+        id: areaId,
+        max: selected?.legal_template === "velocity" ? 4 : 1,
+      }),
+    );
     setErrors({ ...errors, selectedAreas: undefined });
   };
 
@@ -278,8 +362,20 @@ export function AppointmentWizard() {
 
     if (stepNum === 1) {
       if (!appointment.service) newErrors.service = "Selecciona un servicio";
-      if (appointment.selectedAreas.length === 0)
-        newErrors.selectedAreas = "Selecciona al menos un área";
+      const selected = (services as WizardService[]).find(
+        (item) => item.id === appointment.service,
+      );
+      if (selected?.legal_template === "velocity") {
+        if (
+          appointment.selectedAreas.length < 1 ||
+          appointment.selectedAreas.length > 4
+        ) {
+          newErrors.selectedAreas =
+            "El contrato Velocity incluye de 1 a 4 zonas";
+        }
+      } else if (appointment.selectedAreas.length !== 1) {
+        newErrors.selectedAreas = "Selecciona una sola zona del paquete";
+      }
     } else if (stepNum === 2) {
       if (!appointment.date) {
         newErrors.date = "Selecciona una fecha";
@@ -396,6 +492,24 @@ export function AppointmentWizard() {
           currency: "mxn",
         }),
       ).unwrap();
+
+      if (data?.skip_payment) {
+        const successState = {
+          serviceName: getServiceName(appointment.service),
+          date: appointment.date,
+          time: appointment.time,
+          duration: getServiceDuration(appointment.service),
+          areas: getAreaLabels(appointment.selectedAreas),
+          contactEmail: user?.email || appointment.email,
+          contactPhone: user?.phone || appointment.phone,
+          amount: 0,
+        };
+        dispatch(resetAppointment());
+        setAcceptedTerms(false);
+        setAcceptedPrivacy(false);
+        navigate("/appointment/success", { state: successState });
+        return;
+      }
 
       const {
         clientSecret: cs,
@@ -551,26 +665,98 @@ export function AppointmentWizard() {
     logger.log("Submit called - payment should be handled by Stripe form");
   };
 
+  const getSelectedService = (id: number | null): WizardService | undefined => {
+    if (!id) return undefined;
+    return (services as WizardService[]).find((s) => s.id === id);
+  };
+
   const getServiceName = (id: number | null) => {
-    if (!id) return "";
-    return services.find((s) => s.id === id)?.name || "";
+    return getSelectedService(id)?.name || "";
+  };
+
+  const quoteMatchesSelection =
+    !!packageQuote &&
+    packageQuote.selected_key ===
+      [...appointment.selectedAreas].sort().join(",");
+
+  const getCatalogPrice = (id: number | null) => {
+    if (
+      quoteMatchesSelection &&
+      Number.isFinite(packageQuote.catalog_amount)
+    ) {
+      return packageQuote.catalog_amount;
+    }
+    const selected = getSelectedService(id);
+    if (!selected) return 0;
+    if (selected.legal_template === "velocity") {
+      const catalog = getServiceAreas(id);
+      const total = appointment.selectedAreas.reduce((sum, areaId) => {
+        const match = catalog.find((area) => area.id === areaId);
+        return sum + Number(match?.price || selected.price || 0);
+      }, 0);
+      return total || selected.price;
+    }
+    return selected.price || 0;
   };
 
   const getServicePrice = (id: number | null) => {
-    if (!id) return 0;
-    return services.find((s) => s.id === id)?.price || 0;
+    if (quoteMatchesSelection && packageQuote.skip_payment) return 0;
+    if (quoteMatchesSelection && Number.isFinite(packageQuote.amount)) {
+      return packageQuote.amount;
+    }
+    return getCatalogPrice(id);
   };
 
   const getServiceDuration = (id: number | null) => {
-    if (!id) return 60; // Default 60 minutes
-    return services.find((s) => s.id === id)?.duration_minutes || 60;
+    if (quoteMatchesSelection && packageQuote.duration_minutes) {
+      return packageQuote.duration_minutes;
+    }
+    const selected = getSelectedService(id);
+    const base = selected?.duration_minutes || 60;
+    if (selected?.legal_template === "velocity" && appointment.selectedAreas.length > 1) {
+      return base + 15 * (appointment.selectedAreas.length - 1);
+    }
+    return base;
+  };
+
+  const getServiceAreas = (id: number | null) => {
+    const selected = getSelectedService(id);
+    if (!selected) return [];
+    if (selected.legal_template === "velocity") {
+      const byId = new Map<string, WizardArea>();
+      (services as WizardService[])
+        .filter((item) => item.legal_template === "velocity")
+        .forEach((item) => {
+          (item.area_catalog || []).forEach((area) => byId.set(area.id, area));
+        });
+      return [...byId.values()];
+    }
+    return selected.area_catalog || [];
   };
 
   const getAreaLabels = (areaIds: string[]) => {
+    const catalog = getServiceAreas(appointment.service);
     return areaIds.map(
-      (id) => BODY_AREAS.find((area) => area.id === id)?.label || id,
+      (id) => catalog.find((area) => area.id === id)?.label || id,
     );
   };
+
+  const matchingPackage = patientPackages.find((pack) => {
+    if (pack.remaining <= 0) return false;
+    if (pack.legal_template === "velocity") {
+      const selected = getSelectedService(appointment.service);
+      if (selected?.legal_template !== "velocity") return false;
+      const contracted = (pack.zones || []).map((zone) => zone.id);
+      if (!contracted.length) {
+        return !pack.zone || appointment.selectedAreas.includes(pack.zone);
+      }
+      return (
+        appointment.selectedAreas.length > 0 &&
+        appointment.selectedAreas.every((id) => contracted.includes(id))
+      );
+    }
+    return pack.service_id === appointment.service;
+  });
 
   // Generate time slots based on service duration and business hours for selected date
   const generateTimeSlots = (durationMinutes: number): string[] => {
@@ -975,13 +1161,19 @@ export function AppointmentWizard() {
                                     "Servicio profesional de calidad"}
                                 </p>
                                 <p className="text-xs text-gray-500 font-medium">
-                                  {service.duration_minutes} minutos
+                                  {(service as WizardService).package_sessions
+                                    ? `${(service as WizardService).package_sessions} sesiones · `
+                                    : ""}
+                                  {service.duration_minutes} min / sesión
                                 </p>
                               </div>
                             </div>
                             <div className="text-right flex-shrink-0">
                               <p className="font-bold text-lg text-primary">
-                                ${service.price.toFixed(2)}
+                                ${service.price.toLocaleString("es-MX")}
+                              </p>
+                              <p className="text-[11px] text-gray-500">
+                                paquete
                               </p>
                             </div>
                           </div>
@@ -997,7 +1189,10 @@ export function AppointmentWizard() {
                       transition={{ delay: 0.3 }}
                       className="font-bold text-foreground mb-5 text-lg text-secondary"
                     >
-                      Selecciona las áreas de tratamiento
+                      {getSelectedService(appointment.service)?.legal_template ===
+                      "velocity"
+                        ? "Selecciona de 1 a 4 zonas (se cobran por tamaño)"
+                        : "Selecciona una zona del paquete"}
                     </motion.h3>
                     {errors.selectedAreas && (
                       <motion.div
@@ -1012,7 +1207,7 @@ export function AppointmentWizard() {
                       </motion.div>
                     )}
                     <motion.div className="grid grid-cols-2 gap-3">
-                      {BODY_AREAS.map((area, idx) => (
+                      {getServiceAreas(appointment.service).map((area, idx) => (
                         <motion.button
                           key={area.id}
                           onClick={() => handleAreaToggle(area.id)}
@@ -1030,9 +1225,41 @@ export function AppointmentWizard() {
                           <p className="text-sm font-bold text-foreground group-hover:text-secondary transition-all">
                             {area.label}
                           </p>
+                          {area.size && (
+                            <p className="text-[11px] text-gray-500 mt-1 capitalize">
+                              {area.size}
+                              {area.price
+                                ? ` · $${area.price.toLocaleString("es-MX")}`
+                                : ""}
+                            </p>
+                          )}
                         </motion.button>
                       ))}
                     </motion.div>
+                    {getSelectedService(appointment.service)?.legal_template ===
+                      "velocity" &&
+                      appointment.selectedAreas.length > 0 && (
+                        <p className="mt-4 text-sm text-gray-600">
+                          Total del paquete (10 sesiones): $
+                          {getCatalogPrice(appointment.service).toLocaleString(
+                            "es-MX",
+                          )}{" "}
+                          · {appointment.selectedAreas.length}{" "}
+                          {appointment.selectedAreas.length === 1
+                            ? "zona"
+                            : "zonas"}
+                        </p>
+                      )}
+                    {matchingPackage && (
+                      <p className="mt-3 text-sm text-primary">
+                        Tienes {matchingPackage.remaining} sesión
+                        {matchingPackage.remaining === 1 ? "" : "es"} de este
+                        paquete
+                        {matchingPackage.guarantee_status === "active"
+                          ? " (garantía activa, sin costo)"
+                          : ""}. Esta cita no se vuelve a cobrar.
+                      </p>
+                    )}
                   </div>
                 </motion.div>
               )}
@@ -1064,6 +1291,13 @@ export function AppointmentWizard() {
                     <label className="block font-bold text-foreground mb-3 text-lg">
                       Fecha disponible
                     </label>
+                    {matchingPackage?.suggested_next_date && (
+                      <p className="text-sm text-gray-600 mb-3">
+                        Calendario sugerido Velocity:{" "}
+                        {matchingPackage.suggested_next_date}. Puedes elegir
+                        otra fecha; el paquete no caduca por este calendario.
+                      </p>
+                    )}
                     <SimpleCalendar
                       selected={appointment.date}
                       onSelect={(dateString) => {
@@ -1943,9 +2177,11 @@ export function AppointmentWizard() {
                               Áreas
                             </p>
                             <div className="flex flex-wrap gap-1">
-                              {BODY_AREAS.filter((a) =>
-                                appointment.selectedAreas.includes(a.id),
-                              ).map((area) => (
+                              {getServiceAreas(appointment.service)
+                                .filter((a) =>
+                                  appointment.selectedAreas.includes(a.id),
+                                )
+                                .map((area) => (
                                 <span
                                   key={area.id}
                                   className="px-2 py-0.5 bg-[#FFF5E1] text-[#A0812E] border border-[#E8C580]/50 rounded-full text-xs font-bold"

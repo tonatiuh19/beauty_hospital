@@ -26,6 +26,7 @@ export const validateCheckInToken = createAsyncThunk(
           contractTerms:
             response.data.data.contract_terms ||
             "Términos y condiciones del servicio.",
+          consent: response.data.data.consent || null,
         };
       }
       return rejectWithValue(
@@ -50,6 +51,16 @@ export const completeCheckIn = createAsyncThunk(
       signature_data: string;
       terms_accepted: boolean;
       pdf_base64: string;
+      consent?: {
+        signature: string;
+        health_answers: Record<string, "si" | "no">;
+        data_health_consent?: boolean;
+        photos_followup?: boolean;
+        is_minor?: boolean;
+        guardian_name?: string;
+        guardian_relationship?: string;
+        guardian_signature?: string;
+      };
     },
     { rejectWithValue },
   ) => {
@@ -67,9 +78,19 @@ export const completeCheckIn = createAsyncThunk(
   },
 );
 
+export interface CheckInConsent {
+  legal_template: string;
+  intro: string;
+  questions: Array<{ id: string; label: string }>;
+  zone: string;
+  requires_minors_annex?: boolean;
+  patient_is_minor?: boolean;
+}
+
 interface CheckInState {
   appointment: CheckInAppointment | null;
   contractTerms: string;
+  consent: CheckInConsent | null;
   loading: boolean;
   submitting: boolean;
   success: boolean;
@@ -79,6 +100,7 @@ interface CheckInState {
 const initialState: CheckInState = {
   appointment: null,
   contractTerms: "",
+  consent: null,
   loading: false,
   submitting: false,
   success: false,
@@ -101,6 +123,7 @@ const checkInSlice = createSlice({
         state.loading = false;
         state.appointment = action.payload.appointment;
         state.contractTerms = action.payload.contractTerms;
+        state.consent = action.payload.consent;
       })
       .addCase(validateCheckInToken.rejected, (state, action) => {
         state.loading = false;

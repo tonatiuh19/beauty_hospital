@@ -34,7 +34,7 @@
 - **If a type issue is generated, fix it immediately** — keep types consistent across `client/`, `api/index.ts`, and `shared/`
 - Email is **Resend** (`RESEND_API_KEY` + `SMTP_FROM`). Do not add Nodemailer/SMTP transports
 - Map DB errors to friendly API responses (409 duplicate, 400 FK) — never leak raw MySQL/TiDB messages
-- **Stripe**: charge catalog `services.price` (never trust client `payment_amount`). Fulfill bookings from `POST /api/stripe/webhook` (`payment_intent.succeeded`) with signature verification + raw body; `confirm-payment` is an idempotent fallback. Admin approve-refund and patient cancel (>24h) must call `stripe.refunds.create`. Do not add `payment_method_types` on PaymentIntents. Do not set `allow_redirects: "never"` (blocks OXXO/redirect wallets). Do not mark a Stripe payment refunded in the DB unless Stripe was refunded or the row has a PaymentIntent/charge.
+- **Stripe**: `POST /api/appointments/quote` is the catalog quote. Charge catalog `services.price` for Bliss/Legacy, or the **sum of selected Velocity area prices** (never trust client `payment_amount`). Remaining matching sessions and an active 90% guarantee skip payment at $0. Fulfill bookings from `POST /api/stripe/webhook` (`payment_intent.succeeded`) with signature verification + raw body; `confirm-payment` is an idempotent fallback. Admin approve-refund and patient cancel (>24h) must call `stripe.refunds.create`. Do not add `payment_method_types` on PaymentIntents. Do not set `allow_redirects: "never"` (blocks OXXO/redirect wallets). Do not mark a Stripe payment refunded in the DB unless Stripe was refunded or the row has a PaymentIntent/charge.
 
 ### Running Migrations (TiDB Cloud)
 

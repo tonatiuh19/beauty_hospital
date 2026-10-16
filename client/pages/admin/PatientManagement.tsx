@@ -109,9 +109,34 @@ interface PatientDetails extends Patient {
   contracts: Array<{
     id: number;
     service_name: string;
+    contract_number?: string;
+    legal_template?: string | null;
+    selected_zone?: string | null;
+    selected_zones?: Array<{ id: string; label: string }>;
+    guarantee_status?: string | null;
+    total_amount?: number;
     total_sessions: number;
     completed_sessions: number;
     status: string;
+    signed_at?: string | null;
+  }>;
+  consents: Array<{
+    id: number;
+    service_name?: string;
+    contract_number?: string | null;
+    legal_template: string;
+    status: string;
+    zone?: string | null;
+    health_answers?: Record<string, string> | null;
+    data_health_consent?: number | boolean;
+    clinical_conclusion?: string | null;
+    has_patient_signature?: boolean | number;
+    has_staff_signature?: boolean | number;
+    is_minor?: boolean | number;
+    guardian_name?: string | null;
+    guardian_relationship?: string | null;
+    patient_signed_at?: string | null;
+    created_at: string;
   }>;
 }
 
@@ -474,12 +499,13 @@ export default function PatientManagement() {
 
           {selectedPatient && (
             <Tabs defaultValue="info" className="w-full">
-              <TabsList className="grid w-full grid-cols-5">
+              <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
                 <TabsTrigger value="info">Información</TabsTrigger>
                 <TabsTrigger value="appointments">Citas</TabsTrigger>
                 <TabsTrigger value="payments">Pagos</TabsTrigger>
-                <TabsTrigger value="medical">Historial Médico</TabsTrigger>
+                <TabsTrigger value="medical">Expediente</TabsTrigger>
                 <TabsTrigger value="contracts">Contratos</TabsTrigger>
+                <TabsTrigger value="consents">Consentimientos</TabsTrigger>
               </TabsList>
 
               {/* Info Tab */}
@@ -741,20 +767,87 @@ export default function PatientManagement() {
                   selectedPatient.contracts?.map((contract) => (
                     <Card key={contract.id}>
                       <CardContent className="p-4">
-                        <div className="flex items-start justify-between">
-                          <div>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
                             <p className="font-medium">
                               {contract.service_name}
                             </p>
-                            <p className="text-sm text-gray-500">
-                              {contract.completed_sessions} /{" "}
-                              {contract.total_sessions} sesiones completadas
+                            <p className="text-sm text-muted-foreground">
+                              {contract.contract_number}
+                              {contract.legal_template
+                                ? ` · ${contract.legal_template}`
+                                : ""}
                             </p>
+                            <p className="text-sm text-muted-foreground">
+                              {contract.completed_sessions} /{" "}
+                              {contract.total_sessions} sesiones
+                              {contract.selected_zones?.length
+                                ? ` · ${contract.selected_zones.map((z) => z.label).join(", ")}`
+                                : contract.selected_zone
+                                  ? ` · ${contract.selected_zone}`
+                                  : ""}
+                            </p>
+                            {contract.guarantee_status &&
+                              contract.guarantee_status !== "not_applicable" && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Garantía: {contract.guarantee_status}
+                                </p>
+                              )}
                           </div>
-                          <Badge variant="secondary" className="capitalize">
+                          <Badge variant="secondary" className="capitalize shrink-0">
                             {contract.status}
                           </Badge>
                         </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </TabsContent>
+
+              <TabsContent value="consents" className="space-y-2">
+                {selectedPatient.consents?.length === 0 ? (
+                  <p className="text-center text-gray-500 py-8">
+                    No hay consentimientos en el expediente
+                  </p>
+                ) : (
+                  selectedPatient.consents?.map((consent) => (
+                    <Card key={consent.id}>
+                      <CardContent className="p-4 space-y-2">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-medium">
+                              {consent.service_name || consent.legal_template}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              {consent.contract_number || "Sin folio"}
+                              {consent.zone ? ` · ${consent.zone}` : ""}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Firma paciente:{" "}
+                              {consent.has_patient_signature ? "sí" : "no"}
+                              {" · "}
+                              Firma clínica:{" "}
+                              {consent.has_staff_signature ? "sí" : "no"}
+                              {consent.is_minor
+                                ? ` · menor · tutor ${consent.guardian_name || ""} (${consent.guardian_relationship || ""})`
+                                : ""}
+                            </p>
+                          </div>
+                          <Badge variant="secondary" className="capitalize shrink-0">
+                            {consent.status.replace("_", " ")}
+                          </Badge>
+                        </div>
+                        {consent.health_answers && (
+                          <div className="text-xs text-muted-foreground space-y-1">
+                            {Object.entries(consent.health_answers).map(
+                              ([key, value]) => (
+                                <p key={key}>
+                                  {key}: {String(value)}
+                                </p>
+                              ),
+                            )}
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   ))

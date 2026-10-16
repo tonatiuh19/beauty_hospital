@@ -61,6 +61,7 @@ import {
   type MedicalRecord,
   type MedicalRecordFormData,
 } from "@/store/slices/medicalRecordsSlice";
+import { fetchAdminPatientById } from "@/store/slices/patientsSlice";
 
 // Validation schema
 const medicalRecordValidationSchema = Yup.object({
@@ -88,6 +89,27 @@ export default function MedicalRecordsManagement() {
   );
 
   const [searchTerm, setSearchTerm] = useState("");
+  const [legalHistory, setLegalHistory] = useState<{
+    contracts: Array<{
+      id: number;
+      service_name?: string;
+      contract_number?: string;
+      status?: string;
+      legal_template?: string | null;
+      selected_zone?: string | null;
+      selected_zones?: Array<{ id: string; label: string }>;
+      guarantee_status?: string | null;
+    }>;
+    consents: Array<{
+      id: number;
+      service_name?: string;
+      contract_number?: string | null;
+      legal_template?: string;
+      status?: string;
+      zone?: string | null;
+      has_patient_signature?: boolean | number;
+    }>;
+  }>({ contracts: [], consents: [] });
   const [selectedPatient, setSelectedPatient] = useState<string>("all");
   const [patientFilter, setPatientFilter] = useState("");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -189,6 +211,22 @@ export default function MedicalRecordsManagement() {
       });
     }
   }, [error, toast]);
+
+  useEffect(() => {
+    if (selectedPatient === "all") {
+      setLegalHistory({ contracts: [], consents: [] });
+      return;
+    }
+    dispatch(fetchAdminPatientById(parseInt(selectedPatient, 10)))
+      .unwrap()
+      .then((result) => {
+        setLegalHistory({
+          contracts: result.patient.contracts || [],
+          consents: result.patient.consents || [],
+        });
+      })
+      .catch(() => setLegalHistory({ contracts: [], consents: [] }));
+  }, [dispatch, selectedPatient]);
 
   const openViewModal = (record: MedicalRecord) => {
     dispatch(selectRecord(record));
@@ -292,6 +330,68 @@ export default function MedicalRecordsManagement() {
           </div>
         </CardContent>
       </Card>
+
+      {selectedPatient !== "all" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Contratos y consentimientos</CardTitle>
+            <CardDescription>
+              Historia legal de este paciente en el expediente
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2 min-w-0">
+              <p className="text-sm font-medium">Contratos</p>
+              {legalHistory.contracts.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Sin contratos firmados o en borrador
+                </p>
+              ) : (
+                legalHistory.contracts.map((contract) => (
+                  <div
+                    key={contract.id}
+                    className="rounded-lg border p-3 text-sm"
+                  >
+                    <p className="font-medium">{contract.service_name}</p>
+                    <p className="text-muted-foreground">
+                      {contract.contract_number} · {contract.status}
+                      {contract.selected_zones?.length
+                        ? ` · ${contract.selected_zones.map((z) => z.label).join(", ")}`
+                        : contract.selected_zone
+                          ? ` · ${contract.selected_zone}`
+                          : ""}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="space-y-2 min-w-0">
+              <p className="text-sm font-medium">Consentimientos</p>
+              {legalHistory.consents.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Sin consentimientos informados
+                </p>
+              ) : (
+                legalHistory.consents.map((consent) => (
+                  <div
+                    key={consent.id}
+                    className="rounded-lg border p-3 text-sm"
+                  >
+                    <p className="font-medium">
+                      {consent.service_name || consent.legal_template}
+                    </p>
+                    <p className="text-muted-foreground">
+                      {consent.status}
+                      {consent.zone ? ` · ${consent.zone}` : ""}
+                      {consent.has_patient_signature ? " · firmado" : ""}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Records Table */}
       <Card>

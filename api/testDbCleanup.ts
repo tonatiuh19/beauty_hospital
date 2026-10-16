@@ -212,17 +212,19 @@ export async function insertTestPatient(
     firstName?: string;
     lastName?: string;
     phone?: string;
+    dateOfBirth?: string;
   },
 ): Promise<number> {
   const [r] = await pool.query<ResultSetHeader>(
     `INSERT INTO patients
-       (first_name, last_name, email, phone, is_active, is_email_verified, role)
-     VALUES (?, ?, ?, ?, 1, 1, 'patient')`,
+       (first_name, last_name, email, phone, date_of_birth, is_active, is_email_verified, role)
+     VALUES (?, ?, ?, ?, ?, 1, 1, 'patient')`,
     [
       opts.firstName ?? "Test",
       opts.lastName ?? "Patient",
       opts.email,
       opts.phone ?? uniqueTestE164(opts.email),
+      opts.dateOfBirth ?? null,
     ],
   );
   return r.insertId;
@@ -327,6 +329,13 @@ async function deletePatientGraph(pool: Pool, patientIds: number[]): Promise<voi
     );
   }
   await deleteWhereIn(pool, "medical_records", "patient_id", patientIds);
+  const contractIds = await queryIds(
+    pool,
+    `SELECT id FROM contracts WHERE patient_id IN (${patientIds.map(() => "?").join(",")})`,
+    patientIds,
+  );
+  await deleteWhereIn(pool, "contract_zone_measurements", "contract_id", contractIds);
+  await deleteWhereIn(pool, "consents", "patient_id", patientIds);
   await deleteWhereIn(pool, "contracts", "patient_id", patientIds);
   await deleteWhereIn(pool, "appointments", "patient_id", patientIds);
   await deleteWhereIn(pool, "users_sessions", "patient_id", patientIds);

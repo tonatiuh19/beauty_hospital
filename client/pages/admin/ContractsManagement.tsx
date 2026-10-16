@@ -54,6 +54,10 @@ import {
   fetchDefaultContractTerms,
   saveDefaultContractTerms,
   updateContractTerms,
+  completeConsentClinician,
+  saveContractMeasurement,
+  evaluateContractGuarantee,
+  updateGuaranteeStatus,
 } from "@/store/slices/contractsSlice";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
@@ -81,6 +85,11 @@ interface Contract {
   created_at: string;
   terms_and_conditions?: string;
   signed_terms?: string; // The immutable terms that were actually signed
+  legal_template?: string | null;
+  selected_zone?: string | null;
+  selected_zones?: Array<{ id: string; label: string }>;
+  guarantee_status?: string;
+  extra_sessions_granted?: number;
 }
 
 interface ContractSession {
@@ -131,6 +140,15 @@ export default function ContractsManagement() {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [signaturePreviewOpen, setSignaturePreviewOpen] = useState(false);
   const [editTerms, setEditTerms] = useState("");
+  const [selectedConsent, setSelectedConsent] = useState<any>(null);
+  const [clinicalConclusion, setClinicalConclusion] = useState("apto");
+  const [clinicalNotes, setClinicalNotes] = useState("");
+  const [staffSignature, setStaffSignature] = useState("");
+  const [measurements, setMeasurements] = useState<any[]>([]);
+  const [measureZoneId, setMeasureZoneId] = useState("");
+  const [baselineCount, setBaselineCount] = useState("");
+  const [finalCount, setFinalCount] = useState("");
+  const [measureNotes, setMeasureNotes] = useState("");
 
   // Default contract terms editor
   const [isDefaultTermsOpen, setIsDefaultTermsOpen] = useState(false);
@@ -197,6 +215,13 @@ export default function ContractsManagement() {
       const result = await dispatch(fetchContractById(contractId)).unwrap();
       setSelectedContract(result.contract);
       setContractSessions(result.sessions || []);
+      setSelectedConsent(result.consent || null);
+      setMeasurements(result.measurements || []);
+      setMeasureZoneId(
+        result.contract?.selected_zones?.[0]?.id ||
+          result.contract?.selected_zone ||
+          "",
+      );
       setEditTerms(
         result.contract.terms_and_conditions ||
           result.contract.signed_terms ||
@@ -755,6 +780,196 @@ export default function ContractsManagement() {
 
                 {/* Sessions */}
                 <div>
+                  {selectedConsent && (
+                    <div className="mb-4 p-3 border rounded-lg space-y-3">
+                      <p className="font-medium">Consentimiento informado</p>
+                      <p className="text-sm text-gray-600">
+                        Estado: {selectedConsent.status}
+                        {selectedConsent.zone
+                          ? ` · Zona: ${selectedConsent.zone}`
+                          : ""}
+                      </p>
+                      {selectedConsent.status !== "signed" && (
+                        <div className="space-y-2">
+                          <Select
+                            value={clinicalConclusion}
+                            onValueChange={setClinicalConclusion}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Conclusión" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="apto">Apto</SelectItem>
+                              <SelectItem value="no_apto">No apto</SelectItem>
+                              <SelectItem value="pendiente">
+                                Pendiente
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            placeholder="Notas clínicas"
+                            value={clinicalNotes}
+                            onChange={(e) => setClinicalNotes(e.target.value)}
+                          />
+                          <Input
+                            placeholder="Nombre y firma del responsable"
+                            value={staffSignature}
+                            onChange={(e) => setStaffSignature(e.target.value)}
+                          />
+                          <Button
+                            type="button"
+                            onClick={async () => {
+                              if (!staffSignature.trim()) return;
+                              await dispatch(
+                                completeConsentClinician({
+                                  id: selectedConsent.id,
+                                  clinical_conclusion: clinicalConclusion,
+                                  clinical_notes: clinicalNotes,
+                                  signature: staffSignature,
+                                }),
+                              ).unwrap();
+                              setSelectedConsent({
+                                ...selectedConsent,
+                                status:
+                                  clinicalConclusion === "apto"
+                                    ? "signed"
+                                    : selectedConsent.status,
+                                clinical_conclusion: clinicalConclusion,
+                              });
+                            }}
+                          >
+                            Firmar valoración
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {selectedContract.legal_template === "velocity" && (
+                    <div className="mb-4 p-3 border rounded-lg space-y-3">
+                      <p className="font-medium">
+                        Garantía Velocity (90 % de reducción)
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        Estado: {selectedContract.guarantee_status || "n/d"}
+                        {selectedContract.selected_zone
+                          ? ` · Zonas: ${selectedContract.selected_zone}`
+                          : ""}
+                      </p>
+                      {measurements.length > 0 && (
+                        <div className="space-y-1 text-sm">
+                          {measurements.map((row) => (
+                            <p key={row.id}>
+                              {row.zone_label}: inicial {row.baseline_count ?? "—"}{" "}
+                              → final {row.final_count ?? "—"}
+                              {row.reduction_pct != null
+                                ? ` (${row.reduction_pct}%)`
+                                : ""}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <Select
+                          value={measureZoneId}
+                          onValueChange={setMeasureZoneId}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Zona" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(selectedContract.selected_zones || []).map(
+                              (zone) => (
+                                <SelectItem key={zone.id} value={zone.id}>
+                                  {zone.label}
+                                </SelectItem>
+                              ),
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          type="number"
+                          min={0}
+                          placeholder="Conteo inicial"
+                          value={baselineCount}
+                          onChange={(e) => setBaselineCount(e.target.value)}
+                        />
+                        <Input
+                          type="number"
+                          min={0}
+                          placeholder="Conteo final"
+                          value={finalCount}
+                          onChange={(e) => setFinalCount(e.target.value)}
+                        />
+                        <Input
+                          placeholder="Notas de medición"
+                          value={measureNotes}
+                          onChange={(e) => setMeasureNotes(e.target.value)}
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={async () => {
+                            if (!measureZoneId) return;
+                            const zone = (
+                              selectedContract.selected_zones || []
+                            ).find((item) => item.id === measureZoneId);
+                            await dispatch(
+                              saveContractMeasurement({
+                                id: selectedContract.id,
+                                zone_id: measureZoneId,
+                                zone_label: zone?.label,
+                                baseline_count: baselineCount
+                                  ? Number(baselineCount)
+                                  : null,
+                                final_count: finalCount
+                                  ? Number(finalCount)
+                                  : null,
+                                notes: measureNotes,
+                              }),
+                            ).unwrap();
+                            await fetchContractDetails(selectedContract.id);
+                            toast({ title: "Medición guardada" });
+                          }}
+                        >
+                          Guardar medición
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={async () => {
+                            const result = await dispatch(
+                              evaluateContractGuarantee(selectedContract.id),
+                            ).unwrap();
+                            await fetchContractDetails(selectedContract.id);
+                            toast({
+                              title: "Evaluación de garantía",
+                              description: result.message,
+                            });
+                          }}
+                        >
+                          Evaluar 90 %
+                        </Button>
+                        {selectedContract.guarantee_status === "active" && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={async () => {
+                              await dispatch(
+                                updateGuaranteeStatus({
+                                  id: selectedContract.id,
+                                  status: "suspended",
+                                }),
+                              ).unwrap();
+                              await fetchContractDetails(selectedContract.id);
+                            }}
+                          >
+                            Suspender extras
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   <Label className="text-gray-500 mb-3 block">
                     Historial de Sesiones
                   </Label>

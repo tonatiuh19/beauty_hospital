@@ -287,6 +287,7 @@ const ADMIN_ROLE_RULES: Array<{
   { test: (p) => p.startsWith("/appointments"), roles: CALENDAR_ROLES },
   { test: (p) => p.startsWith("/patients"), roles: PATIENT_ROLES },
   { test: (p) => p.startsWith("/contracts"), roles: FINANCE_ROLES },
+  { test: (p) => p.startsWith("/consents"), roles: MEDICAL_ROLES },
   { test: (p) => p.startsWith("/payments"), roles: FINANCE_ROLES },
   { test: (p) => p.startsWith("/invoices"), roles: FINANCE_ROLES },
   { test: (p) => p.startsWith("/medical-records"), roles: MEDICAL_ROLES },
@@ -515,6 +516,644 @@ function resolveStripeRefundRef(payment: {
   return null;
 }
 
+type LegalTemplateKey = "bliss" | "legacy" | "velocity";
+type ServiceAreaOption = {
+  id: string;
+  label: string;
+  size?: string;
+  price?: number;
+};
+
+const VELOCITY_MAX_ZONES = 4;
+const VELOCITY_INTERVALS_WEEKS = [4, 6, 8, 10, 12, 14, 16, 18, 20];
+
+const CLINIC_LEGAL = {
+  name: "ALLBEAUTY LUXURY AND WELLNESS",
+  short: "ALL BEAUTY",
+  rfc: "ALA260322VA5",
+  address:
+    "Prol. de Paseo Tabasco, número 1405, local 121, segundo nivel, C. C. Galerías Tabasco 2000, colonia Tabasco 2000, Villahermosa, Centro, Tabasco, C.P. 86035",
+  phone: "9931871054",
+  email: "allbeauty@allbeautyweb.com",
+};
+
+const CONSENT_QUESTIONS: Record<
+  LegalTemplateKey,
+  Array<{ id: string; label: string }>
+> = {
+  bliss: [
+    { id: "pregnancy", label: "Embarazo, lactancia o planes de embarazo" },
+    { id: "wound", label: "Herida, infección o alteración de cicatrización en la zona" },
+    { id: "hernia", label: "Hernia abdominal no reparada" },
+    { id: "immune", label: "Inmunodeficiencia o uso de inmunosupresores" },
+    { id: "coag", label: "Trastorno de coagulación o antecedentes de queloides" },
+    { id: "neuropathy", label: "Neuropatía, diabetes o sensibilidad cutánea alterada" },
+    { id: "photosens", label: "Fotosensibilidad o medicamentos fotosensibilizantes" },
+    { id: "tan", label: "Bronceado reciente o exposición intensa al sol" },
+    { id: "meds", label: "Anticoagulantes, antiagregantes, antiinflamatorios u otros fármacos" },
+    { id: "cancer", label: "Melanoma, carcinoma cutáneo u otros antecedentes de cáncer" },
+    { id: "implant", label: "Marcapasos, dispositivos electrónicos o implantes en la zona" },
+    { id: "surgery", label: "Cirugía reciente, otros tratamientos o alergias" },
+  ],
+  legacy: [
+    { id: "pregnancy", label: "Embarazo o tratamiento de fecundación in vitro" },
+    { id: "pacemaker", label: "Marcapasos o desfibrilador implantado" },
+    { id: "metal", label: "Implantes metálicos en la zona salvo dentales" },
+    { id: "silicone", label: "Silicona inyectada o implantada en la zona" },
+    { id: "infection", label: "Inflamación, infección o lesión activa en la zona" },
+    { id: "cancer", label: "Cáncer actual o antecedente de cáncer" },
+    { id: "neuro", label: "Enfermedad neurológica degenerativa o activada por calor" },
+    { id: "thyroid", label: "Tiroides no controlada, várices o enfermedad autoinmune cutánea" },
+    { id: "lactation", label: "Lactancia, trombosis, trastornos de coagulación o diabetes" },
+    { id: "meds", label: "Medicamentos anticoagulantes, alergias o tratamientos recientes" },
+  ],
+  velocity: [
+    { id: "pregnancy", label: "Embarazo, lactancia o planes de embarazo" },
+    { id: "tan", label: "Bronceado reciente o exposición intensa al sol" },
+    { id: "photosens", label: "Fotosensibilidad o medicamentos fotosensibilizantes" },
+    { id: "wound", label: "Herida, infección o lesión activa en la zona" },
+    { id: "cancer", label: "Cáncer cutáneo u otros antecedentes de cáncer" },
+    { id: "pigment", label: "Alteraciones de pigmentación o tendencia a queloides" },
+    { id: "herpes", label: "Herpes recurrente en la zona" },
+    { id: "meds", label: "Anticoagulantes, isotretinoína u otros fármacos relevantes" },
+    { id: "tattoos", label: "Tatuajes, maquillaje permanente o implantes en la zona" },
+    { id: "allergy", label: "Alergias o tratamientos recientes en la piel" },
+  ],
+};
+
+function isConsentComplete(
+  legalKey: LegalTemplateKey,
+  consent: unknown,
+): boolean {
+  if (!consent || typeof consent !== "object") return false;
+  const payload = consent as {
+    signature?: string;
+    data_health_consent?: boolean;
+    health_answers?: Record<string, unknown>;
+  };
+  if (!payload.signature || !payload.data_health_consent) return false;
+  const answers = payload.health_answers;
+  if (!answers || typeof answers !== "object") return false;
+  return CONSENT_QUESTIONS[legalKey].every((question) => {
+    const value = String(answers[question.id] ?? "")
+      .trim()
+      .toLowerCase();
+    return value === "si" || value === "no";
+  });
+}
+
+function isPatientMinor(dateOfBirth: unknown): boolean {
+  if (!dateOfBirth) return false;
+  const born = new Date(String(dateOfBirth));
+  if (Number.isNaN(born.getTime())) return false;
+  const today = new Date();
+  let age = today.getFullYear() - born.getFullYear();
+  const monthDelta = today.getMonth() - born.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < born.getDate())) {
+    age -= 1;
+  }
+  return age < 18;
+}
+
+function consentAnnexPayload(consent: unknown): {
+  is_minor: boolean;
+  guardian_name: string;
+  guardian_relationship: string;
+  guardian_signature: string;
+} {
+  const payload = consent && typeof consent === "object" ? (consent as Record<string, unknown>) : {};
+  return {
+    is_minor: Boolean(payload.is_minor),
+    guardian_name: String(payload.guardian_name || "").trim(),
+    guardian_relationship: String(payload.guardian_relationship || "").trim(),
+    guardian_signature: String(payload.guardian_signature || "").trim(),
+  };
+}
+
+function isMinorsAnnexRequired(
+  legalKey: LegalTemplateKey | null,
+  dateOfBirth: unknown,
+  consent: unknown,
+): boolean {
+  if (!legalKey || legalKey === "bliss") return false;
+  return isPatientMinor(dateOfBirth) || consentAnnexPayload(consent).is_minor;
+}
+
+function isMinorsAnnexComplete(consent: unknown): boolean {
+  const annex = consentAnnexPayload(consent);
+  return Boolean(
+    annex.guardian_name &&
+      annex.guardian_relationship &&
+      annex.guardian_signature,
+  );
+}
+
+function parseAreaCatalog(raw: unknown): ServiceAreaOption[] {
+  if (!raw) return [];
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => ({
+        id: String(item?.id || "").trim(),
+        label: String(item?.label || "").trim(),
+        size: item?.size ? String(item.size).trim() : undefined,
+        price:
+          item?.price != null && Number.isFinite(Number(item.price))
+            ? Number(item.price)
+            : undefined,
+      }))
+      .filter((item) => item.id && item.label);
+  } catch {
+    return [];
+  }
+}
+
+function parseSelectedZones(raw: unknown): ServiceAreaOption[] {
+  return parseAreaCatalog(raw);
+}
+
+async function resolveCheckInSelectedZones(
+  legalKey: LegalTemplateKey | null,
+  zoneLabel: string,
+): Promise<ServiceAreaOption[]> {
+  if (legalKey !== "velocity" || !zoneLabel.trim()) return [];
+  const catalog = await loadVelocityAreaCatalog();
+  const labels = zoneLabel
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (!labels.length) return [];
+  const pick = resolveSelectedZones(
+    { legal_template: "velocity", area_catalog: catalog },
+    labels,
+    catalog,
+  );
+  return pick.ok ? pick.zones : [];
+}
+
+async function loadVelocityAreaCatalog(): Promise<ServiceAreaOption[]> {
+  const [rows] = await pool.query<any[]>(
+    `SELECT area_catalog FROM services
+     WHERE legal_template = 'velocity' AND is_active = 1`,
+  );
+  const byId = new Map<string, ServiceAreaOption>();
+  for (const row of rows) {
+    for (const area of parseAreaCatalog(row.area_catalog)) {
+      byId.set(area.id, area);
+    }
+  }
+  return [...byId.values()];
+}
+
+function computePackageDuration(
+  legalTemplate: string | null | undefined,
+  baseMinutes: number,
+  zoneCount: number,
+): number {
+  if (legalTemplate !== "velocity" || zoneCount <= 1) return baseMinutes;
+  return baseMinutes + 15 * (zoneCount - 1);
+}
+
+function suggestedVelocityNextDate(
+  lastScheduledAt: Date,
+  reservedCount: number,
+): string | null {
+  const idx = reservedCount - 1;
+  if (idx < 0 || idx >= VELOCITY_INTERVALS_WEEKS.length) return null;
+  const next = new Date(lastScheduledAt.getTime());
+  next.setDate(next.getDate() + VELOCITY_INTERVALS_WEEKS[idx] * 7);
+  return next.toISOString().slice(0, 10);
+}
+
+function zoneIdsOf(zones: ServiceAreaOption[]): string[] {
+  return zones.map((zone) => zone.id);
+}
+
+function zonesAreSubset(
+  selected: ServiceAreaOption[],
+  contracted: ServiceAreaOption[],
+): boolean {
+  if (selected.length === 0 || contracted.length === 0) return false;
+  const allowed = new Set(zoneIdsOf(contracted));
+  return selected.every((zone) => allowed.has(zone.id));
+}
+
+function mapServiceRow(row: any) {
+  return {
+    ...row,
+    price: parseFloat(row.price),
+    duration_minutes: parseInt(row.duration_minutes, 10),
+    package_sessions: parseInt(row.package_sessions || "1", 10) || 1,
+    legal_template: row.legal_template || null,
+    area_catalog: parseAreaCatalog(row.area_catalog),
+    is_active: Boolean(row.is_active),
+  };
+}
+
+type ZonePick =
+  | {
+      ok: true;
+      zones: ServiceAreaOption[];
+      zoneId: string;
+      zoneLabel: string;
+      totalPrice: number;
+    }
+  | { ok: false; error: string };
+
+function resolveSelectedZones(
+  service: {
+    legal_template?: string | null;
+    price?: number;
+    area_catalog?: ServiceAreaOption[];
+  },
+  selectedAreas: unknown,
+  velocityCatalog: ServiceAreaOption[] = [],
+): ZonePick {
+  const isVelocity = service.legal_template === "velocity";
+  const catalog = isVelocity
+    ? velocityCatalog.length
+      ? velocityCatalog
+      : service.area_catalog || []
+    : service.area_catalog || [];
+  if (catalog.length === 0) {
+    const raw = Array.isArray(selectedAreas) ? String(selectedAreas[0] || "") : "";
+    return {
+      ok: true,
+      zones: raw ? [{ id: raw, label: raw }] : [],
+      zoneId: raw,
+      zoneLabel: raw,
+      totalPrice: Number(service.price || 0),
+    };
+  }
+  if (!Array.isArray(selectedAreas) || selectedAreas.length === 0) {
+    return {
+      ok: false,
+      error: isVelocity
+        ? "Selecciona de 1 a 4 zonas del catálogo Velocity."
+        : "Este paquete incluye una sola zona. Selecciona un área.",
+    };
+  }
+  if (!isVelocity && selectedAreas.length !== 1) {
+    return {
+      ok: false,
+      error: "Este paquete incluye una sola zona. Selecciona un área.",
+    };
+  }
+  if (isVelocity && selectedAreas.length > VELOCITY_MAX_ZONES) {
+    return {
+      ok: false,
+      error: "El contrato Velocity permite hasta 4 zonas en el mismo paquete.",
+    };
+  }
+  const unique = [...new Set(selectedAreas.map((item) => String(item || "").trim()))].filter(
+    Boolean,
+  );
+  const zones: ServiceAreaOption[] = [];
+  for (const chosen of unique) {
+    const match = catalog.find(
+      (area) => area.id === chosen || area.label === chosen,
+    );
+    if (!match) {
+      return {
+        ok: false,
+        error: "El área seleccionada no corresponde al catálogo de este paquete.",
+      };
+    }
+    zones.push(match);
+  }
+  const totalPrice = isVelocity
+    ? zones.reduce((sum, zone) => sum + Number(zone.price || 0), 0)
+    : Number(service.price || 0);
+  if (!Number.isFinite(totalPrice) || totalPrice <= 0) {
+    return { ok: false, error: "El paquete no tiene un precio válido." };
+  }
+  return {
+    ok: true,
+    zones,
+    zoneId: zones.map((zone) => zone.id).join(","),
+    zoneLabel: zones.map((zone) => zone.label).join(", "),
+    totalPrice,
+  };
+}
+
+function fillLegalPlaceholders(
+  text: string,
+  vars: Record<string, string | number | null | undefined>,
+): string {
+  return text.replace(/\{\{(\w+)\}\}/g, (_, key) => {
+    const value = vars[key];
+    if (value === null || value === undefined || value === "") return "______________";
+    return String(value);
+  });
+}
+
+function defaultContractTemplate(key: LegalTemplateKey): string {
+  if (key === "velocity") {
+    return `
+ALL BEAUTY LUXURY & WELLNESS
+Contrato de depilación láser
+Paquete de 10 sesiones por zona con garantía de sesiones adicionales sin costo. Este documento comprende la carátula comercial, las condiciones del servicio y la póliza de garantía. El consentimiento informado se firma por separado.
+
+Datos de las partes
+Folio: {{folio}}    Lugar y fecha: Villahermosa, Tabasco, {{sign_date}}
+Razón social: ${CLINIC_LEGAL.name}
+Nombre comercial: ALL BEAUTY LUXURY & WELLNESS
+RFC: ${CLINIC_LEGAL.rfc}
+Domicilio: ${CLINIC_LEGAL.address}
+Teléfono para citas y reclamaciones: ${CLINIC_LEGAL.phone}
+Correo: ${CLINIC_LEGAL.email}
+Cliente y beneficiario del tratamiento: {{patient_name}}
+Fecha de nacimiento: {{date_of_birth}}    Teléfono: {{phone}}
+Correo: {{email}}
+
+Zonas incluidas en el paquete (10 sesiones cada una)
+{{zone}}
+Cada sesión comprende una aplicación en cada zona contratada que resulte apta para tratar ese día. El registro indicará las zonas realmente atendidas; una zona omitida no se descontará como realizada.
+
+Precio total del paquete con impuestos y cargos incluidos: {{price}} MXN
+Anticipo, saldo y medio de pago se documentan en el expediente y en los comprobantes. No se recaban números completos de tarjeta, CVV ni fecha de vencimiento. Este contrato no autoriza domiciliaciones ni cargos recurrentes.
+
+1. Objeto y valoración inicial
+El proveedor prestará 10 sesiones de depilación láser por cada zona de la carátula, sujetas a valoración de aptitud y al protocolo del equipo Venus Velocity, de Venus Concept. Cargo del personal responsable de valorar y realizar el tratamiento: Enfermera especializada. Se documentarán vello, piel, antecedentes y resultado viable antes de iniciar; no se tratará si existe contraindicación. El expediente identificará a la profesional que intervenga en cada atención.
+
+2. Programación y continuidad
+Calendario base del tratamiento: sesión 1 al inicio; intervalos entre sesiones 1–2, 2–3, 3–4, 4–5, 5–6, 6–7, 7–8, 8–9 y 9–10 de 4, 6, 8, 10, 12, 14, 16, 18 y 20 semanas, respectivamente. La sesión 10 corresponde a la semana 108 desde el inicio, si no hay ajustes.
+El responsable técnico validará y, si es necesario, ajustará el calendario por zona, protocolo, seguridad y respuesta, documentándolo con el cliente. Las pausas clínicas, por embarazo, fuerza mayor o causas del proveedor no cancelan sesiones ni garantía. El paquete no caduca por este calendario.
+Avisar cambios de cita con 24 horas. Una falta no cuenta como sesión realizada. La inasistencia sin aviso durante tres meses se atenderá conforme a las cláusulas 5 y 9. No se prevén penalizaciones económicas por cita.
+
+3. Precio y pagos
+El precio y calendario serán los de la carátula. Se entregará comprobante de cada pago y factura cuando corresponda. No habrá incrementos, zonas adicionales ni cargos nuevos sin acuerdo expreso. Un atraso se notificará por escrito antes de acordar una pausa; no elimina las sesiones pagadas ni los derechos legales del cliente.
+
+4. Cuidados y seguridad
+El cliente informará medicamentos, cambios de salud y reacciones relevantes, y seguirá las indicaciones individualizadas entregadas por escrito. El proveedor utilizará personal capacitado, protección ocular apropiada, parámetros documentados y medidas de higiene. Ante una reacción adversa suspenderá la aplicación, documentará lo ocurrido y facilitará evaluación y atención oportunas según la gravedad.
+
+5. Cancelación y terminación
+La cancelación voluntaria por motivos personales del cliente no dará lugar a devolución, salvo los supuestos legalmente exigibles. El cliente podrá comunicar su decisión por los canales de la carátula y no estará obligado a recibir aplicaciones. Esta política no excluye devoluciones, bonificaciones u otros derechos por incumplimiento del proveedor ni por otras causas previstas en la ley.
+Tres meses calendario de inasistencia sin aviso, contados desde una cita confirmada incumplida sin reprogramación, darán lugar al procedimiento de suspensión de sesiones adicionales gratuitas de la cláusula 9. No se cuentan desde la última sesión ni incluyen intervalos programados, pausas autorizadas, causas clínicas justificadas o atribuibles al proveedor.
+
+6. Documentos y controversias
+Se entregarán copias del contrato, póliza, consentimiento y cuidados. Las modificaciones requieren acuerdo escrito. El cliente conserva sus derechos ante PROFECO y autoridades competentes. El consentimiento no exime de responsabilidad por servicios defectuosos.
+
+Póliza de garantía de depilación láser
+7. Resultado cubierto y medición
+Resultado ofrecido por zona contratada: reducción del vello del 90 al 95 %. El mínimo garantizado es del 90 %; el 95 % es el extremo superior del objetivo. Alcanzar el 90 % cumple la garantía.
+La garantía se refiere al resultado medible pactado, no a ausencia absoluta de todo vello de por vida. La respuesta puede variar y puede requerirse mantenimiento posterior.
+Medición: conteo inicial y final en áreas fijas de referencia por zona, con crecimiento y condiciones comparables documentadas. Reducción = (conteo inicial − conteo final) / conteo inicial × 100. Si el conteo inicial es cero, se requerirá otro método previamente acordado. No se utilizará solamente la ausencia inmediata de vello tras el rasurado para acreditar el resultado.
+
+8. Sesiones adicionales sin costo
+Si al completar las 10 sesiones una zona cubierta no alcanza una reducción mínima del 90 %, ALL BEAUTY proporcionará las sesiones adicionales necesarias sin costo hasta alcanzar ese mínimo. No habrá un límite de sesiones ni un plazo fijo para alcanzar el resultado, y no se exigirán compras adicionales. Los intervalos se determinarán clínicamente y cada aplicación deberá ser segura y apropiada.
+La obligación continuará hasta acreditar el mínimo por zona, mediante mediciones entregadas por escrito. Cumplido el mínimo, no se incluye mantenimiento gratuito indefinido; subsisten la garantía legal aplicable de al menos 90 días desde la prestación del servicio y los derechos por incumplimientos. Una pausa por seguridad no extingue la obligación. No se cubren zonas nuevas.
+
+9. Solicitud y resolución
+Solicitar la garantía por los canales de la carátula, identificando nombre, folio y zona. ALL BEAUTY entregará acuse y propondrá valoración dentro de 10 días hábiles. Entregará calendario gratuito o motivos y evidencia de rechazo por escrito. Si continuar está contraindicado o no resuelve el incumplimiento, se acordará una solución sin excluir remedios legales.
+Cumplidos los tres meses de la cláusula 5, se notificará al cliente la cita incumplida y el periodo transcurrido, con 15 días naturales desde la recepción para justificar o reprogramar. Sin respuesta, se suspenden las sesiones adicionales gratuitas hasta nueva valoración y acuerdo escrito de continuidad, sin extinguir el resultado garantizado ni las sesiones pagadas. Una falta aislada o cambio hormonal no cancelan la garantía.
+
+Cliente: {{patient_name}}    Firma: ______________    Fecha: {{sign_date}}
+Por ${CLINIC_LEGAL.name}: ______________    Fecha: {{sign_date}}
+`.trim();
+  }
+
+  if (key === "bliss") {
+    return `
+Contrato de prestación de servicios Venus Bliss
+Paquete estético no invasivo sujeto a valoración individual. El contrato regula servicios y pagos; el consentimiento informado y la valoración se completan antes de la primera sesión en un documento independiente.
+
+Prestador: ${CLINIC_LEGAL.name}, RFC ${CLINIC_LEGAL.rfc}, en adelante ALL BEAUTY.
+Domicilio: ${CLINIC_LEGAL.address}.
+Cliente: {{patient_name}}
+Fecha de nacimiento: {{date_of_birth}}
+Teléfono y correo: {{phone}} / {{email}}
+Folio: {{folio}}
+Lugar y fecha de firma: Villahermosa, Tabasco, {{sign_date}}
+
+1. Servicio contratado
+ALL BEAUTY prestará únicamente las modalidades y sesiones descritas, previa valoración y consentimiento, por personal capacitado conforme al manual vigente. Este formato corresponde a Venus Bliss; no incorpora estimulación muscular de Venus Bliss MAX.
+Nombre del paquete: {{package_name}}
+Zona: {{zone}}
+Sesiones incluidas: {{sessions}}
+Modalidad (láser de diodo, aplicador MP2 o ambas) se documenta en la valoración clínica. La distribución de sesiones láser y MP2, cuando ambas se contraten, se registra en el expediente.
+
+2. Finalidad y límites
+El láser busca tratar grasa subcutánea localizada; MP2 busca mejorar la apariencia de celulitis y el contorno según la indicación autorizada. No son tratamientos para bajar de peso ni sustituyen atención médica. No se garantiza una reducción de kilos, centímetros, eliminación total de celulitis ni un resultado permanente. La respuesta puede ser limitada o no visible; esta condición no elimina la obligación de prestar correctamente lo contratado.
+
+3. Precio total y pagos
+Precio total del paquete en pesos mexicanos, incluidos impuestos y cargos aplicables: {{price}}. El precio corresponde al paquete completo, sin tarifa de venta por zona.
+Anticipo, saldo y forma de pago se documentan en el expediente y en los comprobantes. ALL BEAUTY entregará comprobante de pago y factura cuando corresponda. No se aplicarán cargos ni intereses que no se hayan pactado válidamente.
+Ante un pago vencido, ALL BEAUTY notificará el saldo y podrá suspender nuevas citas hasta su regularización, sin pérdida automática de pagos ni sesiones pendientes.
+
+4. Vigencia y citas
+Teléfono: {{clinic_phone}}. Correo: {{clinic_email}}.
+Anticipación para reprogramar sin cargo: preferentemente 24 horas y como mínimo 4 horas antes de la cita.
+Tolerancia de llegada: 10 minutos para recibir la sesión completa.
+Las modalidades pueden requerir calendarios distintos; no se repetirá el láser con la frecuencia de MP2 por el solo hecho de formar parte del mismo paquete.
+Si el cliente avisa con esa anticipación, podrá reprogramar dentro de la vigencia. Si supera la tolerancia, la sesión solo se realizará si puede completarse de forma segura; de lo contrario se reprogramará. En esta versión no hay penalización económica por inasistencia ni se descuenta como realizada una sesión no aplicada.
+Si ALL BEAUTY cancela o no dispone del equipo, ofrecerá una nueva fecha y ampliará la vigencia, sin cargo.
+
+5. Seguimiento de resultados
+Se documentarán las sesiones, molestias y evolución. La revisión de resultados se realizará en el momento indicado para cada modalidad y no obliga a adquirir sesiones adicionales. El mantenimiento o procedimientos complementarios solo se incluyen si se pactan expresamente.
+
+6. Cancelación y terminación
+Por cambio de opinión o abandono voluntario del cliente, ALL BEAUTY no ofrece devoluciones comerciales, siempre que pueda prestar el paquete pactado. Esta política queda sujeta a los derechos irrenunciables del consumidor.
+La insatisfacción con un resultado individual, por sí sola, no constituye incumplimiento cuando el servicio se prestó correctamente. Si ALL BEAUTY incumple o no puede completar el paquete por causa imputable al prestador, se reconocerán los remedios legales. La firma no libera al prestador por negligencia ni mala aplicación.
+Si se detecta una contraindicación antes de iniciar, no se aplicará el tratamiento y se devolverá el importe del paquete no prestado. Si surge después, se suspenderá y se valorará una pausa o terminación con liquidación de lo pendiente.
+Cuando proceda liquidar sesiones pendientes, todas las sesiones tendrán el mismo valor económico: el precio total del paquete dividido entre el número total de sesiones contratadas.
+
+7. Interrupción de tres meses
+Después de tres meses consecutivos sin asistencia ni aviso desde la última sesión, el seguimiento se suspenderá y se requerirá nueva valoración para retomar. No implica pérdida automática de pagos o sesiones. ALL BEAUTY no ofrece garantía de resultados estéticos para Venus Bliss.
+
+8. Suspensión por seguridad
+El cliente puede pedir detener la sesión o retirar su consentimiento en cualquier momento. ALL BEAUTY suspenderá ante dolor excesivo, lesión, cambios de salud o cualquier condición que requiera evaluación.
+
+9. Obligaciones de ALL BEAUTY
+Valorar antecedentes y aptitud para cada modalidad; explicar beneficios, riesgos y alternativas; aplicar con personal capacitado y equipo en condiciones adecuadas; documentar cada sesión e incidente; entregar cuidados individualizados y un medio de contacto para seguimiento.
+
+10. Obligaciones del cliente
+Informar con veracidad sobre salud, medicamentos, embarazo, implantes y tratamientos previos, y seguir las indicaciones. Los datos de salud e imágenes de seguimiento se tratan conforme al aviso de privacidad. La autorización de publicidad es independiente y opcional.
+
+11. Controversias
+Las partes procurarán resolver por escrito, sin impedir acudir a PROFECO. Se aplica la legislación mexicana sin renuncia a derechos irrenunciables.
+
+Cliente: {{patient_name}}    Firma: ______________    Fecha: {{sign_date}}
+Por ${CLINIC_LEGAL.name}: ______________    Fecha: {{sign_date}}
+`.trim();
+  }
+
+  return `
+Contrato de prestación de servicios Venus Legacy
+Paquete de tratamiento estético no invasivo sujeto a valoración individual. Este contrato establece los servicios, pagos y condiciones de atención. El consentimiento informado se firma por separado en el anexo antes de la primera sesión.
+
+Prestador: ${CLINIC_LEGAL.name}, RFC ${CLINIC_LEGAL.rfc}, en adelante ALL BEAUTY.
+Domicilio: ${CLINIC_LEGAL.address}.
+Cliente: {{patient_name}}
+Fecha de nacimiento: {{date_of_birth}}
+Teléfono: {{phone}}    Correo: {{email}}
+Folio: {{folio}}
+Lugar y fecha de firma: Villahermosa, Tabasco, {{sign_date}}
+
+1. Objeto del contrato
+ALL BEAUTY prestará al cliente el paquete Venus Legacy descrito, sujeto a valoración de aptitud, consentimiento informado y aplicación por personal capacitado conforme al manual vigente del equipo. No incluye procedimientos distintos, productos ni mantenimiento salvo que se indiquen expresamente.
+Nombre del paquete: {{package_name}}
+Zona o área incluida: {{zone}}
+Número total de sesiones: {{sessions}}
+
+2. Alcance de los resultados
+El tratamiento tiene finalidad estética. No constituye un programa de pérdida de peso ni sustituye atención médica. La respuesta es individual y puede ser limitada o no visible. No se promete una cantidad de centímetros, kilos, eliminación total de celulitis ni un resultado permanente. Esto no limita la obligación de prestar correctamente el servicio ni el cumplimiento de ofertas expresamente pactadas.
+
+3. Precio total y forma de pago
+Precio total del paquete en pesos mexicanos, incluidos impuestos y cargos aplicables: {{price}}.
+El precio corresponde al paquete completo; no se establece una tarifa de venta por zona.
+ALL BEAUTY entregará comprobante de pago y factura cuando corresponda. No cobrará conceptos adicionales sin informar el importe y obtener aceptación previa.
+Si existe un pago vencido, ALL BEAUTY notificará el saldo y podrá suspender la programación de nuevas sesiones hasta regularizarlo. Esta suspensión no implica pérdida automática de pagos o sesiones.
+
+4. Vigencia y citas
+Teléfono: {{clinic_phone}}. Correo: {{clinic_email}}.
+Anticipación para reprogramar sin cargo: preferentemente 24 horas.
+Tolerancia de llegada: 10 minutos.
+Si el cliente avisa dentro del plazo acordado, podrá reprogramar sin cargo dentro de la vigencia. Si llega tarde, la sesión solo se realizará si puede completarse de forma segura; de lo contrario se reprogramará.
+En esta versión no se establece cargo por cancelación tardía, inasistencia o retraso, ni se descuenta como realizada una sesión que no fue aplicada.
+Si ALL BEAUTY cancela una cita o no dispone del equipo, ofrecerá una nueva fecha y ampliará la vigencia por el tiempo necesario, sin cargo.
+
+5. Cancelación y terminación
+Por cambio de opinión o abandono voluntario del cliente, ALL BEAUTY no ofrece devoluciones comerciales, siempre que permanezca en condiciones de prestar el paquete pactado. Esta política queda sujeta a los derechos irrenunciables del consumidor.
+Si ALL BEAUTY incumple o no puede completar el paquete por causa imputable al prestador, se reconocerán los remedios legales. Si se detecta una contraindicación antes de iniciar, no se aplicará el tratamiento y se devolverá el importe del paquete no prestado.
+Para liquidar sesiones pendientes se dividirá el precio total entre el número total de sesiones contratadas.
+
+6. Interrupción de tres meses
+Después de tres meses consecutivos sin asistencia ni aviso desde la última sesión, el seguimiento se suspende y se requiere nueva valoración. No implica pérdida automática de pagos o sesiones.
+
+7. Seguridad
+El cliente puede pedir detener la sesión o retirar su consentimiento. ALL BEAUTY suspenderá ante dolor excesivo, lesión o cambios de salud.
+
+8. Obligaciones
+ALL BEAUTY valorará antecedentes, explicará riesgos y alternativas, aplicará con personal capacitado y documentará cada sesión. El cliente informará con veracidad sobre salud, medicamentos, embarazo, implantes y tratamientos previos, y seguirá las indicaciones. En menores se requiere autorización de madre, padre o tutor y valoración clínica.
+Los datos de salud e imágenes de seguimiento se tratan conforme al aviso de privacidad. La autorización de publicidad es independiente y opcional.
+
+9. Controversias
+Las partes procurarán resolver por escrito, sin impedir acudir a PROFECO. Se aplica la legislación mexicana sin renuncia a derechos irrenunciables.
+
+Cliente: {{patient_name}}    Firma: ______________    Fecha: {{sign_date}}
+Por ${CLINIC_LEGAL.name}: ______________    Fecha: {{sign_date}}
+`.trim();
+}
+
+function defaultConsentIntro(key: LegalTemplateKey): string {
+  if (key === "bliss") {
+    return "Consentimiento informado Venus Bliss. Anexo independiente. Autoriza solo las modalidades y zonas descritas. El láser utiliza energía y enfriamiento de contacto para tratar grasa subcutánea localizada. MP2 combina radiofrecuencia, campos electromagnéticos pulsados y succión para celulitis y contorno. Puedo sentir calor, hormigueo, succión, enrojecimiento, moretones; también se han descrito ampollas, cambios de pigmentación e, excepcionalmente, necrosis. No hay garantía de resultados específicos. Puedo retirar el consentimiento. Los datos de salud se tratan conforme al aviso de privacidad; las fotografías de seguimiento son opcionales y no autorizan publicidad.";
+  }
+  if (key === "velocity") {
+    return "Consentimiento informado de depilación láser Venus Velocity, de Venus Concept. Cargo de quien informa: Enfermera especializada. Se me explicó la reducción del vello mediante láser, la necesidad de varias sesiones y la variabilidad de respuesta. No se asegura ausencia del 100 % de vello para siempre; el resultado garantizado es el de la póliza (reducción mínima del 90 % por zona). Puedo optar por rasurado, otros métodos o no realizar el tratamiento. Riesgos: molestias, enrojecimiento e inflamación transitorios, quemaduras, ampollas, cambios de pigmentación, infección y cicatrices. La protección ocular es necesaria. Informé embarazo o lactancia, enfermedades y lesiones de piel, tratamientos y medicamentos, bronceado o exposición solar reciente, reacciones previas y cambios hormonales. No suspenderé medicamentos por mi cuenta. Autorizo voluntariamente el tratamiento de las zonas acordadas y puedo retirar mi consentimiento. Las fotografías son solo para expediente y medición, sin difusión pública; si no autorizo, se acordará una medición alternativa.";
+  }
+  return "Consentimiento informado Venus Legacy. Anexo independiente. Autoriza solo las zonas descritas. Venus Legacy usa radiofrecuencia multipolar y campos electromagnéticos; algunos aplicadores incorporan succión. Puedo sentir calor y succión; son posibles enrojecimiento, moretones, ampollas, quemaduras y cambios de pigmentación. No hay garantía de resultados estéticos. Puedo retirar el consentimiento. En menores se requiere autorización de madre, padre o tutor y valoración clínica. Los datos de salud y fotografías de seguimiento se tratan conforme al aviso de privacidad; la publicidad requiere autorización separada.";
+}
+
+function isLegalTemplate(value: unknown): value is LegalTemplateKey {
+  return value === "bliss" || value === "legacy" || value === "velocity";
+}
+
+async function findOpenPackageContract(
+  patientId: number,
+  service: { id: number; legal_template?: string | null },
+  selectedZones: ServiceAreaOption[],
+): Promise<{
+  id: number;
+  remaining: number;
+  sessions_included: number;
+  sessions_completed: number;
+  selected_zone: string | null;
+  selected_zones: ServiceAreaOption[];
+  legal_template: string | null;
+  guarantee_status: string;
+  extra_sessions_granted: number;
+  suggested_next_date: string | null;
+} | null> {
+  const isVelocity = service.legal_template === "velocity";
+  const [rows] = await pool.query<any[]>(
+    `SELECT c.id, c.sessions_included, c.sessions_completed, c.selected_zone, c.selected_zones,
+            c.legal_template, c.guarantee_status, c.extra_sessions_granted,
+            (SELECT COUNT(*) FROM appointments a
+              WHERE a.contract_id = c.id AND a.status NOT IN ('cancelled')) AS reserved,
+            (SELECT MAX(a.scheduled_at) FROM appointments a
+              WHERE a.contract_id = c.id AND a.status NOT IN ('cancelled')) AS last_scheduled
+     FROM contracts c
+     WHERE c.patient_id = ?
+       AND c.status IN ('draft', 'pending_signature', 'signed')
+       AND ${isVelocity ? "c.legal_template = 'velocity'" : "c.service_id = ?"}
+     ORDER BY c.id DESC`,
+    isVelocity ? [patientId] : [patientId, service.id],
+  );
+  for (const row of rows) {
+    const contractedZones = parseSelectedZones(row.selected_zones);
+    if (isVelocity && selectedZones.length) {
+      const matchesContract =
+        contractedZones.length > 0
+          ? zonesAreSubset(selectedZones, contractedZones)
+          : !row.selected_zone ||
+            selectedZones.some(
+              (zone) =>
+                zone.label === row.selected_zone || zone.id === row.selected_zone,
+            );
+      if (!matchesContract) continue;
+    }
+    const reserved = Number(row.reserved || 0);
+    const extras = Number(row.extra_sessions_granted || 0);
+    let remaining = Number(row.sessions_included) + extras - reserved;
+    if (row.guarantee_status === "active") {
+      remaining = Math.max(remaining, 1);
+    }
+    if (remaining <= 0) continue;
+    const lastScheduled = row.last_scheduled ? new Date(row.last_scheduled) : null;
+    return {
+      id: Number(row.id),
+      remaining,
+      sessions_included: Number(row.sessions_included),
+      sessions_completed: Number(row.sessions_completed || 0),
+      selected_zone: row.selected_zone || null,
+      selected_zones: contractedZones,
+      legal_template: row.legal_template || null,
+      guarantee_status: row.guarantee_status || "not_applicable",
+      extra_sessions_granted: extras,
+      suggested_next_date:
+        isVelocity && lastScheduled && !Number.isNaN(lastScheduled.getTime())
+          ? suggestedVelocityNextDate(lastScheduled, reserved)
+          : null,
+    };
+  }
+  return null;
+}
+
+async function buildFilledContractTerms(opts: {
+  legalTemplate: LegalTemplateKey | null;
+  patientName: string;
+  email?: string | null;
+  phone?: string | null;
+  dateOfBirth?: string | null;
+  packageName: string;
+  zone: string;
+  sessions: number;
+  price: number;
+  folio?: string | null;
+}): Promise<string> {
+  const key = opts.legalTemplate;
+  const source = key
+    ? defaultContractTemplate(key)
+    : defaultContractTemplate("legacy");
+  return fillLegalPlaceholders(source, {
+    patient_name: opts.patientName,
+    email: opts.email,
+    phone: opts.phone,
+    date_of_birth: opts.dateOfBirth,
+    package_name: opts.packageName,
+    zone: opts.zone,
+    sessions: opts.sessions,
+    price: `$${Number(opts.price).toLocaleString("es-MX", { minimumFractionDigits: 2 })}`,
+    folio: opts.folio,
+    sign_date: new Date().toISOString().slice(0, 10),
+    clinic_phone: CLINIC_LEGAL.phone,
+    clinic_email: CLINIC_LEGAL.email,
+  });
+}
+
 async function issueStripeRefund(opts: {
   paymentIntentId?: string;
   chargeId?: string;
@@ -605,6 +1244,10 @@ async function fulfillSucceededPaymentIntent(
     notes,
     booked_for_self,
     booked_by_patient_id,
+    selected_zone,
+    selected_zones,
+    legal_template,
+    package_sessions,
   } = paymentIntent.metadata || {};
 
   if (!patient_id || !service_id || !scheduled_at || !duration_minutes) {
@@ -716,6 +1359,71 @@ async function fulfillSucceededPaymentIntent(
     );
   }
 
+  try {
+    const [svcRows] = await pool.query<any[]>(
+      "SELECT * FROM services WHERE id = ? LIMIT 1",
+      [service_id],
+    );
+    const [patRows] = await pool.query<any[]>(
+      "SELECT first_name, last_name, email, phone, date_of_birth FROM patients WHERE id = ? LIMIT 1",
+      [patient_id],
+    );
+    if (svcRows.length && patRows.length) {
+      const svc = mapServiceRow(svcRows[0]);
+      const pat = patRows[0];
+      const sessions = Number(package_sessions || svc.package_sessions || 1);
+      const zone = String(selected_zone || "").trim();
+      const zones = parseSelectedZones(selected_zones);
+      const templateKey = isLegalTemplate(legal_template || svc.legal_template)
+        ? ((legal_template || svc.legal_template) as LegalTemplateKey)
+        : null;
+      const folio = `CON-${Date.now()}-${patient_id}`;
+      const terms = await buildFilledContractTerms({
+        legalTemplate: templateKey,
+        patientName: `${pat.first_name} ${pat.last_name}`.trim(),
+        email: pat.email,
+        phone: pat.phone,
+        dateOfBirth: pat.date_of_birth
+          ? String(pat.date_of_birth).slice(0, 10)
+          : null,
+        packageName: svc.name,
+        zone,
+        sessions,
+        price: Number(paymentIntent.amount) / 100,
+        folio,
+      });
+      const createdBy = await resolveStaffCreatedBy(null);
+      if (createdBy) {
+        const [created] = await pool.query<any>(
+          `INSERT INTO contracts
+             (patient_id, service_id, legal_template, selected_zone, selected_zones,
+              guarantee_status, contract_number, status,
+              total_amount, sessions_included, terms_and_conditions, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_signature', ?, ?, ?, ?)`,
+          [
+            patient_id,
+            service_id,
+            templateKey,
+            zone || null,
+            zones.length ? JSON.stringify(zones) : null,
+            templateKey === "velocity" ? "pending_baseline" : "not_applicable",
+            folio,
+            (Number(paymentIntent.amount) / 100).toFixed(2),
+            sessions,
+            terms,
+            createdBy,
+          ],
+        );
+        await pool.query(
+          "UPDATE appointments SET contract_id = ? WHERE id = ?",
+          [created.insertId, appointmentId],
+        );
+      }
+    }
+  } catch (contractErr) {
+    console.error("[fulfill] Package contract creation failed:", contractErr);
+  }
+
   const [appointmentDetails] = await pool.query<any[]>(
     `SELECT
         a.id, a.scheduled_at, a.duration_minutes,
@@ -771,28 +1479,26 @@ const handleDemo: RequestHandler = (req, res) => {
 const handleGetServices: RequestHandler = async (req, res) => {
   try {
     const [rows] = await pool.query<any[]>(
-      `SELECT 
-        id, 
-        name, 
-        description, 
+      `SELECT
+        id,
+        name,
+        description,
         image_url,
-        category, 
-        price, 
-        duration_minutes, 
-        is_active, 
-        created_at, 
-        updated_at 
-      FROM services 
-      WHERE is_active = 1 
+        category,
+        price,
+        duration_minutes,
+        package_sessions,
+        legal_template,
+        area_catalog,
+        is_active,
+        created_at,
+        updated_at
+      FROM services
+      WHERE is_active = 1
       ORDER BY category, name`,
     );
 
-    // Parse numeric fields since MySQL returns them as strings
-    const services = rows.map((row) => ({
-      ...row,
-      price: parseFloat(row.price),
-      duration_minutes: parseInt(row.duration_minutes, 10),
-    }));
+    const services = rows.map(mapServiceRow);
 
     res.json({
       success: true,
@@ -817,17 +1523,21 @@ const handleGetServiceById: RequestHandler = async (req, res) => {
     const { id } = req.params;
 
     const [rows] = await pool.query<any[]>(
-      `SELECT 
-        id, 
-        name, 
-        description, 
-        category, 
-        price, 
-        duration_minutes, 
-        is_active, 
-        created_at, 
-        updated_at 
-      FROM services 
+      `SELECT
+        id,
+        name,
+        description,
+        image_url,
+        category,
+        price,
+        duration_minutes,
+        package_sessions,
+        legal_template,
+        area_catalog,
+        is_active,
+        created_at,
+        updated_at
+      FROM services
       WHERE id = ? AND is_active = 1`,
       [id],
     );
@@ -839,12 +1549,7 @@ const handleGetServiceById: RequestHandler = async (req, res) => {
       });
     }
 
-    // Parse numeric fields
-    const service = {
-      ...rows[0],
-      price: parseFloat(rows[0].price),
-      duration_minutes: parseInt(rows[0].duration_minutes, 10),
-    };
+    const service = mapServiceRow(rows[0]);
 
     res.json({
       success: true,
@@ -2366,6 +3071,99 @@ function normalizeClockTime(raw: unknown): string {
   return `${match[1].padStart(2, "0")}:${match[2]}:${match[3] || "00"}`;
 }
 
+function extractAreaNoteLine(notes: unknown): string {
+  const match = String(notes || "").match(/Área:\s*([^\n\r]+)/);
+  return match?.[1]?.trim() || "";
+}
+
+function parseAreasFromNotes(notes: unknown): string[] {
+  const line = extractAreaNoteLine(notes);
+  if (!line) return [];
+  return line
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+async function findBlockedSlotReason(
+  date: string,
+  time: string,
+): Promise<string | null> {
+  const clock = normalizeClockTime(time).slice(0, 8);
+  const [rows] = await pool.query<any[]>(
+    `SELECT reason FROM blocked_dates
+     WHERE ? BETWEEN start_date AND end_date
+       AND (
+         all_day = 1
+         OR (
+           all_day = 0
+           AND ? >= start_time
+           AND ? < end_time
+         )
+       )
+     LIMIT 1`,
+    [date, clock, clock],
+  );
+  return rows[0]?.reason ? String(rows[0].reason) : rows.length ? "Fecha bloqueada" : null;
+}
+
+class SlotConflictError extends Error {
+  status = 409;
+  reason = "slot_conflict";
+  constructor(message = "Este horario se cruza con otra cita") {
+    super(message);
+    this.name = "SlotConflictError";
+  }
+}
+
+async function findOverlappingAppointment(
+  conn: { query: typeof pool.query },
+  scheduledAt: string,
+  durationMinutes: number,
+  excludeId?: number,
+): Promise<number | null> {
+  const minutes = Math.max(1, Number(durationMinutes) || 60);
+  const [conflicts] = await conn.query<any[]>(
+    `SELECT id FROM appointments
+     WHERE status IN ('scheduled', 'confirmed', 'in_progress')
+       AND scheduled_at < DATE_ADD(?, INTERVAL ? MINUTE)
+       AND DATE_ADD(scheduled_at, INTERVAL duration_minutes MINUTE) > ?
+       ${excludeId ? "AND id != ?" : ""}
+     LIMIT 1`,
+    excludeId
+      ? [scheduledAt, minutes, scheduledAt, excludeId]
+      : [scheduledAt, minutes, scheduledAt],
+  );
+  return conflicts[0]?.id ? Number(conflicts[0].id) : null;
+}
+
+async function withScheduleDayLock<T>(
+  date: string,
+  fn: (conn: Awaited<ReturnType<typeof pool.getConnection>>) => Promise<T>,
+): Promise<T> {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.query(
+      `INSERT INTO schedule_day_locks (lock_date) VALUES (?)
+       ON DUPLICATE KEY UPDATE lock_date = lock_date`,
+      [date],
+    );
+    const result = await fn(conn);
+    await conn.commit();
+    return result;
+  } catch (error) {
+    try {
+      await conn.rollback();
+    } catch {
+      /* already rolled back */
+    }
+    throw error;
+  } finally {
+    conn.release();
+  }
+}
+
 function normalizePaymentMethod(raw: unknown): string | null {
   const value = String(raw ?? "cash")
     .toLowerCase()
@@ -3030,10 +3828,14 @@ const getCalendarAppointments: RequestHandler = async (req, res) => {
         s.id as service_id,
         s.name as service_name,
         s.category as service_category,
-        s.price as service_price
+        s.price as service_price,
+        a.contract_id,
+        c.contract_number,
+        c.status as contract_status
        FROM appointments a
        JOIN patients p ON a.patient_id = p.id
        JOIN services s ON a.service_id = s.id
+       LEFT JOIN contracts c ON c.id = a.contract_id
        WHERE DATE(a.scheduled_at) BETWEEN ? AND ?
        ORDER BY a.scheduled_at ASC`,
       [start_date, end_date],
@@ -3240,11 +4042,32 @@ const getAdminPatientById: RequestHandler = async (req, res) => {
       [id],
     );
 
-    // Get contracts
+    // Legal history for the expediente — omit signature blobs
     const [contracts] = await pool.query<any[]>(
-      `SELECT c.*, s.name as service_name
+      `SELECT c.id, c.patient_id, c.service_id, c.legal_template, c.selected_zone,
+              c.selected_zones, c.guarantee_status, c.extra_sessions_granted,
+              c.contract_number, c.status, c.total_amount, c.sessions_included,
+              c.sessions_completed, c.signed_at, c.created_at,
+              s.name as service_name
        FROM contracts c
        LEFT JOIN services s ON c.service_id = s.id
+       WHERE c.patient_id = ?
+       ORDER BY c.created_at DESC`,
+      [id],
+    );
+    const [consents] = await pool.query<any[]>(
+      `SELECT c.id, c.patient_id, c.contract_id, c.appointment_id, c.service_id,
+              c.legal_template, c.status, c.zone, c.health_answers,
+              c.data_health_consent, c.photos_followup, c.clinical_conclusion,
+              c.clinical_notes, c.patient_signed_at, c.staff_signed_at, c.created_at,
+              c.is_minor, c.guardian_name, c.guardian_relationship,
+              (c.patient_signature IS NOT NULL AND c.patient_signature <> '') AS has_patient_signature,
+              (c.staff_signature IS NOT NULL AND c.staff_signature <> '') AS has_staff_signature,
+              s.name AS service_name,
+              ct.contract_number
+       FROM consents c
+       LEFT JOIN services s ON c.service_id = s.id
+       LEFT JOIN contracts ct ON c.contract_id = ct.id
        WHERE c.patient_id = ?
        ORDER BY c.created_at DESC`,
       [id],
@@ -3257,7 +4080,23 @@ const getAdminPatientById: RequestHandler = async (req, res) => {
         appointments,
         payments,
         medicalRecords,
-        contracts,
+        contracts: contracts.map((row) => ({
+          ...row,
+          selected_zones: parseSelectedZones(row.selected_zones),
+        })),
+        consents: consents.map((row) => ({
+          ...row,
+          health_answers:
+            typeof row.health_answers === "string"
+              ? (() => {
+                  try {
+                    return JSON.parse(row.health_answers || "{}");
+                  } catch {
+                    return {};
+                  }
+                })()
+              : row.health_answers,
+        })),
       },
     });
   } catch (error) {
@@ -4069,10 +4908,16 @@ const getContractDetails: RequestHandler = async (req, res) => {
         c.total_amount,
         c.sessions_included as total_sessions,
         c.sessions_completed as completed_sessions,
-        (c.sessions_included - c.sessions_completed) as remaining_sessions,
+        (c.sessions_included + c.extra_sessions_granted - c.sessions_completed) as remaining_sessions,
         c.total_amount as amount_paid,
         0 as amount_pending,
         c.status,
+        c.legal_template,
+        c.selected_zone,
+        c.selected_zones,
+        c.guarantee_status,
+        c.guarantee_evaluated_at,
+        c.extra_sessions_granted,
         c.terms_and_conditions,
         c.signed_terms,
         c.signed_at,
@@ -4124,11 +4969,30 @@ const getContractDetails: RequestHandler = async (req, res) => {
       notes: apt.notes,
     }));
 
+    const [consentRows] = await pool.query<any[]>(
+      `SELECT id, status, zone, health_answers, clinical_conclusion, clinical_notes,
+              patient_signed_at, staff_signed_at, legal_template,
+              is_minor, guardian_name, guardian_relationship
+       FROM consents WHERE contract_id = ? ORDER BY id DESC LIMIT 1`,
+      [id],
+    );
+    const [measurementRows] = await pool.query<any[]>(
+      `SELECT id, zone_id, zone_label, baseline_count, baseline_at, final_count,
+              final_at, reduction_pct, met_90, notes, recorded_by, updated_at
+       FROM contract_zone_measurements WHERE contract_id = ? ORDER BY id ASC`,
+      [id],
+    );
+
     res.json({
       success: true,
       data: {
-        contract,
+        contract: {
+          ...contract,
+          selected_zones: parseSelectedZones(contract.selected_zones),
+        },
         sessions,
+        consent: consentRows[0] || null,
+        measurements: measurementRows,
       },
     });
   } catch (error) {
@@ -4468,23 +5332,23 @@ const createContract: RequestHandler = async (req, res) => {
       total_amount,
       sessions_included,
       terms_and_conditions,
+      selected_areas,
     } = req.body;
 
-    if (!patient_id || !service_id || !total_amount || !sessions_included) {
+    if (!patient_id || !service_id) {
       return res.status(400).json({
         success: false,
         message: "Missing required fields",
       });
     }
 
-    // Get patient and service info
     const [patients] = await pool.query<any[]>(
-      "SELECT first_name, last_name, email FROM patients WHERE id = ?",
+      "SELECT first_name, last_name, email, phone, date_of_birth FROM patients WHERE id = ?",
       [patient_id],
     );
 
     const [services] = await pool.query<any[]>(
-      "SELECT name FROM services WHERE id = ?",
+      "SELECT * FROM services WHERE id = ?",
       [service_id],
     );
 
@@ -4496,28 +5360,148 @@ const createContract: RequestHandler = async (req, res) => {
     }
 
     const patient = patients[0];
-    const service = services[0];
+    const service = mapServiceRow(services[0]);
     const patientName = `${patient.first_name} ${patient.last_name}`;
+    const appointmentId = req.body.appointment_id;
+    if (appointmentId) {
+      const [linked] = await pool.query<any[]>(
+        `SELECT a.contract_id, a.patient_id, a.notes, c.contract_number, c.status,
+                c.legal_template, c.selected_zone, c.selected_zones
+           FROM appointments a
+           LEFT JOIN contracts c ON c.id = a.contract_id
+          WHERE a.id = ?`,
+        [appointmentId],
+      );
+      if (
+        linked[0]?.contract_id &&
+        Number(linked[0].patient_id) !== Number(patient_id)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "La cita no pertenece a este paciente",
+        });
+      }
+      if (linked[0]?.contract_id) {
+        return res.json({
+          success: true,
+          message: "Contract already linked to this appointment",
+          data: {
+            contract_id: linked[0].contract_id,
+            contract_number: linked[0].contract_number,
+            patient_name: patientName,
+            patient_email: patient.email,
+            service_name: service.name,
+            legal_template: linked[0].legal_template || service.legal_template,
+            selected_zone: linked[0].selected_zone || null,
+            selected_zones: parseSelectedZones(linked[0].selected_zones),
+            reused: true,
+          },
+        });
+      }
+    }
 
-    // Generate contract number
+    const velocityCatalog =
+      service.legal_template === "velocity"
+        ? await loadVelocityAreaCatalog()
+        : [];
+    let areas = Array.isArray(selected_areas) ? selected_areas : [];
+    if ((!areas.length || areas.length === 0) && appointmentId) {
+      const [aptRows] = await pool.query<any[]>(
+        "SELECT notes FROM appointments WHERE id = ?",
+        [appointmentId],
+      );
+      areas = parseAreasFromNotes(aptRows[0]?.notes);
+    }
+    const hasAreas = areas.length > 0;
+    const zonePick = hasAreas
+      ? resolveSelectedZones(service, areas, velocityCatalog)
+      : {
+          ok: true as const,
+          zones: [] as ServiceAreaOption[],
+          zoneLabel: "",
+          totalPrice: Number(service.price || 0),
+        };
+    if (zonePick.ok === false) {
+      return res.status(400).json({
+        success: false,
+        message: zonePick.error,
+      });
+    }
+    if (
+      appointmentId &&
+      isLegalTemplate(service.legal_template) &&
+      (service.area_catalog || []).length > 0 &&
+      zonePick.zones.length === 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          service.legal_template === "velocity"
+            ? "Selecciona de 1 a 4 zonas del catálogo Velocity."
+            : "Este paquete incluye una sola zona. Selecciona un área.",
+      });
+    }
+
+    const sessions = Number(sessions_included || service.package_sessions || 1);
+    const amount = Number(
+      total_amount ||
+        (zonePick.zones.length ? zonePick.totalPrice : service.price) ||
+        0,
+    );
+    if (!Number.isFinite(sessions) || sessions <= 0 || !Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Monto y sesiones del paquete son requeridos",
+      });
+    }
+
+    const legalKey = isLegalTemplate(service.legal_template)
+      ? service.legal_template
+      : null;
+    const zoneLabel = zonePick.zoneLabel;
+    const selectedZonesJson =
+      zonePick.zones.length > 0 ? JSON.stringify(zonePick.zones) : null;
     const contractNumber = `CON-${Date.now()}-${patient_id}`;
     const createdBy = getAdminFromRequest(req)?.id;
     if (!createdBy) return missingAdminActorResponse(res);
-    const appointmentId = req.body.appointment_id;
+    const incomingTerms = String(terms_and_conditions || "").trim();
+    const useOfficial =
+      Boolean(legalKey) &&
+      (!incomingTerms || /TÉRMINOS Y CONDICIONES DEL SERVICIO/.test(incomingTerms));
+    const contractTerms = useOfficial
+      ? await buildFilledContractTerms({
+          legalTemplate: legalKey,
+          patientName,
+          email: patient.email,
+          phone: patient.phone,
+          dateOfBirth: patient.date_of_birth
+            ? String(patient.date_of_birth).slice(0, 10)
+            : null,
+          packageName: service.name,
+          zone: zoneLabel,
+          sessions,
+          price: amount,
+          folio: contractNumber,
+        })
+      : incomingTerms || "Términos y condiciones estándar del servicio.";
 
-    // Create contract in database
     const [result] = await pool.query<any>(
       `INSERT INTO contracts (
-        patient_id, service_id, contract_number, status, total_amount,
+        patient_id, service_id, legal_template, selected_zone, selected_zones,
+        guarantee_status, contract_number, status, total_amount,
         sessions_included, terms_and_conditions, created_by, created_at
-      ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, NOW())`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, NOW())`,
       [
         patient_id,
         service_id,
+        legalKey,
+        zoneLabel || null,
+        selectedZonesJson,
+        legalKey === "velocity" ? "pending_baseline" : "not_applicable",
         contractNumber,
-        total_amount,
-        sessions_included,
-        terms_and_conditions || "Términos y condiciones estándar del servicio.",
+        amount,
+        sessions,
+        contractTerms,
         createdBy,
       ],
     );
@@ -4550,6 +5534,9 @@ const createContract: RequestHandler = async (req, res) => {
         patient_name: patientName,
         patient_email: patient.email,
         service_name: service.name,
+        legal_template: legalKey,
+        selected_zone: zoneLabel || null,
+        selected_zones: zonePick.zones,
       },
     });
   } catch (error) {
@@ -4832,12 +5819,12 @@ const createManualAppointment: RequestHandler = async (req, res) => {
       notes,
       payment_amount,
       payment_method,
-      created_by,
+      selected_areas,
     } = req.body;
 
     const adminId = (req as express.Request & { admin?: AdminJwtPayload }).admin
       ?.id;
-    const createdBy = created_by || adminId;
+    const createdBy = adminId;
 
     if (!service_id || !scheduled_date || !scheduled_time) {
       return res.status(400).json({
@@ -4849,7 +5836,41 @@ const createManualAppointment: RequestHandler = async (req, res) => {
     if (!createdBy) {
       return res.status(400).json({
         success: false,
-        message: "created_by (admin user ID) is required",
+        message: "Se requiere un administrador autenticado",
+      });
+    }
+
+    const [serviceRows] = await pool.query<any[]>(
+      "SELECT * FROM services WHERE id = ?",
+      [service_id],
+    );
+    if (serviceRows.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Service not found" });
+    }
+    const service = mapServiceRow(serviceRows[0]);
+    const velocityCatalog =
+      service.legal_template === "velocity"
+        ? await loadVelocityAreaCatalog()
+        : [];
+    const zonePick = resolveSelectedZones(
+      service,
+      selected_areas,
+      velocityCatalog,
+    );
+    if (zonePick.ok === false) {
+      return res.status(400).json({
+        success: false,
+        message: zonePick.error,
+      });
+    }
+
+    const paymentMethod = normalizePaymentMethod(payment_method);
+    if (!paymentMethod) {
+      return res.status(400).json({
+        success: false,
+        message: "Método de pago inválido",
       });
     }
 
@@ -4900,7 +5921,8 @@ const createManualAppointment: RequestHandler = async (req, res) => {
     }
 
     const [patients] = await pool.query<any[]>(
-      "SELECT id FROM patients WHERE id = ?",
+      `SELECT id, first_name, last_name, email, phone, date_of_birth
+       FROM patients WHERE id = ?`,
       [resolvedPatientId],
     );
     if (patients.length === 0) {
@@ -4908,47 +5930,137 @@ const createManualAppointment: RequestHandler = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Patient not found" });
     }
-
-    // Validate service exists
-    const [services] = await pool.query<any[]>(
-      "SELECT id, name, duration_minutes, price FROM services WHERE id = ?",
-      [service_id],
-    );
-    if (services.length === 0) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Service not found" });
-    }
-    const service = services[0];
+    const patient = patients[0];
 
     const scheduledAt = `${scheduled_date} ${normalizeClockTime(scheduled_time)}`;
-    const paymentMethod = normalizePaymentMethod(payment_method);
-    if (!paymentMethod) {
+    const blockedReason = await findBlockedSlotReason(
+      scheduled_date,
+      scheduled_time,
+    );
+    if (blockedReason) {
       return res.status(400).json({
         success: false,
-        message: "Método de pago inválido",
+        message: `El horario no está disponible. Motivo: ${blockedReason}`,
+        reason: "blocked_date",
       });
     }
-
-    // Create appointment
-    const [result] = await pool.query<any>(
-      `INSERT INTO appointments
-       (patient_id, service_id, scheduled_at, duration_minutes, status, notes, created_by, booked_for_self, booking_source)
-       VALUES (?, ?, ?, ?, 'scheduled', ?, ?, 1, 'receptionist')`,
-      [
-        resolvedPatientId,
-        service_id,
-        scheduledAt,
-        service.duration_minutes,
-        notes || null,
-        createdBy,
-      ],
+    const durationMinutes = computePackageDuration(
+      service.legal_template,
+      service.duration_minutes,
+      zonePick.zones.length,
     );
+    const catalogAmount = zonePick.zones.length
+      ? zonePick.totalPrice
+      : Number(service.price || 0);
+    const openPackage = await findOpenPackageContract(
+      resolvedPatientId,
+      service,
+      zonePick.zones,
+    );
+    const skipPayment = Boolean(openPackage && openPackage.remaining > 0);
+    const areaNote = zonePick.zoneLabel ? `Área: ${zonePick.zoneLabel}` : "";
+    const combinedNotes =
+      [areaNote, notes].filter((part) => String(part || "").trim()).join("\n") ||
+      null;
 
-    const appointmentId = result.insertId;
+    let appointmentId: number;
+    try {
+      appointmentId = await withScheduleDayLock(
+        scheduled_date,
+        async (conn) => {
+          const overlapId = await findOverlappingAppointment(
+            conn,
+            scheduledAt,
+            durationMinutes,
+          );
+          if (overlapId) {
+            throw new SlotConflictError();
+          }
+          const [created] = await conn.query<any>(
+            `INSERT INTO appointments
+             (patient_id, service_id, scheduled_at, duration_minutes, status, notes, created_by, booked_for_self, booking_source)
+             VALUES (?, ?, ?, ?, 'scheduled', ?, ?, 1, 'receptionist')`,
+            [
+              resolvedPatientId,
+              service_id,
+              scheduledAt,
+              durationMinutes,
+              combinedNotes,
+              createdBy,
+            ],
+          );
+          return Number(created.insertId);
+        },
+      );
+    } catch (error) {
+      if (error instanceof SlotConflictError) {
+        return res.status(409).json({
+          success: false,
+          message: error.message,
+          reason: error.reason,
+        });
+      }
+      throw error;
+    }
+    let contractId = openPackage?.id || null;
+    if (!contractId && service.legal_template) {
+      const legalKey = isLegalTemplate(service.legal_template)
+        ? service.legal_template
+        : null;
+      const contractNumber = `CON-${Date.now()}-${resolvedPatientId}`;
+      const terms = await buildFilledContractTerms({
+        legalTemplate: legalKey,
+        patientName: `${patient.first_name} ${patient.last_name}`.trim(),
+        email: patient.email,
+        phone: patient.phone,
+        dateOfBirth: patient.date_of_birth
+          ? String(patient.date_of_birth).slice(0, 10)
+          : null,
+        packageName: service.name,
+        zone: zonePick.zoneLabel,
+        sessions: service.package_sessions || 1,
+        price: catalogAmount,
+        folio: contractNumber,
+      });
+      const [created] = await pool.query<any>(
+        `INSERT INTO contracts (
+          patient_id, service_id, legal_template, selected_zone, selected_zones,
+          guarantee_status, contract_number, status, total_amount,
+          sessions_included, terms_and_conditions, created_by, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, NOW())`,
+        [
+          resolvedPatientId,
+          service.id,
+          legalKey,
+          zonePick.zoneLabel || null,
+          zonePick.zones.length ? JSON.stringify(zonePick.zones) : null,
+          legalKey === "velocity" ? "pending_baseline" : "not_applicable",
+          contractNumber,
+          catalogAmount,
+          service.package_sessions || 1,
+          terms,
+          createdBy,
+        ],
+      );
+      contractId = created.insertId;
+    }
+    if (contractId) {
+      await pool.query(
+        `UPDATE appointments SET contract_id = ? WHERE id = ?`,
+        [contractId, appointmentId],
+      );
+    }
 
-    // Create payment record if amount provided
-    if (payment_amount && parseFloat(payment_amount) > 0) {
+    let recordedAmount = 0;
+    if (!skipPayment && payment_amount && parseFloat(payment_amount) > 0) {
+      recordedAmount = service.legal_template
+        ? catalogAmount
+        : parseFloat(payment_amount);
+      if (service.legal_template && parseFloat(payment_amount) !== catalogAmount) {
+        console.warn(
+          `[manual-appointment] Client amount ${payment_amount} ignored; recording catalog price ${catalogAmount}`,
+        );
+      }
       await pool.query<any>(
         `INSERT INTO payments
          (appointment_id, patient_id, amount, payment_method, payment_status, processed_by, processed_at)
@@ -4956,37 +6068,35 @@ const createManualAppointment: RequestHandler = async (req, res) => {
         [
           appointmentId,
           resolvedPatientId,
-          parseFloat(payment_amount),
+          recordedAmount,
           paymentMethod,
           createdBy,
         ],
       );
     }
 
-    // Fetch patient and service data for email notification
-    const [patientRows] = await pool.query<any[]>(
-      `SELECT p.email, CONCAT(p.first_name, ' ', p.last_name) AS full_name
-       FROM patients p WHERE p.id = ?`,
-      [resolvedPatientId],
+    sendManualAppointmentEmail(patient.email, `${patient.first_name} ${patient.last_name}`.trim(), {
+      serviceName: service.name || "",
+      date: scheduled_date,
+      time: scheduled_time,
+      duration: durationMinutes,
+      amount: skipPayment ? 0 : recordedAmount,
+      paymentMethod,
+    }).catch((err) =>
+      console.error("Failed to send manual appointment email:", err),
     );
-    if (patientRows.length > 0) {
-      const patient = patientRows[0];
-      sendManualAppointmentEmail(patient.email, patient.full_name, {
-        serviceName: services[0].name || "",
-        date: scheduled_date,
-        time: scheduled_time,
-        duration: service.duration_minutes,
-        amount: payment_amount ? parseFloat(payment_amount) : 0,
-        paymentMethod,
-      }).catch((err) =>
-        console.error("Failed to send manual appointment email:", err),
-      );
-    }
 
     return res.status(201).json({
       success: true,
       message: "Appointment created successfully",
-      data: { id: appointmentId, patient_id: resolvedPatientId },
+      data: {
+        id: appointmentId,
+        patient_id: resolvedPatientId,
+        contract_id: contractId,
+        skip_payment: skipPayment,
+        catalog_amount: catalogAmount,
+        duration_minutes: durationMinutes,
+      },
     });
   } catch (error) {
     console.error("Error creating manual appointment:", error);
@@ -5003,7 +6113,6 @@ const createManualAppointment: RequestHandler = async (req, res) => {
 const checkInAppointment: RequestHandler = async (req, res) => {
   try {
     const { id } = req.params;
-    const { skip_contract_check } = req.body;
 
     // Check if appointment exists and is scheduled
     const [appointments] = await pool.query<any[]>(
@@ -5037,24 +6146,21 @@ const checkInAppointment: RequestHandler = async (req, res) => {
       });
     }
 
-    // Check if contract is required and signed
-    if (!skip_contract_check) {
-      if (!appointment.contract_id) {
-        return res.status(400).json({
-          success: false,
-          message: "Contract required for check-in",
-          requires_contract: true,
-        });
-      }
+    if (!appointment.contract_id) {
+      return res.status(400).json({
+        success: false,
+        message: "Contract required for check-in",
+        requires_contract: true,
+      });
+    }
 
-      if (appointment.contract_status !== "signed") {
-        return res.status(400).json({
-          success: false,
-          message: "Contract must be signed before check-in",
-          requires_signature: true,
-          contract_id: appointment.contract_id,
-        });
-      }
+    if (appointment.contract_status !== "signed") {
+      return res.status(400).json({
+        success: false,
+        message: "Contract must be signed before check-in",
+        requires_signature: true,
+        contract_id: appointment.contract_id,
+      });
     }
 
     // Update appointment - don't update updated_at to preserve scheduled_at
@@ -5241,7 +6347,7 @@ const rescheduleAdminAppointment: RequestHandler = async (req, res) => {
 
     // Fetch appointment details for email notification
     const [appointmentRows] = await pool.query<any[]>(
-      `SELECT a.scheduled_at, s.name AS service_name,
+      `SELECT a.scheduled_at, a.duration_minutes, s.name AS service_name,
               p.email AS patient_email,
               CONCAT(p.first_name, ' ', p.last_name) AS patient_name
        FROM appointments a
@@ -5262,38 +6368,49 @@ const rescheduleAdminAppointment: RequestHandler = async (req, res) => {
     const oldDateStr = oldScheduledDate.toISOString().split("T")[0];
     const oldTimeStr = oldScheduledDate.toTimeString().slice(0, 5);
 
-    // Combine date and time into timestamp
-    const newScheduledAt = `${appointment_date} ${appointment_time}:00`;
-
-    // Check for conflicts
-    const [conflicts] = await pool.query<any[]>(
-      "SELECT id FROM appointments WHERE scheduled_at = ? AND status != 'cancelled' AND id != ?",
-      [newScheduledAt, id],
-    );
-
-    if (conflicts.length > 0) {
-      return res.status(409).json({
-        success: false,
-        message: "Time slot is already booked",
+    const newScheduledAt = `${appointment_date} ${normalizeClockTime(appointment_time)}`;
+    const durationMinutes = Number(appt.duration_minutes || 60);
+    try {
+      await withScheduleDayLock(appointment_date, async (conn) => {
+        const overlapId = await findOverlappingAppointment(
+          conn,
+          newScheduledAt,
+          durationMinutes,
+          Number(id),
+        );
+        if (overlapId) {
+          throw new SlotConflictError("Time slot is already booked");
+        }
+        const [result] = await conn.query<any>(
+          `UPDATE appointments 
+           SET scheduled_at = ?, 
+               notes = CONCAT(COALESCE(notes, ''), 
+               CASE WHEN notes IS NULL OR notes = '' THEN '' ELSE '\n' END, 
+               'Rescheduled by admin: ', COALESCE(?, 'No reason provided')), 
+               updated_at = NOW()
+           WHERE id = ?`,
+          [newScheduledAt, notes, id],
+        );
+        if (result.affectedRows === 0) {
+          const missing = new Error("Appointment not found");
+          (missing as Error & { status?: number }).status = 404;
+          throw missing;
+        }
       });
-    }
-
-    // Update appointment
-    const [result] = await pool.query<any>(
-      `UPDATE appointments 
-       SET scheduled_at = ?, 
-           notes = CONCAT(COALESCE(notes, ''), 
-           CASE WHEN notes IS NULL OR notes = '' THEN '' ELSE '\n' END, 
-           'Rescheduled by admin: ', COALESCE(?, 'No reason provided')), 
-           updated_at = NOW()
-       WHERE id = ?`,
-      [newScheduledAt, notes, id],
-    );
-
-    if (result.affectedRows === 0) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Appointment not found" });
+    } catch (error) {
+      if (error instanceof SlotConflictError) {
+        return res.status(409).json({
+          success: false,
+          message: error.message,
+          reason: error.reason,
+        });
+      }
+      if ((error as Error & { status?: number }).status === 404) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Appointment not found" });
+      }
+      throw error;
     }
 
     // Send reschedule email (non-blocking)
@@ -5356,6 +6473,13 @@ const generateCheckInToken: RequestHandler = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Esta cita ya fue registrada",
+      });
+    }
+
+    if (appointment.status === "cancelled") {
+      return res.status(400).json({
+        success: false,
+        message: "No se puede generar check-in para una cita cancelada",
       });
     }
 
@@ -5425,6 +6549,7 @@ const validateCheckInToken: RequestHandler = async (req, res) => {
         a.scheduled_at,
         a.duration_minutes,
         a.status,
+        a.notes,
         a.check_in_at,
         a.check_in_token_expires_at,
         CONCAT(p.first_name, ' ', p.last_name) as patient_name,
@@ -5432,8 +6557,15 @@ const validateCheckInToken: RequestHandler = async (req, res) => {
         p.phone as patient_phone,
         s.name as service_name,
         s.price as service_price,
+        s.package_sessions,
+        s.legal_template as service_legal_template,
+        p.date_of_birth,
         DATE(a.scheduled_at) as scheduled_date,
         TIME(a.scheduled_at) as scheduled_time,
+        c.id as contract_id,
+        c.contract_number,
+        c.selected_zone,
+        c.legal_template as contract_legal_template,
         c.terms_and_conditions as contract_terms_custom
        FROM appointments a 
        JOIN patients p ON a.patient_id = p.id 
@@ -5451,6 +6583,13 @@ const validateCheckInToken: RequestHandler = async (req, res) => {
     }
 
     const appointment = appointments[0];
+
+    if (appointment.status === "cancelled") {
+      return res.status(400).json({
+        success: false,
+        message: "No se puede hacer check-in de una cita cancelada",
+      });
+    }
 
     // Check if token expired
     if (
@@ -5478,22 +6617,47 @@ const validateCheckInToken: RequestHandler = async (req, res) => {
       [appointment.id, token, req.ip, req.headers["user-agent"]],
     );
 
-    // Get default contract terms from database
-    const [defaultTerms] = await pool.query<any[]>(
-      `SELECT setting_value FROM system_settings WHERE setting_key = 'default_contract_terms'`,
-    );
-
+    const legalKey = isLegalTemplate(
+      appointment.contract_legal_template || appointment.service_legal_template,
+    )
+      ? ((appointment.contract_legal_template ||
+          appointment.service_legal_template) as LegalTemplateKey)
+      : null;
+    const zoneFromNotes = extractAreaNoteLine(appointment.notes);
+    const zone =
+      appointment.selected_zone || zoneFromNotes || "";
     const contractTerms =
       appointment.contract_terms_custom ||
-      (defaultTerms.length > 0
-        ? defaultTerms[0].setting_value
-        : "Términos y condiciones del servicio.");
+      (await buildFilledContractTerms({
+        legalTemplate: legalKey,
+        patientName: appointment.patient_name,
+        email: appointment.patient_email,
+        phone: appointment.patient_phone,
+        dateOfBirth: appointment.date_of_birth
+          ? String(appointment.date_of_birth).slice(0, 10)
+          : null,
+        packageName: appointment.service_name,
+        zone,
+        sessions: Number(appointment.package_sessions || 1),
+        price: Number(appointment.service_price || 0),
+        folio: appointment.contract_number,
+      }));
 
     res.json({
       success: true,
       data: {
         appointment,
         contract_terms: contractTerms,
+        consent: legalKey
+          ? {
+              legal_template: legalKey,
+              intro: defaultConsentIntro(legalKey),
+              questions: CONSENT_QUESTIONS[legalKey],
+              zone,
+              requires_minors_annex: legalKey !== "bliss",
+              patient_is_minor: isPatientMinor(appointment.date_of_birth),
+            }
+          : null,
       },
     });
   } catch (error) {
@@ -5511,7 +6675,13 @@ const validateCheckInToken: RequestHandler = async (req, res) => {
  */
 const completeCheckIn: RequestHandler = async (req, res) => {
   try {
-    const { token, signature_data, terms_accepted, pdf_base64 } = req.body;
+    const {
+      token,
+      signature_data,
+      terms_accepted,
+      pdf_base64,
+      consent,
+    } = req.body;
 
     if (!token || !signature_data || !terms_accepted) {
       return res.status(400).json({
@@ -5528,8 +6698,15 @@ const completeCheckIn: RequestHandler = async (req, res) => {
         p.email as patient_email,
         s.name as service_name,
         s.price as service_price,
+        s.package_sessions,
+        s.legal_template as service_legal_template,
+        p.phone as patient_phone,
+        p.date_of_birth,
+        a.notes,
         c.id as existing_contract_id,
         c.contract_number as existing_contract_number,
+        c.selected_zone,
+        c.legal_template as contract_legal_template,
         c.terms_and_conditions as existing_terms
        FROM appointments a 
        JOIN patients p ON a.patient_id = p.id 
@@ -5547,6 +6724,13 @@ const completeCheckIn: RequestHandler = async (req, res) => {
     }
 
     const appointment = appointments[0];
+
+    if (appointment.status === "cancelled") {
+      return res.status(400).json({
+        success: false,
+        message: "No se puede hacer check-in de una cita cancelada",
+      });
+    }
 
     if (
       appointment.check_in_token_expires_at &&
@@ -5571,17 +6755,51 @@ const completeCheckIn: RequestHandler = async (req, res) => {
       appointment.existing_contract_number ||
       `CON-${Date.now()}-${appointment.patient_id}`;
 
-    // Fetch the EXACT terms that were shown to the patient during check-in
-    // This ensures legal compliance - we store what they actually saw and signed
-    const [defaultTermsRows] = await pool.query<any[]>(
-      `SELECT setting_value FROM system_settings WHERE setting_key = 'default_contract_terms'`,
-    );
-
+    const legalKey = isLegalTemplate(
+      appointment.contract_legal_template || appointment.service_legal_template,
+    )
+      ? ((appointment.contract_legal_template ||
+          appointment.service_legal_template) as LegalTemplateKey)
+      : null;
+    const zone =
+      appointment.selected_zone || extractAreaNoteLine(appointment.notes);
+    const packageSessions = Number(appointment.package_sessions || 1);
     const contractTerms =
       appointment.existing_terms ||
-      (defaultTermsRows.length > 0
-        ? defaultTermsRows[0].setting_value
-        : "Términos y condiciones del servicio.");
+      (await buildFilledContractTerms({
+        legalTemplate: legalKey,
+        patientName: appointment.patient_name,
+        email: appointment.patient_email,
+        phone: appointment.patient_phone,
+        dateOfBirth: appointment.date_of_birth
+          ? String(appointment.date_of_birth).slice(0, 10)
+          : null,
+        packageName: appointment.service_name,
+        zone,
+        sessions: packageSessions,
+        price: Number(appointment.service_price || 0),
+        folio: appointment.existing_contract_number,
+      }));
+
+    if (legalKey && !isConsentComplete(legalKey, consent)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Este servicio requiere consentimiento informado: responde el cuestionario, acepta el aviso de salud y firma.",
+      });
+    }
+    const annexRequired = isMinorsAnnexRequired(
+      legalKey,
+      appointment.date_of_birth,
+      consent,
+    );
+    if (annexRequired && !isMinorsAnnexComplete(consent)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Anexo de menores: indica que el paciente es menor y captura nombre, parentesco y firma del tutor.",
+      });
+    }
 
     // Convert base64 PDF to Buffer for email attachment
     let pdfBuffer: Buffer | null = null;
@@ -5595,6 +6813,12 @@ const completeCheckIn: RequestHandler = async (req, res) => {
       }
     }
 
+    const selectedZones = await resolveCheckInSelectedZones(legalKey, zone);
+    const selectedZonesJson =
+      selectedZones.length > 0 ? JSON.stringify(selectedZones) : null;
+    const guaranteeStatus =
+      legalKey === "velocity" ? "pending_baseline" : "not_applicable";
+
     let contractId = appointment.existing_contract_id as number | null;
     if (contractId) {
       await pool.query(
@@ -5606,7 +6830,15 @@ const completeCheckIn: RequestHandler = async (req, res) => {
              signed_by = NULL,
              signature_canvas_data = ?,
              signature_ip_address = ?,
-             signature_user_agent = ?
+             signature_user_agent = ?,
+             selected_zones = COALESCE(selected_zones, ?),
+             legal_template = COALESCE(legal_template, ?),
+             selected_zone = COALESCE(selected_zone, ?),
+             guarantee_status = CASE
+               WHEN ? = 'velocity' AND (guarantee_status IS NULL OR guarantee_status = 'not_applicable')
+               THEN 'pending_baseline'
+               ELSE guarantee_status
+             END
          WHERE id = ?`,
         [
           signature_data,
@@ -5615,6 +6847,10 @@ const completeCheckIn: RequestHandler = async (req, res) => {
           signature_data,
           req.ip,
           req.headers["user-agent"] || null,
+          selectedZonesJson,
+          legalKey,
+          zone || null,
+          legalKey,
           contractId,
         ],
       );
@@ -5628,15 +6864,21 @@ const completeCheckIn: RequestHandler = async (req, res) => {
       }
       const [created] = await pool.query<any>(
         `INSERT INTO contracts 
-         (patient_id, service_id, contract_number, status, total_amount, 
+         (patient_id, service_id, legal_template, selected_zone, selected_zones,
+          guarantee_status, contract_number, status, total_amount, 
           sessions_included, terms_and_conditions, signed_terms, signature_data, signed_at, 
           signed_by, created_by, pdf_url, signature_canvas_data, signature_ip_address, signature_user_agent)
-         VALUES (?, ?, ?, 'signed', ?, 1, ?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'signed', ?, ?, ?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?)`,
         [
           appointment.patient_id,
           appointment.service_id,
+          legalKey,
+          zone || null,
+          selectedZonesJson,
+          guaranteeStatus,
           contractNumber,
           appointment.service_price,
+          packageSessions,
           contractTerms,
           contractTerms,
           signature_data,
@@ -5662,6 +6904,57 @@ const completeCheckIn: RequestHandler = async (req, res) => {
        WHERE id = ?`,
       [now, signature_data, now, req.ip, contractId, appointment.id],
     );
+
+    if (contractId) {
+      await pool.query(
+        `UPDATE contracts
+         SET sessions_completed = LEAST(sessions_included, sessions_completed + 1),
+             legal_template = COALESCE(legal_template, ?),
+             selected_zone = COALESCE(selected_zone, ?),
+             updated_at = NOW()
+         WHERE id = ?`,
+        [legalKey, zone || null, contractId],
+      );
+    }
+
+    if (legalKey && consent?.signature) {
+      const annex = consentAnnexPayload(consent);
+      const persistMinor = annexRequired || annex.is_minor;
+      const snapshot = [
+        defaultConsentIntro(legalKey),
+        `Zona: ${zone}`,
+        JSON.stringify(consent.health_answers || {}),
+        persistMinor
+          ? `Anexo menores: ${annex.guardian_name} (${annex.guardian_relationship})`
+          : "",
+      ].join("\n");
+      await pool.query(
+        `INSERT INTO consents
+           (patient_id, contract_id, appointment_id, service_id, legal_template, status, zone,
+            health_answers, data_health_consent, photos_followup, patient_signature, patient_signed_at, signed_snapshot,
+            is_minor, guardian_name, guardian_relationship, guardian_signature, guardian_signed_at)
+         VALUES (?, ?, ?, ?, ?, 'pending_staff', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          appointment.patient_id,
+          contractId,
+          appointment.id,
+          appointment.service_id,
+          legalKey,
+          zone || null,
+          JSON.stringify(consent.health_answers || {}),
+          consent.data_health_consent ? 1 : 0,
+          consent.photos_followup ? 1 : 0,
+          consent.signature,
+          now,
+          snapshot,
+          persistMinor ? 1 : 0,
+          persistMinor ? annex.guardian_name : null,
+          persistMinor ? annex.guardian_relationship : null,
+          persistMinor ? annex.guardian_signature : null,
+          persistMinor ? now : null,
+        ],
+      );
+    }
 
     // Log signature completion
     await pool.query(
@@ -7871,6 +9164,440 @@ const deleteBlockedDate: RequestHandler = async (req, res) => {
   }
 };
 
+const getPatientPackages: RequestHandler = async (req, res) => {
+  try {
+    const patientId = Number(req.query.patient_id || req.body?.patient_id);
+    if (!patientId) {
+      return res.status(400).json({
+        success: false,
+        message: "Patient ID is required",
+      });
+    }
+    const ok = await verifyPatientSession(patientId);
+    if (!ok) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized - please login again",
+      });
+    }
+    const [rows] = await pool.query<any[]>(
+      `SELECT c.id, c.service_id, c.selected_zone, c.selected_zones, c.sessions_included,
+              c.sessions_completed, c.status, c.legal_template, c.guarantee_status,
+              c.extra_sessions_granted, s.name as service_name,
+              (SELECT COUNT(*) FROM appointments a
+                WHERE a.contract_id = c.id AND a.status NOT IN ('cancelled')) AS reserved,
+              (SELECT MAX(a.scheduled_at) FROM appointments a
+                WHERE a.contract_id = c.id AND a.status NOT IN ('cancelled')) AS last_scheduled
+       FROM contracts c
+       JOIN services s ON s.id = c.service_id
+       WHERE c.patient_id = ?
+         AND c.status IN ('draft', 'pending_signature', 'signed')
+       ORDER BY c.id DESC`,
+      [patientId],
+    );
+    res.json({
+      success: true,
+      data: rows.map((row) => {
+        const reserved = Number(row.reserved || 0);
+        const extras = Number(row.extra_sessions_granted || 0);
+        let remaining = Number(row.sessions_included) + extras - reserved;
+        if (row.guarantee_status === "active") {
+          remaining = Math.max(remaining, 1);
+        }
+        const lastScheduled = row.last_scheduled
+          ? new Date(row.last_scheduled)
+          : null;
+        return {
+          contract_id: Number(row.id),
+          service_id: Number(row.service_id),
+          service_name: row.service_name,
+          legal_template: row.legal_template,
+          zone: row.selected_zone,
+          zones: parseSelectedZones(row.selected_zones),
+          sessions_included: Number(row.sessions_included),
+          sessions_completed: Number(row.sessions_completed || 0),
+          extra_sessions_granted: extras,
+          remaining,
+          guarantee_status: row.guarantee_status || "not_applicable",
+          suggested_next_date:
+            row.legal_template === "velocity" &&
+            lastScheduled &&
+            !Number.isNaN(lastScheduled.getTime())
+              ? suggestedVelocityNextDate(lastScheduled, reserved)
+              : null,
+          status: row.status,
+        };
+      }),
+    });
+  } catch (error) {
+    console.error("Error fetching patient packages:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+const completeAdminConsent: RequestHandler = async (req, res) => {
+  try {
+    const admin = getAdminFromRequest(req);
+    if (!admin) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    const { id } = req.params;
+    const { clinical_conclusion, clinical_notes, signature } = req.body;
+    if (!clinical_conclusion || !signature) {
+      return res.status(400).json({
+        success: false,
+        message: "Conclusión clínica y firma del responsable son requeridas",
+      });
+    }
+    const allowed = ["apto", "no_apto", "pendiente", "no_contratado"];
+    if (!allowed.includes(clinical_conclusion)) {
+      return res.status(400).json({
+        success: false,
+        message: "Conclusión clínica inválida",
+      });
+    }
+    const [rows] = await pool.query<any[]>(
+      "SELECT id, status FROM consents WHERE id = ?",
+      [id],
+    );
+    if (!rows.length) {
+      return res.status(404).json({ success: false, message: "Consentimiento no encontrado" });
+    }
+    const nextStatus =
+      clinical_conclusion === "apto" ? "signed" : "pending_staff";
+    await pool.query(
+      `UPDATE consents
+       SET clinical_conclusion = ?,
+           clinical_notes = ?,
+           staff_user_id = ?,
+           staff_signature = ?,
+           staff_signed_at = NOW(),
+           status = ?,
+           updated_at = NOW()
+       WHERE id = ?`,
+      [
+        clinical_conclusion,
+        clinical_notes || null,
+        admin.id,
+        signature,
+        nextStatus,
+        id,
+      ],
+    );
+    res.json({ success: true, message: "Consentimiento clínico actualizado" });
+  } catch (error) {
+    console.error("Error completing consent:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+const saveContractMeasurements: RequestHandler = async (req, res) => {
+  try {
+    const admin = getAdminFromRequest(req);
+    if (!admin) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    const contractId = Number(req.params.id);
+    const { zone_id, zone_label, baseline_count, final_count, notes } =
+      req.body || {};
+    if (!zone_id) {
+      return res.status(400).json({
+        success: false,
+        message: "zone_id es requerido",
+      });
+    }
+    const [contracts] = await pool.query<any[]>(
+      `SELECT id, legal_template, selected_zone, selected_zones, guarantee_status
+       FROM contracts WHERE id = ?`,
+      [contractId],
+    );
+    if (!contracts.length) {
+      return res.status(404).json({ success: false, message: "Contrato no encontrado" });
+    }
+    const contract = contracts[0];
+    if (contract.legal_template !== "velocity") {
+      return res.status(400).json({
+        success: false,
+        message: "Las mediciones de vello solo aplican a contratos Velocity",
+      });
+    }
+    const zones = parseSelectedZones(contract.selected_zones);
+    const match =
+      zones.find((zone) => zone.id === String(zone_id)) ||
+      (contract.selected_zone && String(zone_id) === contract.selected_zone
+        ? { id: String(zone_id), label: contract.selected_zone }
+        : null);
+    const label = String(zone_label || match?.label || zone_id);
+    const [existingRows] = await pool.query<any[]>(
+      `SELECT baseline_count, final_count FROM contract_zone_measurements
+       WHERE contract_id = ? AND zone_id = ? LIMIT 1`,
+      [contractId, String(zone_id)],
+    );
+    const existing = existingRows[0] || {};
+    const baseline =
+      baseline_count === undefined || baseline_count === null || baseline_count === ""
+        ? existing.baseline_count != null
+          ? Number(existing.baseline_count)
+          : null
+        : Number(baseline_count);
+    const final =
+      final_count === undefined || final_count === null || final_count === ""
+        ? existing.final_count != null
+          ? Number(existing.final_count)
+          : null
+        : Number(final_count);
+    if (baseline != null && (!Number.isFinite(baseline) || baseline <= 0)) {
+      return res.status(400).json({
+        success: false,
+        message: "El conteo inicial debe ser un número mayor a 0",
+      });
+    }
+    if (final != null && (!Number.isFinite(final) || final < 0)) {
+      return res.status(400).json({
+        success: false,
+        message: "El conteo final debe ser un número mayor o igual a 0",
+      });
+    }
+    let reduction: number | null = null;
+    let met90: number | null = null;
+    if (baseline != null && baseline > 0 && final != null) {
+      reduction = Number((((baseline - final) / baseline) * 100).toFixed(2));
+      met90 = reduction >= 90 ? 1 : 0;
+    }
+    await pool.query(
+      `INSERT INTO contract_zone_measurements
+         (contract_id, zone_id, zone_label, baseline_count, baseline_at, final_count,
+          final_at, reduction_pct, met_90, notes, recorded_by)
+       VALUES (?, ?, ?, ?, IF(? IS NULL, NULL, NOW()), ?, IF(? IS NULL, NULL, NOW()), ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         zone_label = VALUES(zone_label),
+         baseline_count = COALESCE(VALUES(baseline_count), baseline_count),
+         baseline_at = IF(VALUES(baseline_count) IS NULL, baseline_at, NOW()),
+         final_count = COALESCE(VALUES(final_count), final_count),
+         final_at = IF(VALUES(final_count) IS NULL, final_at, NOW()),
+         reduction_pct = VALUES(reduction_pct),
+         met_90 = VALUES(met_90),
+         notes = COALESCE(VALUES(notes), notes),
+         recorded_by = VALUES(recorded_by)`,
+      [
+        contractId,
+        String(zone_id),
+        label,
+        baseline,
+        baseline,
+        final,
+        final,
+        reduction,
+        met90,
+        notes || null,
+        admin.id,
+      ],
+    );
+    if (
+      baseline != null &&
+      (contract.guarantee_status === "pending_baseline" ||
+        contract.guarantee_status === "not_applicable")
+    ) {
+      await pool.query(
+        `UPDATE contracts SET guarantee_status = 'in_progress' WHERE id = ?`,
+        [contractId],
+      );
+    }
+    res.json({ success: true, message: "Medición guardada" });
+  } catch (error) {
+    console.error("Error saving measurements:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+const evaluateContractGuarantee: RequestHandler = async (req, res) => {
+  try {
+    const admin = getAdminFromRequest(req);
+    if (!admin) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    const contractId = Number(req.params.id);
+    const [contracts] = await pool.query<any[]>(
+      `SELECT id, legal_template, sessions_included, sessions_completed, extra_sessions_granted
+       FROM contracts WHERE id = ?`,
+      [contractId],
+    );
+    if (!contracts.length) {
+      return res.status(404).json({ success: false, message: "Contrato no encontrado" });
+    }
+    const contract = contracts[0];
+    if (contract.legal_template !== "velocity") {
+      return res.status(400).json({
+        success: false,
+        message: "La póliza de garantía solo aplica a Velocity",
+      });
+    }
+    const [rows] = await pool.query<any[]>(
+      `SELECT zone_id, zone_label, baseline_count, final_count, reduction_pct, met_90
+       FROM contract_zone_measurements WHERE contract_id = ?`,
+      [contractId],
+    );
+    if (!rows.length) {
+      return res.status(400).json({
+        success: false,
+        message: "Registra conteo inicial y final por zona antes de evaluar",
+      });
+    }
+    const incomplete = rows.filter(
+      (row) =>
+        row.baseline_count == null ||
+        row.final_count == null ||
+        Number(row.baseline_count) <= 0,
+    );
+    if (incomplete.length) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Cada zona necesita conteo inicial mayor a 0 y conteo final para calcular la reducción",
+      });
+    }
+    const unmet = rows.filter((row) => Number(row.met_90) !== 1);
+    const nextStatus = unmet.length ? "active" : "met";
+    await pool.query(
+      `UPDATE contracts
+       SET guarantee_status = ?,
+           guarantee_evaluated_at = NOW(),
+           extra_sessions_granted = IF(? = 'active', extra_sessions_granted, extra_sessions_granted)
+       WHERE id = ?`,
+      [nextStatus, nextStatus, contractId],
+    );
+    res.json({
+      success: true,
+      message:
+        nextStatus === "active"
+          ? "Garantía activa: sesiones adicionales sin costo hasta alcanzar el 90 %"
+          : "Garantía cumplida: todas las zonas alcanzaron al menos 90 %",
+      data: {
+        guarantee_status: nextStatus,
+        zones: rows,
+        unmet_zones: unmet.map((row) => row.zone_label),
+      },
+    });
+  } catch (error) {
+    console.error("Error evaluating guarantee:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+const suspendContractGuarantee: RequestHandler = async (req, res) => {
+  try {
+    const admin = getAdminFromRequest(req);
+    if (!admin) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    const contractId = Number(req.params.id);
+    const { status } = req.body || {};
+    const allowed = ["suspended", "active", "in_progress"];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Estado de garantía inválido",
+      });
+    }
+    const [result] = await pool.query<any>(
+      `UPDATE contracts SET guarantee_status = ? WHERE id = ? AND legal_template = 'velocity'`,
+      [status, contractId],
+    );
+    if (!result.affectedRows) {
+      return res.status(404).json({
+        success: false,
+        message: "Contrato Velocity no encontrado",
+      });
+    }
+    res.json({ success: true, message: "Estado de garantía actualizado" });
+  } catch (error) {
+    console.error("Error updating guarantee status:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * POST /api/appointments/quote
+ * Authoritative catalog price / duration for the selected Venus package + zones.
+ * Optionally previews skip_payment when patient_id has remaining sessions or an active guarantee.
+ */
+const quoteAppointmentPackage: RequestHandler = async (req, res) => {
+  try {
+    const { service_id, selected_areas, patient_id } = req.body || {};
+    if (!service_id) {
+      return res.status(400).json({
+        success: false,
+        error: "service_id is required",
+      });
+    }
+
+    const [serviceRows] = await pool.query<any[]>(
+      "SELECT * FROM services WHERE id = ? AND is_active = 1",
+      [service_id],
+    );
+    if (serviceRows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Service not found",
+      });
+    }
+
+    const service = mapServiceRow(serviceRows[0]);
+    const velocityCatalog =
+      service.legal_template === "velocity"
+        ? await loadVelocityAreaCatalog()
+        : [];
+    const zonePick = resolveSelectedZones(
+      service,
+      selected_areas,
+      velocityCatalog,
+    );
+    if (zonePick.ok === false) {
+      return res.status(400).json({
+        success: false,
+        error: zonePick.error,
+      });
+    }
+
+    const durationMinutes = computePackageDuration(
+      service.legal_template,
+      service.duration_minutes,
+      zonePick.zones.length,
+    );
+    const openPackage = patient_id
+      ? await findOpenPackageContract(
+          Number(patient_id),
+          service,
+          zonePick.zones,
+        )
+      : null;
+    const skipPayment = Boolean(openPackage && openPackage.remaining > 0);
+
+    return res.json({
+      success: true,
+      data: {
+        service_id: service.id,
+        legal_template: service.legal_template,
+        zones: zonePick.zones,
+        zone_label: zonePick.zoneLabel,
+        amount: skipPayment ? 0 : zonePick.totalPrice,
+        catalog_amount: zonePick.totalPrice,
+        duration_minutes: durationMinutes,
+        package_sessions: service.package_sessions,
+        max_zones:
+          service.legal_template === "velocity" ? VELOCITY_MAX_ZONES : 1,
+        skip_payment: skipPayment,
+        remaining_sessions: openPackage?.remaining ?? null,
+        suggested_next_date: openPackage?.suggested_next_date ?? null,
+        guarantee_status: openPackage?.guarantee_status ?? null,
+      },
+    });
+  } catch (error) {
+    console.error("Error quoting appointment package:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
 /**
  * POST /api/appointments/book-with-payment
  * Create a new appointment with payment processing
@@ -7899,10 +9626,10 @@ const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
     } = req.body;
 
     // Validate required fields
-    if (!service_id || !scheduled_at || !payment_amount) {
+    if (!service_id || !scheduled_at) {
       return res.status(400).json({
         success: false,
-        error: "service_id, scheduled_at, and payment_amount are required",
+        error: "service_id and scheduled_at are required",
       });
     }
 
@@ -7911,6 +9638,35 @@ const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: "You must accept the terms and conditions and privacy policy",
+      });
+    }
+
+    const [serviceRows] = await pool.query<any[]>(
+      "SELECT * FROM services WHERE id = ? AND is_active = 1",
+      [service_id],
+    );
+
+    if (serviceRows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Service not found",
+      });
+    }
+
+    const service = mapServiceRow(serviceRows[0]);
+    const velocityCatalog =
+      service.legal_template === "velocity"
+        ? await loadVelocityAreaCatalog()
+        : [];
+    const zonePick = resolveSelectedZones(
+      service,
+      selected_areas,
+      velocityCatalog,
+    );
+    if (zonePick.ok === false) {
+      return res.status(400).json({
+        success: false,
+        error: zonePick.error,
       });
     }
 
@@ -7982,22 +9738,12 @@ const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
 
     console.log("✅ Patient verified:", patientRows[0].email);
 
-    // Get service details
-    const [serviceRows] = await pool.query<any[]>(
-      "SELECT * FROM services WHERE id = ? AND is_active = 1",
-      [service_id],
+    const appointmentDuration = computePackageDuration(
+      service.legal_template,
+      duration_minutes || service.duration_minutes,
+      zonePick.zones.length,
     );
-
-    if (serviceRows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: "Service not found",
-      });
-    }
-
-    const service = serviceRows[0];
-    const appointmentDuration = duration_minutes || service.duration_minutes;
-    const catalogAmount = Number(service.price);
+    const catalogAmount = zonePick.totalPrice;
     if (!Number.isFinite(catalogAmount) || catalogAmount <= 0) {
       return res.status(400).json({
         success: false,
@@ -8005,11 +9751,56 @@ const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
       });
     }
     const amountInCents = Math.round(catalogAmount * 100);
-    const areaNote =
-      Array.isArray(selected_areas) && selected_areas.length > 0
-        ? `Áreas: ${selected_areas.join(", ")}`
-        : "";
+    const areaNote = zonePick.zoneLabel ? `Área: ${zonePick.zoneLabel}` : "";
     const notesWithAreas = [areaNote, notes].filter(Boolean).join("\n") || "";
+    const openPackage = await findOpenPackageContract(
+      finalPatientId,
+      service,
+      zonePick.zones,
+    );
+    if (openPackage && openPackage.remaining > 0) {
+      const scheduledDate = new Date(scheduled_at);
+      if (Number.isNaN(scheduledDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          error: "Fecha de cita inválida",
+        });
+      }
+      const [created] = await pool.query<any>(
+        `INSERT INTO appointments
+           (patient_id, service_id, scheduled_at, duration_minutes, notes, status, created_by, booked_for_self, booked_by_patient_id, contract_id)
+         VALUES (?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?)`,
+        [
+          finalPatientId,
+          service_id,
+          scheduled_at,
+          appointmentDuration,
+          notesWithAreas || null,
+          null,
+          booked_for_self ? 1 : 0,
+          booked_by_patient_id || (booked_for_self ? finalPatientId : null),
+          openPackage.id,
+        ],
+      );
+      return res.json({
+        success: true,
+        data: {
+          skip_payment: true,
+          appointment_id: created.insertId,
+          contract_id: openPackage.id,
+          amount: 0,
+          catalog_amount: catalogAmount,
+          duration_minutes: appointmentDuration,
+          remaining_sessions: openPackage.remaining - 1,
+          suggested_next_date: openPackage.suggested_next_date,
+          guarantee_status: openPackage.guarantee_status,
+          message:
+            openPackage.guarantee_status === "active"
+              ? "Sesión adicional de garantía Velocity. No se cobra."
+              : "Sesión tomada de tu paquete. No se volvió a cobrar el precio completo.",
+        },
+      });
+    }
     if (
       payment_amount != null &&
       Math.abs(Number(payment_amount) - catalogAmount) > 0.009
@@ -8058,6 +9849,11 @@ const bookAppointmentWithPayment: RequestHandler = async (req, res) => {
                 (booked_for_self ? finalPatientId : "") ||
                 "",
             ),
+            selected_zone: zonePick.zoneLabel,
+            selected_zones: JSON.stringify(zonePick.zones),
+            legal_template: service.legal_template || "",
+            package_sessions: String(service.package_sessions || 1),
+            catalog_amount: String(catalogAmount),
           },
           automatic_payment_methods: {
             enabled: true,
@@ -8238,15 +10034,10 @@ const getAllServicesAdmin: RequestHandler = async (req, res) => {
   // Reuse the existing services handler but with admin privileges
   try {
     const [rows] = await pool.query<any[]>(
-      `SELECT id, name, description, category, price, duration_minutes, is_active, created_at, updated_at 
-       FROM services ORDER BY category, name`,
+      `SELECT * FROM services ORDER BY category, name`,
     );
 
-    const services = rows.map((row) => ({
-      ...row,
-      price: parseFloat(row.price),
-      duration_minutes: parseInt(row.duration_minutes, 10),
-    }));
+    const services = rows.map(mapServiceRow);
 
     res.json({
       success: true,
@@ -9301,53 +11092,45 @@ const reschedulePatientAppointment: RequestHandler = async (req, res) => {
       });
     }
 
-    // Check if new time slot is available
-    const [conflicts] = await pool.query<any[]>(
-      `SELECT id FROM appointments 
-       WHERE scheduled_at = ? 
-       AND status IN ('scheduled', 'confirmed') 
-       AND id != ?`,
-      [newScheduledAt, id],
-    );
-
-    if (conflicts.length > 0) {
-      return res.status(409).json({
-        success: false,
-        message: "The selected time slot is not available",
-      });
-    }
-
-    // Check if date/time is blocked
-    const [blockedDates] = await pool.query<any[]>(
-      `SELECT reason FROM blocked_dates
-       WHERE ? BETWEEN start_date AND end_date
-       AND (
-         all_day = 1
-         OR (
-           all_day = 0
-           AND ? >= start_time
-           AND ? < end_time
-         )
-       )`,
-      [new_date, new_time, new_time],
-    );
-
-    if (blockedDates.length > 0) {
+    const blockedReason = await findBlockedSlotReason(new_date, new_time);
+    if (blockedReason) {
       return res.status(400).json({
         success: false,
-        message: `The selected time is not available. Reason: ${blockedDates[0].reason}`,
+        message: `The selected time is not available. Reason: ${blockedReason}`,
       });
     }
 
-    // Update appointment
     const oldScheduledAt = appointment.scheduled_at;
-    await pool.query(
-      `UPDATE appointments 
-       SET scheduled_at = ?, 
-           notes = CONCAT(COALESCE(notes, ''), '\nRescheduled from ', ?, ' to ', ?, ' at ', NOW())
-       WHERE id = ?`,
-      [newScheduledAt, oldScheduledAt, newScheduledAt, id],
-    );
+    const durationMinutes = Number(appointment.duration_minutes || 60);
+    try {
+      await withScheduleDayLock(new_date, async (conn) => {
+        const overlapId = await findOverlappingAppointment(
+          conn,
+          newScheduledAt,
+          durationMinutes,
+          Number(id),
+        );
+        if (overlapId) {
+          throw new SlotConflictError("The selected time slot is not available");
+        }
+        await conn.query(
+          `UPDATE appointments 
+           SET scheduled_at = ?, 
+               notes = CONCAT(COALESCE(notes, ''), '\nRescheduled from ', ?, ' to ', ?, ' at ', NOW())
+           WHERE id = ?`,
+          [newScheduledAt, oldScheduledAt, newScheduledAt, id],
+        );
+      });
+    } catch (error) {
+      if (error instanceof SlotConflictError) {
+        return res.status(409).json({
+          success: false,
+          message: error.message,
+          reason: error.reason,
+        });
+      }
+      throw error;
+    }
 
     res.json({
       success: true,
@@ -9776,6 +11559,7 @@ function createServer() {
   expressApp.get("/api/check-in/validate/:token", validateCheckInToken);
   // Complete check-in with signature (public - for patient check-in page)
   expressApp.post("/api/check-in/complete", completeCheckIn);
+  expressApp.get("/api/patient/packages", getPatientPackages);
 
   // Auth routes
   expressApp.post("/api/auth/register", handleRegister);
@@ -9789,6 +11573,7 @@ function createServer() {
 
   // Appointment routes (specific routes first, then parameterized routes)
   expressApp.get("/api/appointments/booked-slots", getBookedTimeSlots);
+  expressApp.post("/api/appointments/quote", quoteAppointmentPackage);
   expressApp.post(
     "/api/appointments/book-with-payment",
     bookAppointmentWithPayment,
@@ -9929,11 +11714,24 @@ function createServer() {
     sendContractForSignature,
   );
   expressApp.put("/api/admin/contracts/:id/terms", updateContractTermsHandler);
+  expressApp.post(
+    "/api/admin/contracts/:id/measurements",
+    saveContractMeasurements,
+  );
+  expressApp.post(
+    "/api/admin/contracts/:id/evaluate-guarantee",
+    evaluateContractGuarantee,
+  );
+  expressApp.post(
+    "/api/admin/contracts/:id/guarantee-status",
+    suspendContractGuarantee,
+  );
   expressApp.get("/api/admin/contracts/:id/status", getContractStatus);
   expressApp.get(
     "/api/admin/contracts/appointment/:appointmentId",
     getContractByAppointment,
   );
+  expressApp.post("/api/admin/consents/:id/complete", completeAdminConsent);
 
   // Admin Payment Management
   expressApp.get("/api/admin/payments/stats", getPaymentStats);

@@ -36,6 +36,45 @@ export const submitAppointment = createAsyncThunk(
   },
 );
 
+export const fetchPatientPackages = createAsyncThunk(
+  "appointmentApi/patientPackages",
+  async (patientId: number, { rejectWithValue }) => {
+    try {
+      const response = await axios.get("/patient/packages", {
+        params: { patient_id: patientId },
+      });
+      if (response.data.success) return response.data.data;
+      return rejectWithValue("No se pudieron cargar los paquetes");
+    } catch (error) {
+      return rejectWithValue(
+        formatAxiosError(error, "No se pudieron cargar los paquetes"),
+      );
+    }
+  },
+);
+
+export const quoteAppointmentPackage = createAsyncThunk(
+  "appointmentApi/quote",
+  async (
+    payload: {
+      service_id: number;
+      selected_areas: string[];
+      patient_id?: number;
+    },
+    { rejectWithValue },
+  ) => {
+    try {
+      const response = await axios.post("/appointments/quote", payload);
+      if (response.data.success) return response.data.data;
+      return rejectWithValue("No se pudo cotizar el paquete");
+    } catch (error) {
+      return rejectWithValue(
+        formatAxiosError(error, "No se pudo cotizar el paquete"),
+      );
+    }
+  },
+);
+
 export const bookAppointmentWithPayment = createAsyncThunk(
   "appointmentApi/bookWithPayment",
   async (payload: Record<string, unknown>, { rejectWithValue }) => {

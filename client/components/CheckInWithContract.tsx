@@ -44,6 +44,10 @@ interface CheckInWithContractProps {
     service_price: number;
     scheduled_date: string;
     scheduled_time: string;
+    notes?: string | null;
+    contract_id?: number | null;
+    contract_number?: string | null;
+    contract_status?: string | null;
   } | null;
   onCheckInSuccess: () => void;
 }
@@ -67,30 +71,45 @@ export default function CheckInWithContract({
 
   const [contractForm, setContractForm] = useState({
     total_amount: 0,
-    sessions_included: 1,
-    terms_and_conditions: `TÉRMINOS Y CONDICIONES DEL SERVICIO
-
-1. ALCANCE DEL SERVICIO
-   El presente contrato cubre las sesiones especificadas del servicio contratado.
-
-2. PROGRAMACIÓN Y ASISTENCIA
-   - Las citas deben programarse con anticipación
-   - Se requiere llegar 10 minutos antes de la hora programada
-   - En caso de no asistir sin previo aviso, se considerará como sesión utilizada
-
-5. VIGENCIA
-   - Este contrato tiene una vigencia de 12 meses desde la fecha de firma
-   - Las sesiones no utilizadas dentro de este período expirarán
-
-6. PRIVACIDAD Y PROTECCIÓN DE DATOS
-   - Sus datos personales serán tratados conforme a nuestra política de privacidad
-   - La información médica es estrictamente confidencial
-
-Al firmar este documento, el paciente confirma haber leído, entendido y aceptado todos los términos y condiciones aquí establecidos.`,
+    sessions_included: 0,
   });
+
+  useEffect(() => {
+    if (!appointment) return;
+    setContractForm({
+      total_amount: Number(appointment.service_price || 0),
+      sessions_included: 0,
+    });
+  }, [appointment]);
 
   const isSigned = (status?: string | null, signedAt?: string | null) =>
     status === "signed" || status === "completed" || Boolean(signedAt);
+
+  const areasFromNotes = (notes?: string | null) => {
+    const match = String(notes || "").match(/Área:\s*([^\n\r]+)/);
+    if (!match) return [];
+    return match[1]
+      .split(/[\n,]/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+  };
+
+  const openLinkedContract = async (
+    id: number,
+    status?: string | null,
+    number?: string | null,
+    signedAt?: string | null,
+  ) => {
+    setContractId(id);
+    setContractNumber(number || null);
+    setContractStatus(status || null);
+    if (isSigned(status, signedAt)) {
+      setStep("complete");
+      await performCheckIn();
+      return;
+    }
+    await startPatientSigning(id);
+  };
 
   const checkExistingContract = async () => {
     if (!appointment) return;
@@ -99,25 +118,38 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
     setError(null);
 
     try {
+      if (appointment.contract_id) {
+        await openLinkedContract(
+          appointment.contract_id,
+          appointment.contract_status,
+          appointment.contract_number,
+        );
+        return;
+      }
+
       const contract = await dispatch(
         fetchContractByAppointment(appointment.id),
       ).unwrap();
 
       if (contract) {
-        setContractId(contract.contract_id);
-        setContractNumber(contract.contract_number || null);
-        setContractStatus(contract.contract_status);
-
-        if (isSigned(contract.contract_status, contract.signed_at)) {
-          setStep("complete");
-          await performCheckIn();
-        } else {
-          await startPatientSigning(contract.contract_id);
-        }
+        await openLinkedContract(
+          contract.contract_id,
+          contract.contract_status,
+          contract.contract_number,
+          contract.signed_at,
+        );
       } else {
         setStep("configure");
       }
     } catch (err: any) {
+      if (appointment.contract_id) {
+        await openLinkedContract(
+          appointment.contract_id,
+          appointment.contract_status,
+          appointment.contract_number,
+        );
+        return;
+      }
       setError(err || "Error checking contract status");
       setStep("configure");
     } finally {
@@ -132,14 +164,17 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
     setError(null);
 
     try {
+      const selectedAreas = areasFromNotes(appointment.notes);
       const created = await dispatch(
         createAdminContract({
           patient_id: appointment.patient_id,
           service_id: appointment.service_id,
           appointment_id: appointment.id,
           total_amount: contractForm.total_amount,
-          sessions_included: contractForm.sessions_included,
-          terms_and_conditions: contractForm.terms_and_conditions,
+          ...(selectedAreas.length ? { selected_areas: selectedAreas } : {}),
+          ...(contractForm.sessions_included > 0
+            ? { sessions_included: contractForm.sessions_included }
+            : {}),
         }),
       ).unwrap();
 
@@ -215,9 +250,8 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
     setCheckInUrl(null);
     setError(null);
     setContractForm({
-      total_amount: 0,
-      sessions_included: 1,
-      terms_and_conditions: contractForm.terms_and_conditions,
+      total_amount: Number(appointment?.service_price || 0),
+      sessions_included: 0,
     });
   };
 
@@ -282,8 +316,8 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
             <Alert>
               <FileText className="h-4 w-4" />
               <AlertDescription>
-                Ingresa los detalles del contrato. El paciente firmará en la
-                pantalla de check-in con el código QR.
+                El contrato usará el texto oficial del paquete Venus. El
+                paciente firmará en check-in con el código QR.
               </AlertDescription>
             </Alert>
 
@@ -303,17 +337,22 @@ Al firmar este documento, el paciente confirma haber leído, entendido y aceptad
                 />
               </div>
               <div>
-                <Label>Número de Sesiones *</Label>
+                <Label>Número de sesiones</Label>
                 <Input
                   type="number"
-                  value={contractForm.sessions_included}
+                  value={
+                    contractForm.sessions_included > 0
+                      ? contractForm.sessions_included
+                      : ""
+                  }
                   onChange={(e) =>
                     setContractForm({
                       ...contractForm,
-                      sessions_included: parseInt(e.target.value),
+                      sessions_included: parseInt(e.target.value, 10) || 0,
                     })
                   }
                   min={1}
+                  placeholder="Catálogo del paquete"
                 />
               </div>
             </div>

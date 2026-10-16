@@ -15,6 +15,7 @@ import {
   requireIntegrationEnv,
   signTestAdminAccessToken,
   uniqueTestEmail,
+  uniqueTestE164,
 } from "./testDbCleanup";
 
 const RUN_ID = `platform-${Date.now()}`;
@@ -158,5 +159,153 @@ describe("platform edge flows", () => {
     );
     expect(rows[0].payment_status).toBe("completed");
     expect(rows[0].refund_status).toBe("pending");
+  });
+
+  it("lists Venus packages with one-area catalogs and full package prices", async () => {
+    const res = await request(app).get("/api/services");
+    expect(res.status).toBe(200);
+    const list = res.body.data as Array<{
+      name: string;
+      price: number;
+      package_sessions: number;
+      legal_template: string;
+      area_catalog: Array<{ id: string; price?: number }>;
+    }>;
+    expect(list.length).toBeGreaterThan(0);
+    expect(list.every((s) => Array.isArray(s.area_catalog) && s.area_catalog.length > 0)).toBe(true);
+    expect(list.every((s) => s.package_sessions >= 5)).toBe(true);
+    expect(list.some((s) => s.name.includes("Bliss") && s.price === 25000)).toBe(true);
+    const velocity = list.filter((s) => s.legal_template === "velocity");
+    expect(velocity.length).toBeGreaterThan(0);
+    expect(
+      velocity.every((s) => s.area_catalog.every((area) => Number(area.price) > 0)),
+    ).toBe(true);
+  });
+
+  it("rejects a Velocity booking with more than four zones", async () => {
+    const [svc] = await pool.query<RowDataPacket[]>(
+      `SELECT id FROM services WHERE is_active = 1 AND legal_template = 'velocity' LIMIT 1`,
+    );
+    expect(svc.length).toBeGreaterThan(0);
+    const res = await request(app)
+      .post("/api/appointments/book-with-payment")
+      .send({
+        service_id: svc[0].id,
+        scheduled_at: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString(),
+        selected_areas: [
+          "bigote",
+          "axilas",
+          "bikini",
+          "brazo_completo",
+          "pecho_completo",
+        ],
+        payment_amount: 11900,
+        accepted_terms: true,
+        accepted_privacy: true,
+        patient_info: {
+          first_name: "Vel",
+          last_name: RUN_ID,
+          email: uniqueTestEmail(RUN_ID, "vel5"),
+          phone: uniqueTestE164(RUN_ID),
+        },
+      });
+    expect(res.status).toBe(400);
+    expect(String(res.body.error || res.body.message)).toMatch(/4 zonas|zona/i);
+  });
+
+  it("evaluates the Velocity 90% guarantee from hair counts", async () => {
+    const staffEmail = uniqueTestEmail(RUN_ID, "vel-ga");
+    const staffId = await insertTestStaffUser(pool, {
+      email: staffEmail,
+      role: "general_admin",
+      lastName: RUN_ID,
+    });
+    userIds.push(staffId);
+    const token = signTestAdminAccessToken({
+      id: staffId,
+      email: staffEmail,
+      role: "general_admin",
+    });
+    const [svc] = await pool.query<RowDataPacket[]>(
+      `SELECT id FROM services WHERE is_active = 1 AND legal_template = 'velocity' LIMIT 1`,
+    );
+    const [created] = await pool.query<ResultSetHeader>(
+      `INSERT INTO contracts
+         (patient_id, service_id, legal_template, selected_zone, selected_zones,
+          guarantee_status, contract_number, status, total_amount, sessions_included,
+          terms_and_conditions, created_by)
+       VALUES (?, ?, 'velocity', 'Axilas', ?, 'pending_baseline', ?, 'signed', 14900, 10, 'test', ?)`,
+      [
+        patientIds[0],
+        svc[0].id,
+        JSON.stringify([{ id: "axilas", label: "Axilas", size: "mediana", price: 14900 }]),
+        `CON-${RUN_ID}-vel`,
+        staffId,
+      ],
+    );
+    const contractId = created.insertId;
+
+    const emptyEval = await request(app)
+      .post(`/api/admin/contracts/${contractId}/evaluate-guarantee`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({});
+    expect(emptyEval.status).toBe(400);
+
+    const save = await request(app)
+      .post(`/api/admin/contracts/${contractId}/measurements`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        zone_id: "axilas",
+        zone_label: "Axilas",
+        baseline_count: 100,
+        final_count: 20,
+      });
+    expect(save.status).toBe(200);
+
+    const evalRes = await request(app)
+      .post(`/api/admin/contracts/${contractId}/evaluate-guarantee`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({});
+    expect(evalRes.status).toBe(200);
+    expect(evalRes.body.data.guarantee_status).toBe("active");
+
+    await request(app)
+      .post(`/api/admin/contracts/${contractId}/measurements`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        zone_id: "axilas",
+        final_count: 8,
+      });
+    const metRes = await request(app)
+      .post(`/api/admin/contracts/${contractId}/evaluate-guarantee`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({});
+    expect(metRes.status).toBe(200);
+    expect(metRes.body.data.guarantee_status).toBe("met");
+  });
+
+  it("rejects a Venus booking without exactly one catalog area", async () => {
+    const [svc] = await pool.query<RowDataPacket[]>(
+      `SELECT id FROM services WHERE is_active = 1 AND legal_template IS NOT NULL LIMIT 1`,
+    );
+    expect(svc.length).toBeGreaterThan(0);
+    const res = await request(app)
+      .post("/api/appointments/book-with-payment")
+      .send({
+        service_id: svc[0].id,
+        scheduled_at: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString(),
+        selected_areas: [],
+        payment_amount: 25000,
+        accepted_terms: true,
+        accepted_privacy: true,
+        patient_info: {
+          first_name: "Area",
+          last_name: RUN_ID,
+          email: uniqueTestEmail(RUN_ID, "area"),
+          phone: uniqueTestE164(RUN_ID),
+        },
+      });
+    expect(res.status).toBe(400);
+    expect(String(res.body.error || res.body.message)).toMatch(/zona|área/i);
   });
 });

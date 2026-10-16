@@ -39,7 +39,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Popover,
   PopoverContent,
@@ -72,6 +74,8 @@ import {
   updateAdminAppointmentStatus,
 } from "@/store/slices/calendarSlice";
 import { fetchServices } from "@/store/slices/servicesSlice";
+import { quoteAppointmentPackage } from "@/store/slices/appointmentApiSlice";
+import { checkDateBlocked } from "@/store/slices/blockedDatesSlice";
 import {
   format,
   parseISO,
@@ -115,10 +119,13 @@ interface CalendarAppointment {
   scheduled_date: string;
   scheduled_time: string;
   duration_minutes?: number;
-  status: "scheduled" | "confirmed" | "completed" | "cancelled" | "no_show";
+  status: "scheduled" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show";
   checked_in_at: string | null;
   booking_source: "online" | "walk_in" | "phone" | "admin";
   notes: string | null;
+  contract_id?: number | null;
+  contract_number?: string | null;
+  contract_status?: string | null;
 }
 
 interface CalendarEvent {
@@ -129,12 +136,31 @@ interface CalendarEvent {
   resource: CalendarAppointment;
 }
 
+interface ServiceArea {
+  id: string;
+  label: string;
+  size?: string;
+  price?: number;
+}
+
 interface Service {
   id: number;
   name: string;
   category: string;
   price: number;
   duration_minutes: number;
+  legal_template?: "bliss" | "legacy" | "velocity" | null;
+  area_catalog?: ServiceArea[];
+  package_sessions?: number;
+}
+
+interface ManualQuote {
+  skip_payment: boolean;
+  catalog_amount: number;
+  remaining_sessions: number | null;
+  duration_minutes: number;
+  suggested_next_date: string | null;
+  amount: number;
 }
 
 interface Patient {
@@ -202,6 +228,7 @@ export default function AppointmentsCalendar() {
   const [patientComboOpen, setPatientComboOpen] = useState(false);
   const [isNewPatient, setIsNewPatient] = useState(false);
   const [creatingAppointment, setCreatingAppointment] = useState(false);
+  const [collectPayment, setCollectPayment] = useState(true);
   const newPatientFormRef = useRef<FormikProps<NewPatientValues>>(null);
 
   const adminUser = JSON.parse(localStorage.getItem("adminUser") || "{}");
@@ -219,17 +246,135 @@ export default function AppointmentsCalendar() {
     patient_email: "",
     patient_phone: "",
     service_id: "",
+    selected_areas: [] as string[],
     scheduled_date: format(new Date(), "yyyy-MM-dd"),
     scheduled_time: "09:00",
     notes: "",
     payment_amount: 0,
     payment_method: "cash",
   });
+  const [manualQuote, setManualQuote] = useState<ManualQuote | null>(null);
+  const [slotWarning, setSlotWarning] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAppointments();
     loadServices();
   }, [currentDate, view]);
+
+  useEffect(() => {
+    const serviceId = parseInt(newAppointment.service_id || "0", 10);
+    const service = services.find((item) => item.id === serviceId);
+    if (!service?.legal_template || newAppointment.selected_areas.length === 0) {
+      setManualQuote(null);
+      return;
+    }
+    let cancelled = false;
+    dispatch(
+      quoteAppointmentPackage({
+        service_id: serviceId,
+        selected_areas: newAppointment.selected_areas,
+        patient_id: newAppointment.patient_id
+          ? Number(newAppointment.patient_id)
+          : undefined,
+      }),
+    )
+      .unwrap()
+      .then((quote) => {
+        if (cancelled) return;
+        setManualQuote({
+          skip_payment: Boolean(quote.skip_payment),
+          catalog_amount: Number(quote.catalog_amount || 0),
+          remaining_sessions:
+            quote.remaining_sessions == null
+              ? null
+              : Number(quote.remaining_sessions),
+          duration_minutes: Number(quote.duration_minutes || service.duration_minutes),
+          suggested_next_date: quote.suggested_next_date || null,
+          amount: Number(quote.amount || 0),
+        });
+        setNewAppointment((prev) => ({
+          ...prev,
+          payment_amount: quote.skip_payment ? 0 : Number(quote.catalog_amount || 0),
+        }));
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setManualQuote(null);
+          logger.error("Error quoting manual appointment:", error);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    dispatch,
+    services,
+    newAppointment.service_id,
+    newAppointment.selected_areas,
+    newAppointment.patient_id,
+  ]);
+
+  useEffect(() => {
+    const date = newAppointment.scheduled_date;
+    const time = newAppointment.scheduled_time;
+    if (!date || !time) {
+      setSlotWarning(null);
+      return;
+    }
+    const service = services.find(
+      (item) => item.id === parseInt(newAppointment.service_id || "0", 10),
+    );
+    const newDuration =
+      manualQuote?.duration_minutes || service?.duration_minutes || 60;
+    const toStamp = (day: string, clock: string) => {
+      const dayPart = (day || "").split("T")[0];
+      const timePart = clock.length === 5 ? `${clock}:00` : clock;
+      return new Date(`${dayPart}T${timePart}`).getTime();
+    };
+    const newStart = toStamp(date, time);
+    const newEnd = newStart + newDuration * 60000;
+    const taken = appointments.some((apt) => {
+      if (
+        apt.status !== "scheduled" &&
+        apt.status !== "confirmed" &&
+        apt.status !== "in_progress"
+      ) {
+        return false;
+      }
+      const start = toStamp(apt.scheduled_date, apt.scheduled_time);
+      const end = start + (apt.duration_minutes || 60) * 60000;
+      return newStart < end && start < newEnd;
+    });
+    if (taken) {
+      setSlotWarning("Este horario se cruza con otra cita");
+      return;
+    }
+    let cancelled = false;
+    dispatch(checkDateBlocked({ date, time }))
+      .unwrap()
+      .then((result) => {
+        if (cancelled) return;
+        setSlotWarning(
+          result.blocked
+            ? `El horario no está disponible${result.reason ? `. Motivo: ${result.reason}` : ""}`
+            : null,
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setSlotWarning(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    dispatch,
+    appointments,
+    newAppointment.scheduled_date,
+    newAppointment.scheduled_time,
+    newAppointment.service_id,
+    services,
+    manualQuote,
+  ]);
 
   useEffect(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -454,6 +599,43 @@ export default function AppointmentsCalendar() {
     setIsCheckInOpen(false);
   };
 
+  const selectedManualService = services.find(
+    (item) => item.id === parseInt(newAppointment.service_id || "0", 10),
+  );
+  const isVelocityManual = selectedManualService?.legal_template === "velocity";
+  const maxManualZones = isVelocityManual ? 4 : 1;
+  const getManualAreas = (service?: Service): ServiceArea[] => {
+    if (!service?.legal_template) return [];
+    if (service.legal_template === "velocity") {
+      const byId = new Map<string, ServiceArea>();
+      services
+        .filter((item) => item.legal_template === "velocity")
+        .forEach((item) => {
+          (item.area_catalog || []).forEach((area) => byId.set(area.id, area));
+        });
+      return Array.from(byId.values());
+    }
+    return service.area_catalog || [];
+  };
+  const manualAreas = getManualAreas(selectedManualService);
+
+  const toggleManualArea = (areaId: string) => {
+    setNewAppointment((prev) => {
+      const already = prev.selected_areas.includes(areaId);
+      if (already) {
+        return {
+          ...prev,
+          selected_areas: prev.selected_areas.filter((id) => id !== areaId),
+        };
+      }
+      if (isVelocityManual) {
+        if (prev.selected_areas.length >= 4) return prev;
+        return { ...prev, selected_areas: [...prev.selected_areas, areaId] };
+      }
+      return { ...prev, selected_areas: [areaId] };
+    });
+  };
+
   const handleCreateAppointment = async () => {
     if (!newAppointment.service_id || !newAppointment.scheduled_date || !newAppointment.scheduled_time) {
       toast({
@@ -463,14 +645,44 @@ export default function AppointmentsCalendar() {
       });
       return;
     }
+    if (selectedManualService?.legal_template && newAppointment.selected_areas.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Selecciona el área",
+        description: isVelocityManual
+          ? "Velocity requiere de 1 a 4 zonas del catálogo."
+          : "Este paquete incluye una sola zona.",
+      });
+      return;
+    }
+    if (slotWarning) {
+      toast({
+        variant: "destructive",
+        title: "Horario no disponible",
+        description: slotWarning,
+      });
+      return;
+    }
+    if (isVelocityManual && newAppointment.selected_areas.length > 4) {
+      toast({
+        variant: "destructive",
+        title: "Demasiadas zonas",
+        description: "El contrato Velocity permite hasta 4 zonas.",
+      });
+      return;
+    }
 
     let payload: Record<string, unknown> = {
       service_id: newAppointment.service_id,
       scheduled_date: newAppointment.scheduled_date,
       scheduled_time: newAppointment.scheduled_time,
       notes: newAppointment.notes,
-      payment_amount: newAppointment.payment_amount,
+      payment_amount:
+        manualQuote?.skip_payment || !collectPayment
+          ? 0
+          : newAppointment.payment_amount,
       payment_method: newAppointment.payment_method,
+      selected_areas: newAppointment.selected_areas,
     };
 
     if (isNewPatient) {
@@ -500,13 +712,15 @@ export default function AppointmentsCalendar() {
 
     setCreatingAppointment(true);
     try {
-      await dispatch(createManualAppointment(payload)).unwrap();
+      const created = await dispatch(createManualAppointment(payload)).unwrap();
       fetchAppointments();
       setIsCreateOpen(false);
       resetCreateForm();
       toast({
         title: "Cita creada",
-        description: "La cita se creó exitosamente",
+        description: created?.data?.skip_payment
+          ? "Se usó el paquete existente. Esta visita no se volvió a cobrar."
+          : "La cita se creó exitosamente",
       });
     } catch (error: any) {
       toast({
@@ -526,12 +740,16 @@ export default function AppointmentsCalendar() {
       patient_email: "",
       patient_phone: "",
       service_id: "",
+      selected_areas: [],
       scheduled_date: format(currentDate, "yyyy-MM-dd"),
       scheduled_time: "09:00",
       notes: "",
       payment_amount: 0,
       payment_method: "cash",
     });
+    setManualQuote(null);
+    setSlotWarning(null);
+    setCollectPayment(true);
     setPatients([]);
     setPatientSearch("");
     setPatientComboOpen(false);
@@ -850,6 +1068,33 @@ export default function AppointmentsCalendar() {
                     </p>
                   </div>
                 </div>
+                {(selectedAppointment.contract_number ||
+                  selectedAppointment.contract_id) && (
+                  <div className="min-w-0">
+                    <Label className="text-gray-500">Contrato</Label>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className="max-w-full truncate">
+                        {selectedAppointment.contract_number ||
+                          `Folio #${selectedAppointment.contract_id}`}
+                      </Badge>
+                      {selectedAppointment.contract_status && (
+                        <Badge
+                          variant={
+                            selectedAppointment.contract_status === "signed"
+                              ? "default"
+                              : "secondary"
+                          }
+                        >
+                          {selectedAppointment.contract_status === "draft"
+                            ? "Borrador"
+                            : selectedAppointment.contract_status === "signed"
+                              ? "Firmado"
+                              : selectedAppointment.contract_status}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {selectedAppointment.notes && (
                   <div>
                     <Label className="text-gray-500">Notas</Label>
@@ -1436,7 +1681,7 @@ export default function AppointmentsCalendar() {
 
       {/* Create Appointment Modal */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl w-[calc(100vw-1.5rem)] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Nueva Cita Manual</DialogTitle>
           </DialogHeader>
@@ -1676,10 +1921,14 @@ export default function AppointmentsCalendar() {
                     const service = services.find(
                       (s) => s.id === parseInt(value),
                     );
+                    setManualQuote(null);
                     setNewAppointment({
                       ...newAppointment,
                       service_id: value,
-                      payment_amount: service?.price || 0,
+                      selected_areas: [],
+                      payment_amount: service?.legal_template
+                        ? 0
+                        : service?.price || 0,
                     });
                   }}
                 >
@@ -1692,12 +1941,85 @@ export default function AppointmentsCalendar() {
                         key={service.id}
                         value={service.id.toString()}
                       >
-                        {service.name} - ${service.price}
+                        {service.legal_template === "velocity"
+                          ? service.name
+                          : `${service.name} - $${Number(service.price).toLocaleString("es-MX")}`}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
+              {selectedManualService?.legal_template && (
+                <div className="col-span-1 sm:col-span-2 min-w-0">
+                  <Label>
+                    {isVelocityManual
+                      ? "Zonas Velocity (1 a 4) *"
+                      : "Zona del paquete *"}
+                  </Label>
+                  <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {manualAreas.map((area) => {
+                      const selected = newAppointment.selected_areas.includes(
+                        area.id,
+                      );
+                      const atMax =
+                        isVelocityManual &&
+                        !selected &&
+                        newAppointment.selected_areas.length >= maxManualZones;
+                      return (
+                        <button
+                          key={area.id}
+                          type="button"
+                          disabled={atMax}
+                          onClick={() => toggleManualArea(area.id)}
+                          className={`min-w-0 rounded-md border px-2 py-2 text-left text-xs transition-colors ${
+                            selected
+                              ? "border-primary bg-primary/10 text-foreground"
+                              : "border-border bg-background hover:border-primary/50"
+                          } ${atMax ? "opacity-50" : ""}`}
+                        >
+                          <span className="block truncate font-medium">
+                            {area.label}
+                          </span>
+                          {area.size || area.price ? (
+                            <span className="block text-muted-foreground">
+                              {area.size ? `${area.size}` : ""}
+                              {area.price
+                                ? `${area.size ? " · " : ""}$${Number(area.price).toLocaleString("es-MX")}`
+                                : ""}
+                            </span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {manualQuote && (
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {manualQuote.skip_payment
+                        ? `Paquete existente: ${manualQuote.remaining_sessions ?? 0} sesión${
+                            (manualQuote.remaining_sessions ?? 0) === 1
+                              ? ""
+                              : "es"
+                          } restante${
+                            (manualQuote.remaining_sessions ?? 0) === 1
+                              ? ""
+                              : "s"
+                          }. Esta cita no se cobra.`
+                        : `Total de catálogo: $${manualQuote.catalog_amount.toLocaleString("es-MX")}${
+                            isVelocityManual
+                              ? ` · ${newAppointment.selected_areas.length} ${
+                                  newAppointment.selected_areas.length === 1
+                                    ? "zona"
+                                    : "zonas"
+                                }`
+                              : ""
+                          }`}
+                      {manualQuote.suggested_next_date
+                        ? ` · Siguiente sugerida: ${manualQuote.suggested_next_date}`
+                        : ""}
+                    </p>
+                  )}
+                </div>
+              )}
               <div>
                 <Label>Fecha *</Label>
                 <Input
@@ -1728,7 +2050,16 @@ export default function AppointmentsCalendar() {
                 <Label>Monto a Pagar *</Label>
                 <Input
                   type="number"
-                  value={newAppointment.payment_amount}
+                  value={
+                    manualQuote?.skip_payment || !collectPayment
+                      ? 0
+                      : newAppointment.payment_amount
+                  }
+                  disabled={
+                    Boolean(selectedManualService?.legal_template) ||
+                    Boolean(manualQuote?.skip_payment) ||
+                    !collectPayment
+                  }
                   onChange={(e) =>
                     setNewAppointment({
                       ...newAppointment,
@@ -1736,6 +2067,23 @@ export default function AppointmentsCalendar() {
                     })
                   }
                 />
+                {selectedManualService?.legal_template &&
+                  !manualQuote?.skip_payment && (
+                    <label className="mt-2 flex items-start gap-2 text-xs text-muted-foreground">
+                      <Checkbox
+                        checked={collectPayment}
+                        onCheckedChange={(checked) =>
+                          setCollectPayment(checked === true)
+                        }
+                        className="mt-0.5"
+                      />
+                      <span>
+                        Registrar pago ahora (precio oficial de catálogo). Si no
+                        se cobra hoy, la cita queda en $0 y el pago se registra
+                        después.
+                      </span>
+                    </label>
+                  )}
               </div>
               <div>
                 <Label>Método de Pago *</Label>
@@ -1758,6 +2106,13 @@ export default function AppointmentsCalendar() {
                   </SelectContent>
                 </Select>
               </div>
+              {slotWarning && (
+                <div className="col-span-1 sm:col-span-2">
+                  <Alert variant="destructive">
+                    <AlertDescription>{slotWarning}</AlertDescription>
+                  </Alert>
+                </div>
+              )}
               <div className="col-span-1 sm:col-span-2">
                 <Label>Notas</Label>
                 <Textarea
@@ -1779,7 +2134,7 @@ export default function AppointmentsCalendar() {
             </Button>
             <Button
               onClick={handleCreateAppointment}
-              disabled={creatingAppointment}
+              disabled={creatingAppointment || Boolean(slotWarning)}
               className="bg-primary hover:bg-primary/90"
             >
               {creatingAppointment ? "Creando..." : "Crear Cita"}
@@ -1804,6 +2159,10 @@ export default function AppointmentsCalendar() {
                 service_price: selectedAppointment.service_price,
                 scheduled_date: selectedAppointment.scheduled_date,
                 scheduled_time: selectedAppointment.scheduled_time,
+                notes: selectedAppointment.notes,
+                contract_id: selectedAppointment.contract_id,
+                contract_number: selectedAppointment.contract_number,
+                contract_status: selectedAppointment.contract_status,
               }
             : null
         }

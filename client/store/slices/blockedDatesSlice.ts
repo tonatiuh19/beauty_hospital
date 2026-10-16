@@ -54,18 +54,26 @@ export const fetchBlockedDates = createAsyncThunk(
 // Check if a date is blocked
 export const checkDateBlocked = createAsyncThunk(
   "blockedDates/checkDateBlocked",
-  async (date: string, { rejectWithValue }) => {
+  async (
+    { date, time }: { date: string; time?: string },
+    { rejectWithValue },
+  ) => {
     try {
       const response = await withRetry(
         () =>
-          axios.get<ApiResponse<{ blocked: boolean }>>(
-            `/blocked-dates/check?date=${date}`,
-          ),
+          axios.get<
+            ApiResponse<{ blocked: boolean; reason?: string }>
+          >("/blocked-dates/check", { params: { date, time } }),
         { maxRetries: 3, initialDelay: 1000 },
       );
 
       if (response.data.success && response.data.data) {
-        return { date, blocked: response.data.data.blocked };
+        return {
+          date,
+          time: time || null,
+          blocked: response.data.data.blocked,
+          reason: response.data.data.reason || null,
+        };
       }
       throw new Error("Failed to check blocked date");
     } catch (error) {

@@ -152,6 +152,13 @@ export interface MedicalMedia {
 }
 
 // ==================== SERVICE TYPES ====================
+export interface ServiceAreaOption {
+  id: string;
+  label: string;
+  size?: "chica" | "mediana" | "grande" | string;
+  price?: number;
+}
+
 export interface Service {
   id: number;
   name: string;
@@ -160,6 +167,9 @@ export interface Service {
   category: ServiceCategory;
   price: number;
   duration_minutes: number;
+  package_sessions?: number;
+  legal_template?: "bliss" | "legacy" | "velocity" | null;
+  area_catalog?: ServiceAreaOption[];
   is_active: boolean;
   created_at: Date;
   updated_at: Date;

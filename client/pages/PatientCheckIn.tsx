@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import SignatureCanvas from "@/components/SignatureCanvas";
 import { useToast } from "@/hooks/use-toast";
@@ -54,6 +55,23 @@ export default function PatientCheckIn() {
   const [contractTerms, setContractTerms] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [signatureData, setSignatureData] = useState<string>("");
+  const [consentSignature, setConsentSignature] = useState<string>("");
+  const [healthAnswers, setHealthAnswers] = useState<Record<string, "si" | "no">>(
+    {},
+  );
+  const [dataHealthConsent, setDataHealthConsent] = useState(false);
+  const [photosFollowup, setPhotosFollowup] = useState(false);
+  const [consentIntro, setConsentIntro] = useState("");
+  const [consentQuestions, setConsentQuestions] = useState<
+    Array<{ id: string; label: string }>
+  >([]);
+  const [requiresConsent, setRequiresConsent] = useState(false);
+  const [requiresMinorsAnnex, setRequiresMinorsAnnex] = useState(false);
+  const [patientIsMinor, setPatientIsMinor] = useState(false);
+  const [isMinor, setIsMinor] = useState(false);
+  const [guardianName, setGuardianName] = useState("");
+  const [guardianRelationship, setGuardianRelationship] = useState("");
+  const [guardianSignature, setGuardianSignature] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -76,6 +94,16 @@ export default function PatientCheckIn() {
       setContractTerms(
         result.contractTerms || "Términos y condiciones del servicio.",
       );
+      if (result.consent) {
+        setRequiresConsent(true);
+        setConsentIntro(result.consent.intro || "");
+        setConsentQuestions(result.consent.questions || []);
+        const annex = Boolean(result.consent.requires_minors_annex);
+        const minor = Boolean(result.consent.patient_is_minor);
+        setRequiresMinorsAnnex(annex);
+        setPatientIsMinor(minor);
+        setIsMinor(minor);
+      }
     } catch (err: any) {
       logger.error("Error validating check-in token:", err);
       setError(
@@ -108,6 +136,35 @@ export default function PatientCheckIn() {
         description: "Debe aceptar los términos y condiciones",
       });
       return;
+    }
+
+    const annexNeeded =
+      requiresMinorsAnnex && (patientIsMinor || isMinor);
+    if (requiresConsent) {
+      const missing = consentQuestions.some((q) => !healthAnswers[q.id]);
+      if (missing || !consentSignature || !dataHealthConsent) {
+        toast({
+          variant: "destructive",
+          title: "Consentimiento incompleto",
+          description:
+            "Responde el cuestionario de salud, otorga el uso de datos y firma el consentimiento.",
+        });
+        return;
+      }
+      if (
+        annexNeeded &&
+        (!guardianName.trim() ||
+          !guardianRelationship.trim() ||
+          !guardianSignature)
+      ) {
+        toast({
+          variant: "destructive",
+          title: "Anexo de menores incompleto",
+          description:
+            "Captura nombre, parentesco y firma del padre, madre o tutor.",
+        });
+        return;
+      }
     }
 
     if (!appointment) {
@@ -291,6 +348,22 @@ export default function PatientCheckIn() {
           signature_data: signatureData,
           terms_accepted: termsAccepted,
           pdf_base64: pdfBase64,
+          consent: requiresConsent
+            ? {
+                signature: consentSignature,
+                health_answers: healthAnswers,
+                data_health_consent: dataHealthConsent,
+                photos_followup: photosFollowup,
+                is_minor: annexNeeded,
+                guardian_name: annexNeeded ? guardianName.trim() : undefined,
+                guardian_relationship: annexNeeded
+                  ? guardianRelationship.trim()
+                  : undefined,
+                guardian_signature: annexNeeded
+                  ? guardianSignature
+                  : undefined,
+              }
+            : undefined,
         }),
       ).unwrap();
       setSuccess(true);
@@ -526,6 +599,150 @@ export default function PatientCheckIn() {
           </CardContent>
         </Card>
 
+        {requiresConsent && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">
+                Consentimiento informado
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-gray-700">{consentIntro}</p>
+              <div className="space-y-3">
+                {consentQuestions.map((question) => (
+                  <div
+                    key={question.id}
+                    className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-3"
+                  >
+                    <p className="text-sm text-foreground min-w-0">
+                      {question.label}
+                    </p>
+                    <div className="flex gap-2 shrink-0">
+                      <Button
+                        type="button"
+                        variant={
+                          healthAnswers[question.id] === "si"
+                            ? "default"
+                            : "outline"
+                        }
+                        size="sm"
+                        onClick={() =>
+                          setHealthAnswers((prev) => ({
+                            ...prev,
+                            [question.id]: "si",
+                          }))
+                        }
+                      >
+                        Sí
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={
+                          healthAnswers[question.id] === "no"
+                            ? "default"
+                            : "outline"
+                        }
+                        size="sm"
+                        onClick={() =>
+                          setHealthAnswers((prev) => ({
+                            ...prev,
+                            [question.id]: "no",
+                          }))
+                        }
+                      >
+                        No
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="data-health"
+                  checked={dataHealthConsent}
+                  onCheckedChange={(checked) =>
+                    setDataHealthConsent(checked === true)
+                  }
+                />
+                <label htmlFor="data-health" className="text-sm">
+                  Otorgo consentimiento para tratar mis datos de salud con fines
+                  de valoración, aplicación y seguimiento.
+                </label>
+              </div>
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="photos"
+                  checked={photosFollowup}
+                  onCheckedChange={(checked) =>
+                    setPhotosFollowup(checked === true)
+                  }
+                />
+                <label htmlFor="photos" className="text-sm">
+                  Autorizo fotografías confidenciales de seguimiento (no
+                  publicidad).
+                </label>
+              </div>
+              <SignatureCanvas
+                onSignatureComplete={setConsentSignature}
+                disabled={submitting}
+              />
+              {requiresMinorsAnnex && (
+                <div className="space-y-3 rounded-lg border p-4">
+                  <p className="text-sm font-medium">
+                    Anexo de menores (Legacy y Velocity)
+                  </p>
+                  <div className="flex items-start gap-3">
+                    <Checkbox
+                      id="is-minor"
+                      checked={isMinor}
+                      disabled={patientIsMinor || submitting}
+                      onCheckedChange={(checked) =>
+                        setIsMinor(patientIsMinor || checked === true)
+                      }
+                    />
+                    <label htmlFor="is-minor" className="text-sm">
+                      El paciente es menor de edad. Autorizo el tratamiento
+                      como madre, padre o tutor.
+                    </label>
+                  </div>
+                  {(patientIsMinor || isMinor) && (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="space-y-1 min-w-0">
+                        <Label htmlFor="guardian-name">Nombre del tutor</Label>
+                        <Input
+                          id="guardian-name"
+                          value={guardianName}
+                          onChange={(e) => setGuardianName(e.target.value)}
+                          disabled={submitting}
+                        />
+                      </div>
+                      <div className="space-y-1 min-w-0">
+                        <Label htmlFor="guardian-rel">Parentesco</Label>
+                        <Input
+                          id="guardian-rel"
+                          value={guardianRelationship}
+                          onChange={(e) =>
+                            setGuardianRelationship(e.target.value)
+                          }
+                          placeholder="Madre, padre o tutor"
+                          disabled={submitting}
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <Label>Firma del tutor</Label>
+                        <SignatureCanvas
+                          onSignatureComplete={setGuardianSignature}
+                          disabled={submitting}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Signature */}
         <Card>
           <CardHeader>
@@ -558,7 +775,19 @@ export default function PatientCheckIn() {
 
             <Button
               onClick={handleSubmit}
-              disabled={!signatureData || !termsAccepted || submitting}
+              disabled={
+                !signatureData ||
+                !termsAccepted ||
+                submitting ||
+                (requiresConsent &&
+                  (!consentSignature ||
+                    !dataHealthConsent ||
+                    consentQuestions.some((q) => !healthAnswers[q.id]) ||
+                    ((patientIsMinor || isMinor) &&
+                      (!guardianName.trim() ||
+                        !guardianRelationship.trim() ||
+                        !guardianSignature))))
+              }
               className="w-full h-12 text-lg bg-primary hover:bg-primary/90"
             >
               {submitting ? (

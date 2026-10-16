@@ -31,7 +31,7 @@
 - **If any database update is made based on schema.sql, generate a migration file** in `database/migrations/` with timestamp prefix (e.g., `YYYYMMDD_HHMMSS_description.sql`) for **TiDB Cloud Serverless** (MySQL 8.0 compatible)
 - **Email is Resend** (`RESEND_API_KEY` + `SMTP_FROM`) — do not add Nodemailer/SMTP transports
 - **All required API logic stays inline in `api/index.ts`** — `import type` only from `shared/`; do not add new routes in `server/`
-- **Stripe**: charge catalog `services.price`; fulfill on `POST /api/stripe/webhook`; do not set `allow_redirects: "never"`; do not mark a Stripe payment refunded in the DB without a PaymentIntent/charge refund
+- **Stripe**: `POST /api/appointments/quote` is the catalog quote. Charge catalog `services.price` (or the sum of selected Velocity area prices); remaining sessions / active 90% guarantee skip payment at $0; fulfill on `POST /api/stripe/webhook`; do not set `allow_redirects: "never"`; do not mark a Stripe payment refunded in the DB without a PaymentIntent/charge refund
 - **If a type issue is generated, fix it immediately** - ensure all TypeScript types are correct and consistent across client, api/index.ts, and shared
 
 ## Project Structure

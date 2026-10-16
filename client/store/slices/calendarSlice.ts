@@ -146,11 +146,7 @@ export const createManualAppointment = createAsyncThunk(
   "calendar/createManual",
   async (payload: Record<string, unknown>, { rejectWithValue }) => {
     try {
-      const adminUser = JSON.parse(localStorage.getItem("adminUser") || "{}");
-      const response = await axios.post("/admin/appointments/manual", {
-        ...payload,
-        created_by: adminUser?.id || null,
-      });
+      const response = await axios.post("/admin/appointments/manual", payload);
       if (response.data.success) return response.data;
       return rejectWithValue(
         response.data.message || "Error al crear cita",

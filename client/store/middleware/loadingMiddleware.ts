@@ -5,14 +5,27 @@ import { showLoading, hideLoading } from "../slices/loadingSlice";
  * Middleware that automatically shows/hides the loading mask
  * when async thunks are pending/fulfilled/rejected
  */
+const SILENT_THUNKS = new Set([
+  "appointmentApi/quote",
+  "appointmentApi/patientPackages",
+  "blockedDates/checkDateBlocked",
+]);
+
 export const loadingMiddleware: Middleware = (store) => (next) => (action) => {
   const { type } = action as { type?: string };
 
   // Check if it's an async thunk action
   if (type && typeof type === "string") {
+    const actionName = type
+      .replace("/pending", "")
+      .replace("/fulfilled", "")
+      .replace("/rejected", "");
+    if (SILENT_THUNKS.has(actionName)) {
+      return next(action);
+    }
+
     // Show loading on pending actions
     if (type.endsWith("/pending")) {
-      const actionName = type.replace("/pending", "");
       const loadingMessage = getLoadingMessage(actionName);
       store.dispatch(showLoading(loadingMessage));
     }

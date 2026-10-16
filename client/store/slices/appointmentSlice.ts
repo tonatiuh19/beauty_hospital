@@ -35,15 +35,28 @@ const appointmentSlice = createSlice({
   reducers: {
     // Update service selection
     setService: (state, action: PayloadAction<number>) => {
+      if (state.service !== action.payload) {
+        state.selectedAreas = [];
+      }
       state.service = action.payload;
     },
-    // Toggle area selection
-    toggleArea: (state, action: PayloadAction<string>) => {
-      const areaId = action.payload;
-      if (state.selectedAreas.includes(areaId)) {
-        state.selectedAreas = state.selectedAreas.filter((a) => a !== areaId);
-      } else {
-        state.selectedAreas.push(areaId);
+    // Toggle area selection (max 1 for Bliss/Legacy, up to 4 for Velocity)
+    toggleArea: (
+      state,
+      action: PayloadAction<{ id: string; max?: number }>,
+    ) => {
+      const id = action.payload.id;
+      const max = action.payload.max ?? 1;
+      if (state.selectedAreas.includes(id)) {
+        state.selectedAreas = state.selectedAreas.filter((area) => area !== id);
+        return;
+      }
+      if (max <= 1) {
+        state.selectedAreas = [id];
+        return;
+      }
+      if (state.selectedAreas.length < max) {
+        state.selectedAreas.push(id);
       }
     },
     // Set multiple areas at once

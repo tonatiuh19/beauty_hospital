@@ -107,6 +107,7 @@ paths:
     get:
       tags: [Public]
       summary: List public services
+      description: Active October 2026 Venus packages. Each row includes `price` (package or per-size starting price), `package_sessions`, `legal_template` (bliss|legacy|velocity), and `area_catalog`. Bliss/Legacy book one zone at `price`. Velocity areas include `size` and `price`; checkout may mix 1–4 zones from the full Velocity catalog and charges the sum.
       responses:
         "200":
           description: OK
@@ -283,11 +284,23 @@ paths:
       responses:
         "200":
           description: OK
+  /appointments/quote:
+    post:
+      tags: [Appointments]
+      summary: Quote catalog price and duration for selected zones
+      description: Public. Validates Bliss/Legacy (exactly one catalog area) or Velocity (1–4 areas from the combined size catalog). Returns `catalog_amount` (sum of Velocity area prices, or the Bliss/Legacy package price), `amount` (0 when `patient_id` has remaining matching sessions or an active 90% guarantee), `duration_minutes`, `skip_payment`, and `suggested_next_date`. Does not create a PaymentIntent or appointment.
+      responses:
+        "200":
+          description: Quote
+        "400":
+          description: Invalid zone selection
+        "404":
+          description: Service not found
   /appointments/book-with-payment:
     post:
       tags: [Appointments]
       summary: Create Stripe PaymentIntent for online booking
-      description: Charges the catalog `services.price` (client `payment_amount` is ignored). Appointment is created only after payment succeeds. `booked_by_patient_id` is stored when booking for someone else so Mis Citas lists it. `selected_areas` is appended to notes. PaymentIntents use `automatic_payment_methods.enabled` without `allow_redirects: never` so OXXO and redirect wallets can appear.
+      description: Charges catalog price (client `payment_amount` is ignored). Bliss/Legacy require exactly one `selected_areas` value. Velocity accepts 1–4 areas from the combined Velocity catalog and charges the sum of each area's size price. If the patient already has remaining sessions on a matching open contract (same service, or same Velocity zones), or an active 90% guarantee, payment is skipped (`skip_payment`) and `suggested_next_date` may be returned. Otherwise the appointment is created only after payment succeeds. `booked_by_patient_id` is stored when booking for someone else. PaymentIntents use `automatic_payment_methods.enabled` without `allow_redirects: never`.
       responses:
         "200":
           description: OK
@@ -325,7 +338,7 @@ paths:
     get:
       tags: [Check-in]
       summary: Validate public check-in token
-      description: Returns linked contract terms when `appointments.contract_id` is set; otherwise default clinic terms.
+      description: Returns official Venus contract wording and the matching consent checklist. Legacy/Velocity include `requires_minors_annex` and `patient_is_minor`. Cancelled appointments and expired tokens return 400.
       parameters:
         - in: path
           name: token
@@ -339,10 +352,97 @@ paths:
     post:
       tags: [Check-in]
       summary: Sign contract and complete check-in
+      description: Signs the linked draft/pending contract (or creates one), stores Venus consent, and confirms the appointment. Velocity walk-in notes persist `selected_zones`. Legacy/Velocity minors require tutor name, relationship, and signature. Cancelled appointments, expired tokens, duplicate check-in, incomplete consent, or incomplete minors annex return 400.
       responses:
         "200":
           description: OK
-
+        "400":
+          description: Cancelled, expired, already checked in, or incomplete Venus consent
+  /patient/packages:
+    get:
+      tags: [Patient]
+      summary: Remaining prepaid package sessions
+      parameters:
+        - in: query
+          name: patient_id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Open contracts with remaining session counts, Velocity zones, guarantee status, and suggested next date
+        "401":
+          description: No session
+  /admin/consents/{id}/complete:
+    post:
+      tags: [Admin Contracts]
+      security:
+        - adminBearer: []
+      summary: Clinician signs informed consent
+      description: Sets apto/no_apto/pendiente and staff signature. Apto marks the consent signed. Restricted to general_admin and doctor.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated
+        "400":
+          description: Missing conclusion or signature
+  /admin/contracts/{id}/measurements:
+    post:
+      tags: [Admin Contracts]
+      security:
+        - adminBearer: []
+      summary: Save Velocity hair-count measurement
+      description: Records baseline and/or final hair counts for a contracted zone. Reduction = (inicial − final) / inicial × 100.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Saved
+        "400":
+          description: Not a Velocity contract or invalid counts
+  /admin/contracts/{id}/evaluate-guarantee:
+    post:
+      tags: [Admin Contracts]
+      security:
+        - adminBearer: []
+      summary: Evaluate the 90% Velocity guarantee
+      description: After session 10 measurements, sets guarantee_status to `active` (free extra sessions) or `met`.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Evaluated
+        "400":
+          description: Missing measurements
+  /admin/contracts/{id}/guarantee-status:
+    post:
+      tags: [Admin Contracts]
+      security:
+        - adminBearer: []
+      summary: Set Velocity guarantee status
+      description: Staff can suspend extras after the 3-month no-show rule, or reactivate after a written continuity agreement.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated
   /patient/appointments:
     get:
       tags: [Patient]
@@ -504,6 +604,7 @@ paths:
       security:
         - adminBearer: []
       summary: Calendar appointments (includes receptionist, pos)
+      description: Each event includes `contract_id`, `contract_number`, and `contract_status` when a draft or signed contract is linked.
       responses:
         "200":
           description: OK
@@ -625,6 +726,7 @@ paths:
       security:
         - adminBearer: []
       summary: Patient detail
+      description: Expediente payload includes appointments, payments, medical records, contracts (folio, zones, guarantee — no signature blobs), and Venus consents (health answers + signature flags).
       parameters:
         - in: path
           name: id
@@ -834,10 +936,55 @@ paths:
       security:
         - adminBearer: []
       summary: Create walk-in / manual appointment
-      description: Accepts `patient_id` or `new_patient` `{ first_name, last_name, email, phone }`.
+      description: |
+        Accepts `patient_id` or `new_patient` `{ first_name, last_name, email, phone }`.
+        Venus packages require `selected_areas` (Bliss/Legacy exactly one catalog area; Velocity 1–4).
+        `created_by` is always the JWT admin (client `created_by` is ignored).
+        Duration uses the multi-zone Velocity rule. Notes prepend `Área: …`.
+        If the patient has remaining matching sessions or an active 90% guarantee, payment is skipped
+        (`skip_payment: true`) and the existing contract is linked. Otherwise a Venus charge records
+        the catalog amount (not the client `payment_amount`) and an official draft contract is created.
+        Non-Venus / inactive historic SKUs still accept a client amount with no zone requirement.
+        Blocked clinic dates return 400 (`reason: blocked_date`). A duration overlap with a
+        `scheduled`/`confirmed`/`in_progress` visit returns 409 (`reason: slot_conflict`).
+        Same-day creates take a `schedule_day_locks` row so two receptionists cannot both insert
+        after seeing a free slot. Admin and patient reschedule use the same overlap rule.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [service_id, scheduled_date, scheduled_time]
+              properties:
+                patient_id:
+                  type: integer
+                new_patient:
+                  type: object
+                service_id:
+                  type: integer
+                scheduled_date:
+                  type: string
+                scheduled_time:
+                  type: string
+                selected_areas:
+                  type: array
+                  items:
+                    type: string
+                notes:
+                  type: string
+                payment_amount:
+                  type: number
+                payment_method:
+                  type: string
+                  enum: [cash, credit_card, transfer, card]
       responses:
         "201":
-          description: Created
+          description: Created (`id`, `patient_id`, `contract_id`, `skip_payment`, `catalog_amount`, `duration_minutes`)
+        "400":
+          description: Missing patient, invalid zones, invalid payment method, or blocked date
+        "409":
+          description: Time slot already reserved (`reason: slot_conflict`)
   /admin/appointments/{id}/payment-info:
     get:
       tags: [Admin Appointments]
@@ -874,6 +1021,7 @@ paths:
       security:
         - adminBearer: []
       summary: Admin check-in (idempotent if QR already completed)
+      description: Requires a signed contract. Cancelled appointments are rejected. Client `skip_contract_check` is ignored.
       parameters:
         - in: path
           name: id
@@ -904,6 +1052,7 @@ paths:
       security:
         - adminBearer: []
       summary: Reschedule appointment
+      description: Rejects duration overlap with another scheduled/confirmed/in_progress visit (`409`). Same-day lock as manual create.
       parameters:
         - in: path
           name: id
@@ -938,7 +1087,7 @@ paths:
       security:
         - adminBearer: []
       summary: Create draft contract and link appointment
-      description: `created_by` is taken from the admin JWT. Never falls back to a hardcoded user id.
+      description: Stamps `legal_template`, official Venus wording, catalog sessions/price, and optional `selected_areas`. `created_by` comes from the admin JWT. If `appointment_id` already has a contract, that draft is reused (`reused: true`) and a second folio is not created. Desk check-in for Venus must include `selected_areas` or `Área:` notes when no contract is linked yet.
       responses:
         "200":
           description: OK

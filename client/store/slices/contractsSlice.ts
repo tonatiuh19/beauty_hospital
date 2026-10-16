@@ -32,6 +32,8 @@ interface ContractsState {
   contracts: Contract[];
   selectedContract: Contract | null;
   sessions: any[];
+  selectedConsent: any | null;
+  measurements: any[];
   stats: any | null;
   totalPages: number;
   loading: boolean;
@@ -43,6 +45,8 @@ const initialState: ContractsState = {
   contracts: [],
   selectedContract: null,
   sessions: [],
+  selectedConsent: null,
+  measurements: [],
   stats: null,
   totalPages: 1,
   loading: false,
@@ -101,6 +105,8 @@ export const fetchContractById = createAsyncThunk(
       return {
         contract: response.data.data.contract,
         sessions: response.data.data.sessions || [],
+        consent: response.data.data.consent || null,
+        measurements: response.data.data.measurements || [],
       };
     } catch (error) {
       return rejectWithValue(
@@ -130,6 +136,34 @@ export const downloadContractPdf = createAsyncThunk(
     } catch (error) {
       return rejectWithValue(
         formatAxiosError(error, "Error al descargar el contrato"),
+      );
+    }
+  },
+);
+
+export const completeConsentClinician = createAsyncThunk(
+  "contracts/completeConsent",
+  async (
+    payload: {
+      id: number;
+      clinical_conclusion: string;
+      clinical_notes?: string;
+      signature: string;
+    },
+    { rejectWithValue },
+  ) => {
+    try {
+      const response = await axios.post(
+        `/admin/consents/${payload.id}/complete`,
+        payload,
+      );
+      if (response.data.success) return response.data;
+      return rejectWithValue(
+        response.data.message || "No se pudo firmar el consentimiento",
+      );
+    } catch (error) {
+      return rejectWithValue(
+        formatAxiosError(error, "No se pudo firmar el consentimiento"),
       );
     }
   },
@@ -221,6 +255,78 @@ export const fetchContractStatus = createAsyncThunk(
   },
 );
 
+export const saveContractMeasurement = createAsyncThunk(
+  "contracts/saveMeasurement",
+  async (
+    payload: {
+      id: number;
+      zone_id: string;
+      zone_label?: string;
+      baseline_count?: number | null;
+      final_count?: number | null;
+      notes?: string;
+    },
+    { rejectWithValue },
+  ) => {
+    try {
+      const response = await axios.post(
+        `/admin/contracts/${payload.id}/measurements`,
+        payload,
+      );
+      if (response.data.success) return response.data;
+      return rejectWithValue(
+        response.data.message || "No se pudo guardar la medición",
+      );
+    } catch (error) {
+      return rejectWithValue(
+        formatAxiosError(error, "No se pudo guardar la medición"),
+      );
+    }
+  },
+);
+
+export const evaluateContractGuarantee = createAsyncThunk(
+  "contracts/evaluateGuarantee",
+  async (id: number, { rejectWithValue }) => {
+    try {
+      const response = await axios.post(
+        `/admin/contracts/${id}/evaluate-guarantee`,
+      );
+      if (response.data.success) return response.data;
+      return rejectWithValue(
+        response.data.message || "No se pudo evaluar la garantía",
+      );
+    } catch (error) {
+      return rejectWithValue(
+        formatAxiosError(error, "No se pudo evaluar la garantía"),
+      );
+    }
+  },
+);
+
+export const updateGuaranteeStatus = createAsyncThunk(
+  "contracts/guaranteeStatus",
+  async (
+    { id, status }: { id: number; status: string },
+    { rejectWithValue },
+  ) => {
+    try {
+      const response = await axios.post(
+        `/admin/contracts/${id}/guarantee-status`,
+        { status },
+      );
+      if (response.data.success) return response.data;
+      return rejectWithValue(
+        response.data.message || "No se pudo actualizar la garantía",
+      );
+    } catch (error) {
+      return rejectWithValue(
+        formatAxiosError(error, "No se pudo actualizar la garantía"),
+      );
+    }
+  },
+);
+
 export const updateContractTerms = createAsyncThunk(
   "contracts/updateTerms",
   async (
@@ -277,6 +383,8 @@ const contractsSlice = createSlice({
         state.loading = false;
         state.selectedContract = action.payload.contract;
         state.sessions = action.payload.sessions;
+        state.selectedConsent = action.payload.consent;
+        state.measurements = action.payload.measurements || [];
       })
       .addCase(fetchContractStats.fulfilled, (state, action) => {
         state.stats = action.payload;
